@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Client Package",
+  "compilerOptions": {
+    /* Base Options: */
+    "skipLibCheck": true,
+    "target": "ES2025",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
+    "resolvePackageJsonExports": true,
+
+    /* Strictness */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    /* If transpiling with TypeScript: */
+    "module": "NodeNext",
+    "sourceMap": true,
+
+    /* AND if you're building for a library: */
+    "declaration": true,
+    "incremental": true,
+
+    /* If your code runs in the DOM: */
+    "lib": ["ES2025", "DOM"],
+
+    "noEmit": true
+  }
+}

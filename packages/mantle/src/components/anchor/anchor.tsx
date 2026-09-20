@@ -1,0 +1,216 @@
+import type { ComponentProps, ReactNode } from "react";
+import { Children, cloneElement, isValidElement } from "react";
+import invariant from "tiny-invariant";
+import type { WithAsChild } from "../../types/as-child.js";
+import { cx } from "../../utils/cx/cx.js";
+import { joinDataSlot } from "../../utils/data-slot.js";
+import type { WithDataSlot } from "../../utils/data-slot.js";
+import { Icon } from "../icon/icon.js";
+import { Slot } from "../slot/index.js";
+import type { Rel } from "./types.js";
+
+/**
+ * The class names for the `Anchor` component which define the styles for the component.
+ */
+const anchorClassNames = (className?: string) =>
+	cx(
+		"cursor-pointer rounded bg-transparent text-accent-600 hover:underline focus:outline-hidden focus-visible:ring-3 focus-visible:ring-focus-accent",
+		className,
+	);
+
+/**
+ * The props for the `Anchor` component.
+ */
+type AnchorProps = Omit<ComponentProps<"a">, "rel"> &
+	WithAsChild &
+	WithDataSlot & {
+		/**
+		 * An icon to render inside the anchor
+		 */
+		icon?: ReactNode;
+		/**
+		 * The side that the icon will render on, if one is present
+		 * @default "start"
+		 */
+		iconPlacement?: "start" | "end";
+		/**
+		 * The rel attribute defines the relationship between a linked resource and the current document.
+		 *
+		 * Every keyword within a space-separated value should be unique within that value.
+		 * When omitted and `target="_blank"`, the anchor renders `rel="noopener noreferrer"`.
+		 *
+		 * @see https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/rel
+		 */
+		rel?: Rel | (string & {}) | undefined | (Rel | (string & {}) | undefined | null)[];
+	};
+
+/**
+ * A styled hyperlink — a native `<a>` with mantle's link styling, focus
+ * treatment, optional leading/trailing icon, and a safer default for the
+ * `rel` attribute. Use for links that point _outside_ the current
+ * application.
+ *
+ * **When to use**
+ * - External URLs (docs, marketing pages, third-party sites).
+ * - Links to files or `mailto:` / `tel:` destinations.
+ *
+ * **When not to use**
+ * - Internal application routes — prefer the framework router's link
+ *   primitive ({@link https://reactrouter.com/en/main/components/link `react-router` `<Link>`})
+ *   so client-side navigation kicks in. You can keep mantle's styling by
+ *   composing: `<Anchor asChild><Link to="/foo">…</Link></Anchor>`.
+ * - For triggering an action — use a {@link https://mantle.ngrok.com/components/actions/button Button}
+ *   instead. If it doesn't navigate, it's not a link.
+ *
+ * **Icons.** Pass `icon` (a phosphor or custom SVG) and optionally
+ * `iconPlacement` (`"start"` default, or `"end"`) to render a small inline
+ * icon — useful for "external link" or "download" affordances. Icons are
+ * decorative; the link text must still describe the destination on its own.
+ *
+ * **Security.** When `target="_blank"` and `rel` is omitted, the anchor
+ * renders `rel="noopener noreferrer"`. A `rel` you pass is used as-is. The
+ * `rel` prop accepts an array: duplicates are de-duped and sorted, so it's
+ * safe to merge token sets.
+ *
+ * **Accessibility.** Link text must be self-describing: avoid "click
+ * here" / "read more". The icon is decorative by default: it renders
+ * `aria-hidden` unless the SVG carries `aria-label`, `aria-labelledby`, `role`,
+ * or an explicit `aria-hidden`. For icon-only links, pass an `aria-label`.
+ *
+ * **Structure.** `children` render inside an inline
+ * `<span data-slot="anchor-label">`, between the two `icon` slots. Target that
+ * slot to style the link text.
+ *
+ * | Data Attribute | Value            | Description                                                                 |
+ * | -------------- | ---------------- | --------------------------------------------------------------------------- |
+ * | `data-slot`    | `"anchor-label"` | On the `<span>` wrapping `children`. Stable styling hook for the link text. |
+ *
+ * @see https://mantle.ngrok.com/components/navigation/anchor
+ *
+ * @example
+ * ```tsx
+ * import { Anchor } from "@ngrok/mantle/anchor";
+ * import { BookIcon } from "@phosphor-icons/react/Book";
+ * import { Link } from "react-router";
+ *
+ * // Basic external link.
+ * <Anchor href="https://ngrok.com/">ngrok.com</Anchor>
+ *
+ * // External link in a new tab with a leading icon. `rel` defaults to
+ * // "noopener noreferrer" when `target="_blank"`.
+ * <Anchor href="https://ngrok.com/docs" target="_blank" icon={<BookIcon />}>
+ *   ngrok docs
+ * </Anchor>
+ *
+ * // Compose Anchor styling onto a react-router Link for internal navigation.
+ * <Anchor asChild>
+ *   <Link to="/dashboard">Open dashboard</Link>
+ * </Anchor>
+ * ```
+ */
+const Anchor = ({
+	"data-slot": dataSlot,
+	asChild,
+	children,
+	className,
+	rel: propRel,
+	icon,
+	iconPlacement = "start",
+	ref,
+	...props
+}: AnchorProps) => {
+	const resolvedRel = resolveRel(propRel);
+
+	if (asChild) {
+		const singleChild = Children.only(children);
+		invariant(
+			isValidElement<AnchorProps>(singleChild),
+			"When using `asChild`, Anchor must be passed a single child as a JSX tag.",
+		);
+		const grandchildren = singleChild.props?.children;
+		// Why read the child's target: under `asChild` the `<a>` or `<Link>` owns
+		// `target`, and the safe `rel` default must follow it. A `rel` on the
+		// child wins, because `Slot` merges child props over these.
+		const opensNewTab = props.target === "_blank" || singleChild.props?.target === "_blank";
+
+		return (
+			<Slot
+				data-slot={joinDataSlot(dataSlot, "anchor")}
+				className={anchorClassNames(className)}
+				ref={ref}
+				rel={resolvedRel ?? defaultRel(opensNewTab)}
+				{...props}
+			>
+				{cloneElement(
+					singleChild,
+					{},
+					<>
+						{icon && iconPlacement === "start" && (
+							<Icon className="inline-block mr-1.5" svg={icon} />
+						)}
+						{/* Why the label span: decisions/2026-08-04-translation-safe-label-wrappers.md */}
+						<span data-slot="anchor-label">{grandchildren}</span>
+						{icon && iconPlacement === "end" && <Icon className="inline-block ml-1.5" svg={icon} />}
+					</>,
+				)}
+			</Slot>
+		);
+	}
+
+	return (
+		<a
+			data-slot={joinDataSlot(dataSlot, "anchor")}
+			className={anchorClassNames(className)}
+			ref={ref}
+			rel={resolvedRel ?? defaultRel(props.target === "_blank")}
+			{...props}
+		>
+			{icon && iconPlacement === "start" && <Icon className="inline-block mr-1.5" svg={icon} />}
+			{/* Why the label span: decisions/2026-08-04-translation-safe-label-wrappers.md */}
+			<span data-slot="anchor-label">{children}</span>
+			{icon && iconPlacement === "end" && <Icon className="inline-block ml-1.5" svg={icon} />}
+		</a>
+	);
+};
+
+/**
+ * The `rel` an anchor gets when the caller passes none. `_blank` hands the
+ * opener to the new page unless `rel` says otherwise, so a new-tab link gets
+ * the safe pair and every other link gets no attribute.
+ */
+function defaultRel(opensNewTab: boolean) {
+	return opensNewTab ? "noopener noreferrer" : undefined;
+}
+
+/**
+ * Resolves the `rel` attribute to a string.
+ *
+ * If the value is an array, it drops the empty values, de-duplicates, sorts, and joins with a space.
+ */
+function resolveRel(
+	rel: Rel | (string & {}) | undefined | null | (Rel | (string & {}) | undefined | null)[],
+) {
+	if (Array.isArray(rel)) {
+		const uniqueRel = new Set(rel);
+		const result = [...uniqueRel]
+			.map((item) => item?.trim())
+			.filter(Boolean)
+			.toSorted()
+			.join(" ");
+		return result || undefined;
+	}
+
+	return rel?.trim() || undefined;
+}
+
+export {
+	//,
+	Anchor,
+	anchorClassNames,
+	resolveRel,
+};
+
+export type {
+	//,
+	AnchorProps,
+};

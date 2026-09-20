@@ -1,0 +1,262 @@
+---
+title: Calendar
+description: A calendar component that allows users to select a date or a range of dates.
+---
+
+import { Example } from "~/components/example";
+import { PageHeader } from "~/components/page-header";
+import {
+	DisabledDaysCalendarExample,
+	HiddenDaysCalendarExample,
+	PopoverCalendarExample,
+	RangeCalendarExample,
+	RangeMultipleCalendarExample,
+	ServerRenderedCalendarExample,
+	SingleCalendarExample,
+} from "~/features/calendar-demos";
+
+<PageHeader id="calendar" isPreview>
+	Calendar
+</PageHeader>
+
+A calendar component that allows users to select a date or a range of dates. It renders a month grid with previous/next navigation; it has no text entry.
+
+Use `mode="single"` to let a user select a single date.
+
+<Example>
+	<SingleCalendarExample />
+</Example>
+
+```tsx
+import { Calendar } from "@ngrok/mantle/calendar";
+import { useState } from "react";
+
+function Example() {
+	const [date, setDate] = useState<Date | undefined>(undefined);
+
+	return (
+		<Calendar
+			mode="single"
+			selected={date}
+			onSelect={setDate}
+			className="border-card rounded-md border p-2 shadow-md"
+		/>
+	);
+}
+```
+
+## Popover
+
+Compose the `Calendar` inside a `Popover` to reveal it from a trigger.
+
+<Example>
+	<PopoverCalendarExample />
+</Example>
+
+```tsx
+import { IconButton } from "@ngrok/mantle/button";
+import { Calendar } from "@ngrok/mantle/calendar";
+import { Popover } from "@ngrok/mantle/popover";
+import { CalendarIcon } from "@phosphor-icons/react/Calendar";
+import { useState } from "react";
+
+function Example() {
+	const [date, setDate] = useState<Date | undefined>(undefined);
+
+	return (
+		<Popover.Root>
+			<Popover.Trigger asChild>
+				<IconButton
+					type="button"
+					appearance="outlined"
+					intent="neutral"
+					icon={<CalendarIcon />}
+					label="Open calendar popover"
+				/>
+			</Popover.Trigger>
+			<Popover.Content>
+				<Calendar mode="single" onSelect={(value) => setDate(value)} selected={date} />
+			</Popover.Content>
+		</Popover.Root>
+	);
+}
+```
+
+## Range
+
+Use `mode="range"` to let a user select a start and end date.
+
+<Example>
+	<RangeCalendarExample />
+</Example>
+
+```tsx
+import { Calendar, type DateRange } from "@ngrok/mantle/calendar";
+import { useState } from "react";
+
+function Example() {
+	const [date, setDate] = useState<DateRange | undefined>({
+		from: undefined,
+		to: undefined,
+	});
+
+	return (
+		<Calendar
+			mode="range"
+			defaultMonth={date?.from}
+			selected={date}
+			onSelect={setDate}
+			className="border-card rounded-md border p-2 shadow-md"
+		/>
+	);
+}
+```
+
+## Range with multiple months
+
+Use `numberOfMonths` to render more than one month at a time.
+
+<Example>
+	<RangeMultipleCalendarExample />
+</Example>
+
+```tsx
+import { Calendar, type DateRange } from "@ngrok/mantle/calendar";
+import { useState } from "react";
+
+function Example() {
+	const [date, setDate] = useState<DateRange | undefined>({
+		from: undefined,
+		to: undefined,
+	});
+
+	return (
+		<Calendar
+			mode="range"
+			defaultMonth={date?.from}
+			selected={date}
+			onSelect={setDate}
+			numberOfMonths={2}
+			className="border-card rounded-md border p-2 shadow-md"
+		/>
+	);
+}
+```
+
+## Hidden days
+
+Pass an array of dates to `hidden` to remove them from the calendar.
+
+<Example>
+	<HiddenDaysCalendarExample />
+</Example>
+
+```tsx
+import { Calendar, type DateRange } from "@ngrok/mantle/calendar";
+import { useState } from "react";
+
+function Example() {
+	const [date, setDate] = useState<DateRange | undefined>({
+		from: undefined,
+		to: undefined,
+	});
+	const hiddenDays = [new Date(2024, 4, 6), new Date(2024, 4, 20), new Date(2024, 4, 11)];
+
+	return (
+		<Calendar
+			mode="range"
+			defaultMonth={hiddenDays[0]}
+			selected={date}
+			onSelect={setDate}
+			hidden={hiddenDays}
+			className="border-card rounded-md border p-2 shadow-md"
+		/>
+	);
+}
+```
+
+## Disabled days
+
+Pass an array of dates to `disabled` to prevent them from being selected.
+
+<Example>
+	<DisabledDaysCalendarExample />
+</Example>
+
+```tsx
+import { Calendar, type DateRange } from "@ngrok/mantle/calendar";
+import { useState } from "react";
+
+function Example() {
+	const [date, setDate] = useState<DateRange | undefined>({
+		from: undefined,
+		to: undefined,
+	});
+	const disabledDays = [new Date(2024, 4, 3), new Date(2024, 4, 13), new Date(2024, 4, 14)];
+
+	return (
+		<Calendar
+			mode="range"
+			defaultMonth={disabledDays[0]}
+			selected={date}
+			onSelect={setDate}
+			disabled={disabledDays}
+			className="border-card rounded-md border p-2 shadow-md"
+		/>
+	);
+}
+```
+
+## Server rendering
+
+`Calendar` highlights today's date and prefixes that day's `aria-label` with `Today,`. If you omit `today`, `DayPicker` reads the clock during render, once on the server and again in the browser. If the two clocks or time zones disagree on the date, the highlight and the label land on different days. React then reports a hydration mismatch. If you also omit `month` and `defaultMonth`, the grid opens on different months.
+
+Under SSR, pass `today` and `defaultMonth` (or `month`) from one date the request produced, such as a loader value. `timeZone` aligns the zone only, not the clock, so it doesn't replace `today`.
+
+<Example>
+	<ServerRenderedCalendarExample />
+</Example>
+
+```tsx
+import { Calendar } from "@ngrok/mantle/calendar";
+import { useState } from "react";
+
+// Under SSR, take `today` from the request, such as a loader value.
+const today = new Date(2024, 4, 15);
+
+function Example() {
+	const [date, setDate] = useState<Date | undefined>(undefined);
+
+	return (
+		<Calendar
+			mode="single"
+			today={today}
+			defaultMonth={today}
+			selected={date}
+			onSelect={setDate}
+			className="border-card rounded-md border p-2 shadow-md"
+		/>
+	);
+}
+```
+
+## Accessibility
+
+The month grid, the day buttons, and the previous/next month buttons come from [React DayPicker](https://react-day-picker.js.org/), which names them and handles arrow-key navigation between days. The navigation buttons carry mantle's `IconButton` ghost styling, including its focus ring.
+
+## API Reference
+
+The `Calendar` is built on top of [React DayPicker](https://react-day-picker.js.org/) and accepts every [`DayPicker` prop](https://daypicker.dev/api/type-aliases/DayPickerProps). Mantle changes these:
+
+| Prop               | Type                                | Default | Description                                                                                                                           |
+| ------------------ | ----------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `mode`             | `"single" \| "multiple" \| "range"` |         | Selection mode. `"range"` also rounds the ends of a selected range.                                                                   |
+| `showOutsideDays?` | `boolean`                           | `false` | Whether days from the previous and next month fill the first and last week. DayPicker defaults to `true`; mantle defaults to `false`. |
+| `className?`       | `string`                            |         | Classes for the calendar root, merged with `classNames.root`.                                                                         |
+| `classNames?`      | `Partial<ClassNames>`               |         | Per-element class overrides. Mantle sets its own defaults for every key; yours merge over them, and `root` merges with `className`.   |
+
+`@ngrok/mantle/calendar` also exports the `DateRange` type for `mode="range"`.
+
+| Data Attribute | Value        | Description        |
+| -------------- | ------------ | ------------------ |
+| `data-slot`    | `"calendar"` | The calendar root. |

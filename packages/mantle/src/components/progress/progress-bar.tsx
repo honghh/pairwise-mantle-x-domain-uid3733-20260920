@@ -1,0 +1,245 @@
+"use client";
+
+import {
+	Indicator as ProgressPrimitiveIndicator,
+	Root as ProgressPrimitiveRoot,
+} from "@radix-ui/react-progress";
+
+import { type ComponentProps, createContext, useContext, useMemo } from "react";
+import { cx } from "../../utils/cx/cx.js";
+import { isNumber, isValidMaxNumber, isValidValueNumber } from "./math.js";
+import type { ValueType } from "./types.js";
+
+/**
+ * The default maximum value of the progress bar.
+ */
+const defaultMax = 100;
+
+type ProgressContextValue = {
+	max: number;
+	value: ValueType;
+};
+
+const defaultContextValue = {
+	max: defaultMax,
+	value: 0,
+} as const satisfies ProgressContextValue;
+
+const ProgressContext = createContext<ProgressContextValue>(defaultContextValue);
+
+type RootProps = ComponentProps<"div"> & {
+	/**
+	 * The maximum value of the progress bar.
+	 * This attribute describes how much work the task indicated by the progress element requires.
+	 * The max attribute, if present, must have a value greater than 0. The default value is 100.
+	 *
+	 * @default 100
+	 */
+	max?: number | undefined;
+	/**
+	 * The current value of the progress bar.
+	 * This attribute specifies how much of the task is complete.
+	 * It must be a valid floating point number between 0 and `max`, or, when `max` is omitted, between 0 and 100.
+	 * If set to `"indeterminate"`, the progress bar is considered indeterminate. (for now there is no visual difference than 0)
+	 * A value outside `0..max` also renders as indeterminate.
+	 *
+	 * @default 0
+	 */
+	value?: ValueType | undefined;
+};
+
+/**
+ * Displays an indicator showing the completion progress of a task, typically displayed as a progress bar.
+ *
+ * A horizontal progress bar that shows the completion progress of a task.
+ * Use this component for linear progress indication.
+ *
+ * **Accessibility.** Renders `role="progressbar"` with `aria-valuemin`,
+ * `aria-valuemax`, and `aria-valuenow` (omitted while indeterminate). The role
+ * needs a name: pass `aria-label`, or `aria-labelledby` that points at a visible
+ * label.
+ *
+ * | Data Attribute | Value                                                  | Description                                  |
+ * | -------------- | ------------------------------------------------------ | -------------------------------------------- |
+ * | `data-slot`    | `"progress-bar"`                                       | The root element.                            |
+ * | `data-state`   | `"complete"` \| `"indeterminate"` \| `"loading"`       | Set by Radix from `value` and `max`.         |
+ * | `data-value`   | the current value                                      | Absent while indeterminate.                  |
+ * | `data-max`     | the maximum                                            |                                              |
+ *
+ * @see https://mantle.ngrok.com/components/feedback/progress-bar#progressbarroot
+ *
+ * @example
+ * ```tsx
+ * <ProgressBar.Root aria-label="Upload progress" value={60}>
+ *   <ProgressBar.Indicator />
+ * </ProgressBar.Root>
+ *
+ * <ProgressBar.Root aria-label="Upload progress" value={75} max={100}>
+ *   <ProgressBar.Indicator />
+ * </ProgressBar.Root>
+ *
+ * // Indeterminate progress
+ * <ProgressBar.Root aria-label="Upload progress" value="indeterminate">
+ *   <ProgressBar.Indicator />
+ * </ProgressBar.Root>
+ * ```
+ */
+function Root({ className, children, max: _max = defaultMax, value: _value, ...props }: RootProps) {
+	const max = isValidMaxNumber(_max) ? _max : defaultMax;
+	const value = (
+		isValidValueNumber(_value, max) ? _value : _value == null ? 0 : "indeterminate"
+	) satisfies ValueType;
+
+	const valueNow = isNumber(value) ? value : undefined;
+
+	const ctx: ProgressContextValue = useMemo(
+		() => ({
+			max,
+			value,
+		}),
+		[max, value],
+	);
+
+	return (
+		<ProgressContext.Provider value={ctx}>
+			<ProgressPrimitiveRoot
+				data-slot="progress-bar"
+				className={cx(
+					"bg-base-hover dark:bg-base shadow-inner relative h-3 w-full overflow-hidden rounded-md",
+					className,
+				)}
+				value={valueNow}
+				max={max}
+				{...props}
+			>
+				{children}
+			</ProgressPrimitiveRoot>
+		</ProgressContext.Provider>
+	);
+}
+type IndicatorProps = ComponentProps<typeof ProgressPrimitiveIndicator>;
+
+/**
+ * Displays the progress indicator, which visually represents the completion progress of a task.
+ *
+ * The visual indicator that shows the actual progress within the progress bar.
+ * This component should be used inside a ProgressBar.Root component.
+ *
+ * @see https://mantle.ngrok.com/components/feedback/progress-bar#progressbarindicator
+ *
+ * @example
+ * ```tsx
+ * <ProgressBar.Root aria-label="Upload progress" value={60}>
+ *   <ProgressBar.Indicator />
+ * </ProgressBar.Root>
+ *
+ * // Custom styled indicator
+ * <ProgressBar.Root aria-label="Upload progress" value={60}>
+ *   <ProgressBar.Indicator className="bg-success-600" />
+ * </ProgressBar.Root>
+ * ```
+ */
+function Indicator({ className, style, ...props }: IndicatorProps) {
+	const ctx = useContext(ProgressContext);
+	const { max } = ctx;
+	const value = ctx.value === "indeterminate" ? 0 : ctx.value;
+	const translatePercent = ((max - value) / max) * 100;
+
+	return (
+		<ProgressPrimitiveIndicator
+			data-slot="progress-bar-indicator"
+			className={cx("bg-accent-600 h-full w-full flex-1 transition-all", className)}
+			style={{ ...style, transform: `translateX(-${translatePercent}%)` }}
+			{...props}
+		/>
+	);
+}
+/**
+ * Displays an indicator showing the completion progress of a task, typically displayed as a progress bar.
+ *
+ * A horizontal progress bar that shows the completion progress of a task.
+ * Use this component for linear progress indication.
+ *
+ * @see https://mantle.ngrok.com/components/feedback/progress-bar
+ *
+ * @example
+ * Composition:
+ * ```
+ * ProgressBar.Root
+ * └── ProgressBar.Indicator
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <ProgressBar.Root aria-label="Upload progress" value={60}>
+ *   <ProgressBar.Indicator />
+ * </ProgressBar.Root>
+ *
+ * <ProgressBar.Root aria-label="Upload progress" value={75} max={100}>
+ *   <ProgressBar.Indicator />
+ * </ProgressBar.Root>
+ *
+ * // Indeterminate progress
+ * <ProgressBar.Root aria-label="Upload progress" value="indeterminate">
+ *   <ProgressBar.Indicator />
+ * </ProgressBar.Root>
+ * ```
+ */
+const ProgressBar = {
+	/**
+	 * Displays an indicator showing the completion progress of a task, typically displayed as a progress bar.
+	 *
+	 * A horizontal progress bar that shows the completion progress of a task.
+	 * Use this component for linear progress indication.
+	 *
+	 * **Accessibility.** Renders `role="progressbar"` with `aria-valuemin`,
+	 * `aria-valuemax`, and `aria-valuenow` (omitted while indeterminate). The role
+	 * needs a name: pass `aria-label`, or `aria-labelledby` that points at a visible
+	 * label.
+	 *
+	 * @see https://mantle.ngrok.com/components/feedback/progress-bar#progressbarroot
+	 *
+	 * @example
+	 * ```tsx
+	 * <ProgressBar.Root aria-label="Upload progress" value={60}>
+	 *   <ProgressBar.Indicator />
+	 * </ProgressBar.Root>
+	 *
+	 * <ProgressBar.Root aria-label="Upload progress" value={75} max={100}>
+	 *   <ProgressBar.Indicator />
+	 * </ProgressBar.Root>
+	 *
+	 * // Indeterminate progress
+	 * <ProgressBar.Root aria-label="Upload progress" value="indeterminate">
+	 *   <ProgressBar.Indicator />
+	 * </ProgressBar.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * Displays the progress indicator, which visually represents the completion progress of a task.
+	 *
+	 * The visual indicator that shows the actual progress within the progress bar.
+	 * This component should be used inside a ProgressBar.Root component.
+	 *
+	 * @see https://mantle.ngrok.com/components/feedback/progress-bar#progressbarindicator
+	 *
+	 * @example
+	 * ```tsx
+	 * <ProgressBar.Root aria-label="Upload progress" value={60}>
+	 *   <ProgressBar.Indicator />
+	 * </ProgressBar.Root>
+	 *
+	 * // Custom styled indicator
+	 * <ProgressBar.Root aria-label="Upload progress" value={60}>
+	 *   <ProgressBar.Indicator className="bg-success-600" />
+	 * </ProgressBar.Root>
+	 * ```
+	 */
+	Indicator,
+} as const;
+
+export {
+	//,
+	ProgressBar,
+};

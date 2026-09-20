@@ -1,0 +1,118 @@
+"use client";
+
+import { render, screen } from "@testing-library/react";
+import axe from "axe-core";
+import { describe, expect, test } from "vitest";
+import { Checkbox } from "../checkbox/checkbox.js";
+import { Field } from "../field/field.js";
+import { RadioGroup } from "../radio-group/radio-group.js";
+import { Switch } from "../switch/switch.js";
+import { Choice } from "./choice.js";
+
+/**
+ * Run axe against a rendered container and return its violations. Color contrast
+ * is disabled because the test DOM has no theme tokens applied, so contrast
+ * results are noise — every other WCAG / best-practice rule stays on.
+ */
+async function axeViolations(container: HTMLElement) {
+	const results = await axe.run(container, {
+		rules: { "color-contrast": { enabled: false } },
+	});
+	return results.violations;
+}
+
+describe("Choice accessibility (axe) — no violations across the control matrix", () => {
+	test("checkbox — standalone", async () => {
+		const { container } = render(
+			<Choice.Root name="terms">
+				<Choice.Indicator>
+					<Checkbox />
+				</Choice.Indicator>
+				<Choice.Content>
+					<Choice.Label>I agree to the terms</Choice.Label>
+					<Choice.Description>You can change this later.</Choice.Description>
+				</Choice.Content>
+			</Choice.Root>,
+		);
+		expect(await axeViolations(container)).toEqual([]);
+	});
+
+	test("checkbox — inside a Field with description and error", async () => {
+		const { container } = render(
+			<Field.Item name="notify" validation="error">
+				<Field.Control>
+					<Choice.Root>
+						<Choice.Indicator>
+							<Checkbox />
+						</Choice.Indicator>
+						<Choice.Content>
+							<Choice.Label>Email</Choice.Label>
+							<Choice.Description>Sent to your primary address.</Choice.Description>
+						</Choice.Content>
+					</Choice.Root>
+				</Field.Control>
+				<Field.Description>Choose how we reach you.</Field.Description>
+				<Field.Errors messages={["You must pick at least one channel."]} />
+			</Field.Item>,
+		);
+		expect(await axeViolations(container)).toEqual([]);
+	});
+
+	test("switch — standalone", async () => {
+		const { container } = render(
+			<Choice.Root name="airplane-mode">
+				<Choice.Indicator>
+					<Switch />
+				</Choice.Indicator>
+				<Choice.Content>
+					<Choice.Label>Airplane mode</Choice.Label>
+					<Choice.Description>Disables wireless radios while in flight.</Choice.Description>
+				</Choice.Content>
+			</Choice.Root>,
+		);
+		expect(await axeViolations(container)).toEqual([]);
+	});
+
+	const radioVariants = [
+		{ variant: "Item", Group: RadioGroup.Root, Option: RadioGroup.Item },
+		{ variant: "ListItem", Group: RadioGroup.List, Option: RadioGroup.ListItem },
+		{ variant: "Card", Group: RadioGroup.Root, Option: RadioGroup.Card },
+		{ variant: "Button", Group: RadioGroup.ButtonGroup, Option: RadioGroup.Button },
+	] as const;
+
+	test.each(radioVariants)(
+		"RadioGroup.$variant with a title and description",
+		async ({ Group, Option }) => {
+			const { container } = render(
+				<Group aria-label="Plan" defaultValue="pro">
+					<Option value="free">
+						<Choice.Root>
+							<Choice.Indicator>
+								<RadioGroup.Indicator />
+							</Choice.Indicator>
+							<Choice.Content>
+								<Choice.Title>Free</Choice.Title>
+								<Choice.Description>Up to 3 projects and 1 member.</Choice.Description>
+							</Choice.Content>
+						</Choice.Root>
+					</Option>
+					<Option value="pro">
+						<Choice.Root>
+							<Choice.Indicator>
+								<RadioGroup.Indicator />
+							</Choice.Indicator>
+							<Choice.Content>
+								<Choice.Title>Pro</Choice.Title>
+								<Choice.Description>Unlimited projects and up to 25 members.</Choice.Description>
+							</Choice.Content>
+						</Choice.Root>
+					</Option>
+				</Group>,
+			);
+			expect(screen.getByRole("radio", { name: "Free" })).toHaveAccessibleDescription(
+				"Up to 3 projects and 1 member.",
+			);
+			expect(await axeViolations(container)).toEqual([]);
+		},
+	);
+});

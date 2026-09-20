@@ -1,0 +1,1299 @@
+"use client";
+
+import { CaretDownIcon } from "@phosphor-icons/react/CaretDown";
+import { CheckIcon } from "@phosphor-icons/react/Check";
+import { CopyIcon } from "@phosphor-icons/react/Copy";
+import { FileTextIcon } from "@phosphor-icons/react/FileText";
+import { TerminalIcon } from "@phosphor-icons/react/Terminal";
+import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useId,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import {
+	Content as RadixTabsContent,
+	List as RadixTabsList,
+	Root as RadixTabsRoot,
+	Trigger as RadixTabsTrigger,
+} from "@radix-ui/react-tabs";
+import assert from "tiny-invariant";
+import { useCopyToClipboard } from "../../hooks/use-copy-to-clipboard.js";
+import { useIsomorphicLayoutEffect } from "../../hooks/use-isomorphic-layout-effect.js";
+import type { SelfClosingWithAsChild, WithAsChild } from "../../types/as-child.js";
+import { alternateAnnouncement } from "../../utils/alternate-announcement.js";
+import { useComposedRefs } from "../../utils/compose-refs/compose-refs.js";
+import { cx } from "../../utils/cx/cx.js";
+import { Icon as MantleIcon } from "../icon/icon.js";
+import type { SvgAttributes } from "../icon/types.js";
+import { TrafficPolicyFileIcon } from "../icons/traffic-policy-file.js";
+import { IconButton } from "../button/icon-button.js";
+import { LiveRegion } from "../live-region/live-region.js";
+import { Slot } from "../slot/index.js";
+import { escapeHtml } from "./escape-html.js";
+import { attachFoldHandler, resetFoldState } from "./fold-runtime.js";
+import type { Mode } from "./resolve-pre-rendered-props.js";
+import type { MantleCodeBlockValue } from "./mantle-code.js";
+
+type CodeBlockContextType = {
+	codeId: string;
+	copyTextRef: { current: string };
+	hasCodeExpander: boolean;
+	isCodeExpanded: boolean;
+	registerCode: () => void;
+	setHasCodeExpander: (value: boolean) => void;
+	setIsCodeExpanded: Dispatch<SetStateAction<boolean>>;
+	unregisterCode: () => void;
+};
+
+const CodeBlockContext = createContext<CodeBlockContextType | null>(null);
+
+/** Returns the nearest `CodeBlock` context, throwing if called outside a `CodeBlock.Root`. */
+function useCodeBlockContext(): CodeBlockContextType {
+	const context = useContext(CodeBlockContext);
+	assert(context != null, "CodeBlock subcomponents must be rendered within a <CodeBlock.Root>.");
+	return context;
+}
+
+type CodeBlockRootProps = Omit<ComponentProps<"div">, "align"> &
+	WithAsChild & {
+		/**
+		 * The default active tab value (uncontrolled).
+		 * Only relevant when using `CodeBlock.TabList` / `CodeBlock.TabContent`.
+		 */
+		defaultTab?: string;
+		/**
+		 * The controlled active tab value.
+		 * Only relevant when using `CodeBlock.TabList` / `CodeBlock.TabContent`.
+		 */
+		activeTab?: string;
+		/**
+		 * Callback fired when the active tab changes.
+		 * Only relevant when using `CodeBlock.TabList` / `CodeBlock.TabContent`.
+		 */
+		onActiveTabChange?: (value: string) => void;
+	};
+
+/**
+ * Shiki-powered code blocks with build-time syntax highlighting and zero browser bundle.
+ * This is the root component for all CodeBlock components.
+ *
+ * For tabbed code blocks, pass `defaultTab` (uncontrolled) or `activeTab` / `onActiveTabChange`
+ * (controlled) to enable tab switching with `CodeBlock.TabList` and `CodeBlock.TabContent`.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockroot
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Root>
+ *   <CodeBlock.Header>
+ *     <CodeBlock.Icon preset="file" />
+ *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+ *   </CodeBlock.Header>
+ *   <CodeBlock.Body>
+ *     <CodeBlock.CopyButton />
+ *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+ *   </CodeBlock.Body>
+ *   <CodeBlock.ExpanderButton />
+ * </CodeBlock.Root>
+ * ```
+ */
+const Root = ({
+	asChild = false,
+	className,
+	defaultTab,
+	activeTab,
+	onActiveTabChange,
+	ref,
+	...props
+}: CodeBlockRootProps) => {
+	const copyTextRef = useRef("");
+	// Why Root owns the id: `ExpanderButton` renders `aria-controls` from it, and
+	// an id that `Code` registers from a mount effect is absent in the server HTML.
+	const codeId = useId();
+	const mountedCodeCount = useRef(0);
+	const [hasCodeExpander, setHasCodeExpander] = useState(false);
+	const [isCodeExpanded, setIsCodeExpanded] = useState(false);
+
+	const registerCode = useCallback(() => {
+		assert(
+			mountedCodeCount.current === 0,
+			"You can only render a single CodeBlock.Code within a CodeBlock.",
+		);
+		mountedCodeCount.current += 1;
+	}, []);
+
+	const unregisterCode = useCallback(() => {
+		mountedCodeCount.current -= 1;
+	}, []);
+
+	const context: CodeBlockContextType = useMemo(
+		() =>
+			({
+				codeId,
+				copyTextRef,
+				hasCodeExpander,
+				isCodeExpanded,
+				registerCode,
+				setHasCodeExpander,
+				setIsCodeExpanded,
+				unregisterCode,
+			}) as const,
+		[codeId, hasCodeExpander, isCodeExpanded, registerCode, unregisterCode],
+	);
+
+	const hasTabs = defaultTab != null || activeTab != null;
+	const Component = asChild ? Slot : "div";
+
+	const tree = (
+		<Component
+			data-slot="code-block"
+			className={cx(
+				"text-mono w-full overflow-hidden rounded-md border border-gray-300 bg-base font-mono",
+				"[&_svg]:shrink-0",
+				className,
+			)}
+			ref={ref}
+			{...props}
+		/>
+	);
+
+	return (
+		<CodeBlockContext.Provider value={context}>
+			{hasTabs ? (
+				<RadixTabsRoot
+					asChild
+					defaultValue={defaultTab}
+					value={activeTab}
+					onValueChange={onActiveTabChange}
+				>
+					{tree}
+				</RadixTabsRoot>
+			) : (
+				tree
+			)}
+		</CodeBlockContext.Provider>
+	);
+};
+
+/**
+ * The body of the `CodeBlock`. This is where `CodeBlock.Code` and
+ * the optional `CodeBlock.CopyButton` are rendered.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockbody
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Root>
+ *   <CodeBlock.Header>
+ *     <CodeBlock.Icon preset="file" />
+ *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+ *   </CodeBlock.Header>
+ *   <CodeBlock.Body>
+ *     <CodeBlock.CopyButton />
+ *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+ *   </CodeBlock.Body>
+ *   <CodeBlock.ExpanderButton />
+ * </CodeBlock.Root>
+ * ```
+ */
+const Body = ({
+	asChild = false,
+	className,
+	ref,
+	...props
+}: ComponentProps<"div"> & WithAsChild) => {
+	const Component = asChild ? Slot : "div";
+	return (
+		<Component
+			data-slot="code-block-body"
+			className={cx(
+				"relative",
+				// Why per-line breathing room: the scroll range ends at the edge of
+				// the max-content <code>, so without a small reserve the longest
+				// line touches the container edge at the end of the scroll range.
+				"[&_.mantle-code-line]:pr-4",
+				// Why only the first two lines reserve copy-button space: the size-7
+				// button sits at `right-3 top-3`, over the first two text-mono lines
+				// only. Per-line padding adds to the max-content width of the `w-max`
+				// <code>, so a blanket reserve forced a horizontal scrollbar even when
+				// every line fit the container. The `:has()` scope drops the reserve
+				// when no copy button is rendered. This rule outranks the breathing
+				// room above on specificity.
+				"[&:has([data-slot=code-block-copy-button])_.mantle-code-line:nth-child(-n+2)]:pr-14",
+				className,
+			)}
+			ref={ref}
+			{...props}
+		/>
+	);
+};
+
+/**
+ * Matches `SHIKI_VAL_<index>` placeholders injected by the Vite plugin for
+ * interpolated template expressions. Hoisted to module scope to avoid
+ * re-creating the regex on every substitution call.
+ */
+const LEGACY_SHIKI_VAL_PATTERN = /SHIKI_VAL_(\d+)/g;
+
+/** Escapes special characters in a string for use in a `RegExp` constructor. */
+function escapeForRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const maxPreValPatternCacheSize = 500;
+const preValPatternCache = new Map<string, RegExp>();
+
+/**
+ * Returns the cached `RegExp` for the given `preValToken`, falling back to the
+ * legacy `SHIKI_VAL_<n>` pattern when the token is missing or empty.
+ */
+function getTemplateValPattern(preValToken: string | undefined): RegExp {
+	if (preValToken == null || preValToken.length === 0) {
+		return LEGACY_SHIKI_VAL_PATTERN;
+	}
+
+	let cached = preValPatternCache.get(preValToken);
+	if (cached == null) {
+		if (preValPatternCache.size >= maxPreValPatternCacheSize) {
+			preValPatternCache.clear();
+		}
+		cached = new RegExp(`${escapeForRegExp(preValToken)}(\\d+)__`, "g");
+		preValPatternCache.set(preValToken, cached);
+	}
+	return cached;
+}
+
+/**
+ * Replaces placeholder tokens in `input` with values from `vals`, applying
+ * `mapValue` to each substituted value. Returns the input unchanged when
+ * no placeholders are present.
+ */
+function substituteTemplateVals(
+	input: string,
+	vals: unknown[],
+	preValToken: string | undefined,
+	mapValue: (value: unknown) => string,
+): string {
+	if (preValToken == null) {
+		if (!input.includes("SHIKI_VAL_")) {
+			return input;
+		}
+	} else if (!input.includes(preValToken)) {
+		return input;
+	}
+
+	return input.replaceAll(getTemplateValPattern(preValToken), (match, indexText: string) => {
+		const index = Number.parseInt(indexText, 10);
+		if (Number.isNaN(index) || index < 0 || index >= vals.length) {
+			return match;
+		}
+		return mapValue(vals[index]);
+	});
+}
+
+/** Substitutes placeholder tokens in pre-rendered HTML, HTML-escaping each interpolated value. */
+function substitutePreVals(html: string, vals: unknown[], preValToken: string | undefined): string {
+	return substituteTemplateVals(html, vals, preValToken, (value) => escapeHtml(String(value)));
+}
+
+/** Substitutes placeholder tokens in plain text (for the copy button), without HTML escaping. */
+function substitutePreValsPlainText(
+	text: string,
+	vals: unknown[],
+	preValToken: string | undefined,
+): string {
+	return substituteTemplateVals(text, vals, preValToken, (value) => String(value));
+}
+
+type CodeBlockCodeProps = Omit<ComponentProps<"pre">, "children" | "translate"> & {
+	/**
+	 * The code value produced by `mantleCode("lang")` tagged template.
+	 * Contains pre-rendered Shiki HTML (when the Vite plugin is active) and
+	 * the original code string for the copy button.
+	 */
+	value: MantleCodeBlockValue;
+};
+
+/**
+ * The `CodeBlock` content. Renders pre-highlighted code from `mantleCode()`.
+ *
+ * Mantle's Vite plugin or server highlighter must set `value["~preHtml"]`.
+ * Runtime highlighting and runtime line decoration are intentionally unsupported.
+ *
+ * The `<pre>` always carries `translate="no"`, so a browser translation engine
+ * skips the code. A translated CLI flag, env var, or YAML key is wrong, and the
+ * reader copies it anyway. The `translate` prop is omitted from the type, so no
+ * call site can turn the guard off.
+ *
+ * Line numbers render `aria-hidden`, so a screen reader hears the code, not
+ * "1 const x".
+ *
+ * | Data Attribute | Value | Description |
+ * | --- | --- | --- |
+ * | `data-state` | `"collapsed"` \| `"expanded"` | Present when a `CodeBlock.ExpanderButton` is composed. Drives the collapsed max height. |
+ * | `data-highlighted` | `"true"` \| `"false"` | Whether the value carried pre-rendered Shiki HTML. |
+ * | `data-lang` | the language id | The value's language. |
+ * | `data-mantle-line-numbers` | `"true"` \| `"false"` | Whether the gutter shows line numbers. |
+ * | `data-mantle-line-number-start` | a number as a string | The first line number. |
+ * | `data-mantle-highlight-lines` | comma-separated line numbers | Present when lines are highlighted. |
+ *
+ * Inside the highlighted HTML, `data-slot="line-number"`, `"fold-toggle"`, and
+ * `"fold-ellipsis"` mark the gutter number, the fold button, and the folded
+ * marker.
+ *
+ * | CSS Variable | Default | Description |
+ * | --- | --- | --- |
+ * | `--mantle-line-number-start` | `1` | The CSS counter start for the line-number gutter. |
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockcode
+ * @see https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/translate
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Root>
+ *   <CodeBlock.Header>
+ *     <CodeBlock.Icon preset="file" />
+ *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+ *   </CodeBlock.Header>
+ *   <CodeBlock.Body>
+ *     <CodeBlock.CopyButton />
+ *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+ *   </CodeBlock.Body>
+ *   <CodeBlock.ExpanderButton />
+ * </CodeBlock.Root>
+ * ```
+ */
+const Code = ({ className, style, value, ref, ...props }: CodeBlockCodeProps) => {
+	const preRef = useRef<HTMLPreElement>(null);
+	const composedRef = useComposedRefs(preRef, ref);
+	const { codeId, copyTextRef, hasCodeExpander, isCodeExpanded, registerCode, unregisterCode } =
+		useCodeBlockContext();
+	const {
+		language,
+		code,
+		"~preValToken": __preValToken,
+		"~preVals": __preVals,
+		"~highlightLines": __highlightLines,
+		"~lineNumberStart": __lineNumberStart,
+		"~preHtml": __preHtml,
+		"~showLineNumbers": __showLineNumbers,
+	} = value;
+
+	const effectiveHighlightLines = __highlightLines;
+	const effectiveLineNumberStart = __lineNumberStart ?? 1;
+	const effectiveShowLineNumbers = __showLineNumbers ?? false;
+	const copyText = useMemo(
+		() =>
+			__preVals != null && __preVals.length > 0
+				? substitutePreValsPlainText(code, __preVals, __preValToken)
+				: code,
+		[__preValToken, __preVals, code],
+	);
+
+	useLayoutEffect(() => {
+		copyTextRef.current = copyText;
+	}, [copyTextRef, copyText]);
+
+	// Why count in an effect: React can discard a render, so only a commit proves
+	// that a second `CodeBlock.Code` is mounted.
+	useEffect(() => {
+		registerCode();
+
+		return () => {
+			unregisterCode();
+		};
+	}, [registerCode, unregisterCode]);
+
+	const renderedHtml = useMemo(() => {
+		if (__preHtml == null) {
+			return undefined;
+		}
+		return __preVals != null && __preVals.length > 0
+			? substitutePreVals(__preHtml, __preVals, __preValToken)
+			: __preHtml;
+	}, [__preHtml, __preValToken, __preVals]);
+
+	// Attach a single delegated click handler per <pre> so fold toggles do
+	// not pay the cost of N React re-renders or N event handlers — see the
+	// performance rationale in `fold-runtime.ts`. Re-attaches when the
+	// rendered HTML changes since `<code>` gets a new dangerouslySetInnerHTML.
+	useEffect(() => {
+		const pre = preRef.current;
+		if (pre == null) {
+			return undefined;
+		}
+		const codeElement = pre.querySelector("code");
+		if (codeElement != null) {
+			resetFoldState(codeElement);
+		}
+		return attachFoldHandler(pre);
+	}, [renderedHtml]);
+
+	const isPreRendered = renderedHtml != null;
+	const displayHtml = renderedHtml ?? escapeHtml(copyText);
+
+	// React diffs `dangerouslySetInnerHTML` by prop reference; a fresh
+	// `{ __html }` literal each render re-applies `innerHTML`, wiping any
+	// runtime-managed DOM state on the children (e.g. fold attributes).
+	const innerHtmlProp = useMemo(() => ({ __html: displayHtml }), [displayHtml]);
+
+	return (
+		<pre
+			data-slot="code-block-code"
+			// Why data-state and not aria-expanded: `aria-expanded` is not a global
+			// attribute and `<pre>` has no role that supports it. The expander
+			// button owns the ARIA state; this attribute only drives the styling.
+			data-state={hasCodeExpander ? (isCodeExpanded ? "expanded" : "collapsed") : undefined}
+			className={cx(
+				"scrollbar overflow-x-auto overscroll-x-none overflow-y-hidden py-4",
+				!isPreRendered && "pr-14",
+				"data-[mantle-line-numbers~='false']:pl-4",
+				"text-mono m-0 font-mono outline-hidden",
+				"data-[state=collapsed]:max-h-[13.6rem]",
+				className,
+			)}
+			data-highlighted={isPreRendered ? "true" : "false"}
+			data-lang={language}
+			data-mantle-highlight-lines={
+				isPreRendered && effectiveHighlightLines != null && effectiveHighlightLines.length > 0
+					? effectiveHighlightLines.join(",")
+					: undefined
+			}
+			data-mantle-line-number-start={
+				isPreRendered && effectiveShowLineNumbers ? String(effectiveLineNumberStart) : "1"
+			}
+			data-mantle-line-numbers={isPreRendered && effectiveShowLineNumbers ? "true" : "false"}
+			id={codeId}
+			ref={composedRef}
+			style={
+				{
+					...style,
+					"--mantle-line-number-start": String(effectiveLineNumberStart),
+					tabSize: 2,
+					MozTabSize: 2,
+				} as ComponentProps<"pre">["style"]
+			}
+			{...props}
+			// Why after the spread: a wider props object can still carry `translate`
+			// past the type, and translated code is wrong at every call site.
+			translate="no"
+		>
+			<code
+				className="text-size-inherit block min-w-full w-max"
+				dangerouslySetInnerHTML={innerHtmlProp}
+			/>
+		</pre>
+	);
+};
+
+/**
+ * The (optional) header slot of the `CodeBlock`. This is where
+ * `CodeBlock.Icon` and `CodeBlock.Title` are rendered.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockheader
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Root>
+ *   <CodeBlock.Header>
+ *     <CodeBlock.Icon preset="file" />
+ *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+ *   </CodeBlock.Header>
+ *   <CodeBlock.Body>
+ *     <CodeBlock.CopyButton />
+ *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+ *   </CodeBlock.Body>
+ *   <CodeBlock.ExpanderButton />
+ * </CodeBlock.Root>
+ * ```
+ */
+const Header = ({
+	asChild = false,
+	className,
+	ref,
+	...props
+}: ComponentProps<"div"> & WithAsChild) => {
+	const Component = asChild ? Slot : "div";
+	return (
+		<Component
+			data-slot="code-block-header"
+			className={cx(
+				"flex items-center gap-1 border-b border-gray-300 bg-base px-4 py-2 text-gray-700",
+				className,
+			)}
+			ref={ref}
+			{...props}
+		/>
+	);
+};
+
+/**
+ * The (optional) title of the `CodeBlock`. Renders as `h3` by default;
+ * use `asChild` to render a different element.
+ *
+ * The heading carries `translate="no"` by default, because the title usually names
+ * a file — `example.ts` — and a translated filename names a file that does not
+ * exist. The slot takes arbitrary children though, so pass `translate="yes"` when
+ * the title is prose rather than a filename. `CodeBlock.Code` takes no such
+ * override — a block of code is never translatable.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblocktitle
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Root>
+ *   <CodeBlock.Header>
+ *     <CodeBlock.Icon preset="file" />
+ *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+ *   </CodeBlock.Header>
+ *   <CodeBlock.Body>
+ *     <CodeBlock.CopyButton />
+ *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+ *   </CodeBlock.Body>
+ *   <CodeBlock.ExpanderButton />
+ * </CodeBlock.Root>
+ * ```
+ */
+const Title = ({
+	asChild = false,
+	className,
+	ref,
+	...props
+}: ComponentProps<"h3"> & { asChild?: boolean }) => {
+	const Component = asChild ? Slot : "h3";
+	return (
+		<Component
+			data-slot="code-block-title"
+			ref={ref}
+			className={cx("m-0 font-sans text-xs font-medium", className)}
+			translate="no"
+			{...props}
+		/>
+	);
+};
+
+type CodeBlockCopyButtonProps = Omit<ComponentProps<"button">, "aria-label" | "children" | "type"> &
+	SelfClosingWithAsChild & {
+		/**
+		 * Not part of the API: `label` is the single way to name the button.
+		 * Typed `never` rather than only omitted because TypeScript skips
+		 * excess-attribute checks for hyphenated JSX attributes; the `never`
+		 * type makes the JSX call site a compile error.
+		 */
+		"aria-label"?: never;
+		/**
+		 * The accessible name for the copy button, rendered as its `aria-label` (like the `alt` text on an `<img>`).
+		 *
+		 * @default "Copy code"
+		 */
+		label?: string;
+		/**
+		 * Callback fired when the copy button is clicked, passes the copied text as an argument.
+		 */
+		onCopy?: (value: string) => void;
+		/**
+		 * Callback fired when an error occurs during copying.
+		 */
+		onCopyError?: (error: unknown) => void;
+	};
+
+/**
+ * The optional copy button. Copies the raw source of the mounted
+ * `CodeBlock.Code` to the clipboard — in a tabbed block, the active tab's code.
+ * Omit it to render the code block without a copy control.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockcopybutton
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Root>
+ *   <CodeBlock.Header>
+ *     <CodeBlock.Icon preset="file" />
+ *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+ *   </CodeBlock.Header>
+ *   <CodeBlock.Body>
+ *     <CodeBlock.CopyButton />
+ *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+ *   </CodeBlock.Body>
+ *   <CodeBlock.ExpanderButton />
+ * </CodeBlock.Root>
+ * ```
+ */
+const CopyButton = ({
+	className,
+	label = "Copy code",
+	onCopy,
+	onCopyError,
+	onClick,
+	ref,
+	...props
+}: CodeBlockCopyButtonProps) => {
+	const { copyTextRef } = useCodeBlockContext();
+	const copyToClipboard = useCopyToClipboard();
+	// Why one state: the check icon shows exactly while the region reads "Copied".
+	// `alternateAnnouncement` makes a repeat inside the reset window a real DOM
+	// change, so a second copy is announced again.
+	const [announcement, setAnnouncement] = useState("");
+	const wasCopied = announcement !== "";
+	const announceToggle = useRef(false);
+	const timeoutHandle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+	useEffect(() => {
+		return () => {
+			if (timeoutHandle.current != null) {
+				clearTimeout(timeoutHandle.current);
+			}
+		};
+	}, []);
+
+	return (
+		<span
+			data-slot="code-block-copy-button"
+			className="absolute right-3 top-3 z-10 inline-flex size-7 items-center justify-center rounded-[var(--icon-button-border-radius,0.375rem)] bg-base"
+		>
+			{/* Why always mounted: the icon swap is silent to a screen reader. A
+			    lone text child is written with textContent, which is safe under a
+			    browser translation engine, and a fresh live region is not
+			    announced on mount. */}
+			<LiveRegion>{announcement}</LiveRegion>
+			<IconButton
+				type="button"
+				appearance="ghost"
+				intent="neutral"
+				size="sm"
+				label={label}
+				icon={wasCopied ? <CheckIcon /> : <CopyIcon />}
+				className={cx("bg-base not-disabled:hover:bg-neutral-500/15", className)}
+				ref={ref}
+				onClick={async (event) => {
+					// Why if-guards: the React Compiler cannot lower `?.()` inside a `try`
+					// body, and the bail-out ships `CopyButton` uncompiled.
+					try {
+						if (onClick != null) {
+							onClick(event);
+						}
+						if (event.defaultPrevented) {
+							if (timeoutHandle.current != null) {
+								clearTimeout(timeoutHandle.current);
+							}
+							return;
+						}
+						const text = copyTextRef.current;
+						await copyToClipboard(text);
+						if (onCopy != null) {
+							onCopy(text);
+						}
+						setAnnouncement(alternateAnnouncement("Copied", announceToggle));
+						if (timeoutHandle.current != null) {
+							clearTimeout(timeoutHandle.current);
+						}
+						timeoutHandle.current = setTimeout(() => {
+							setAnnouncement("");
+						}, 2000);
+					} catch (error) {
+						onCopyError?.(error);
+					}
+				}}
+				{...props}
+			/>
+		</span>
+	);
+};
+
+type CodeBlockExpanderButtonProps = Omit<
+	ComponentProps<"button">,
+	"children" | "aria-controls" | "aria-expanded"
+>;
+
+/**
+ * The (optional) expander button of the `CodeBlock`. Toggles the expanded
+ * state of the code block. When present, the code block is collapsible.
+ *
+ * It carries `aria-expanded` and `aria-controls` that points at the `<pre>`.
+ * It does not take `asChild`: it renders its own label and caret, so there is
+ * no single child to clone. Style it with `className`.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockexpanderbutton
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Root>
+ *   <CodeBlock.Header>
+ *     <CodeBlock.Icon preset="file" />
+ *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+ *   </CodeBlock.Header>
+ *   <CodeBlock.Body>
+ *     <CodeBlock.CopyButton />
+ *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+ *   </CodeBlock.Body>
+ *   <CodeBlock.ExpanderButton />
+ * </CodeBlock.Root>
+ * ```
+ */
+const ExpanderButton = ({ className, onClick, ref, ...props }: CodeBlockExpanderButtonProps) => {
+	const { codeId, isCodeExpanded, setIsCodeExpanded, setHasCodeExpander } = useCodeBlockContext();
+
+	// Why a layout effect: `Code` stamps `data-state="collapsed"` from this flag,
+	// and a passive registration paints one frame at full height first.
+	useIsomorphicLayoutEffect(() => {
+		setHasCodeExpander(true);
+		return () => {
+			setHasCodeExpander(false);
+		};
+	}, [setHasCodeExpander]);
+
+	return (
+		<button
+			{...props}
+			data-slot="code-block-expander-button"
+			aria-controls={codeId}
+			aria-expanded={isCodeExpanded}
+			className={cx(
+				"flex w-full items-center justify-center gap-0.5 border-t border-gray-300 bg-base px-4 py-2 font-sans text-gray-700 hover:bg-base-hover",
+				className,
+			)}
+			ref={ref}
+			type="button"
+			onClick={(event) => {
+				setIsCodeExpanded((prev) => !prev);
+				onClick?.(event);
+			}}
+		>
+			{isCodeExpanded ? "Show less" : "Show more"}{" "}
+			<MantleIcon
+				svg={<CaretDownIcon weight="bold" />}
+				className={cx("size-4", isCodeExpanded && "rotate-180", "transition-all duration-150")}
+			/>
+		</button>
+	);
+};
+
+type CodeBlockIconProps = Omit<SvgAttributes, "children"> &
+	(
+		| {
+				/**
+				 * A custom icon SVG to display in the code block header.
+				 * (Pass only one of `svg` or `preset`.)
+				 */
+				svg: ReactNode;
+				/**
+				 * A preset icon to display in the code block header.
+				 * (Pass only one of `svg` or `preset`.)
+				 */
+				preset?: undefined | never;
+		  }
+		| {
+				/**
+				 * A custom icon SVG to display in the code block header.
+				 * (Pass only one of `svg` or `preset`.)
+				 */
+				svg?: undefined | never;
+				/**
+				 * A preset icon to display in the code block header.
+				 * (Pass only one of `svg` or `preset`.)
+				 */
+				preset: Mode;
+		  }
+	);
+
+/**
+ * A small icon for the `CodeBlock` header. Pass either a custom `svg`
+ * or a `preset` value (not both).
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockicon
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Root>
+ *   <CodeBlock.Header>
+ *     <CodeBlock.Icon preset="file" />
+ *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+ *   </CodeBlock.Header>
+ *   <CodeBlock.Body>
+ *     <CodeBlock.CopyButton />
+ *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+ *   </CodeBlock.Body>
+ *   <CodeBlock.ExpanderButton />
+ * </CodeBlock.Root>
+ * ```
+ */
+function CodeBlockIconComponent({
+	className,
+	preset,
+	svg: _svgProp,
+	...props
+}: CodeBlockIconProps) {
+	let svg = _svgProp;
+	if (preset != null) {
+		switch (preset) {
+			case "file":
+				svg = <FileTextIcon weight="fill" />;
+				break;
+			case "cli":
+				svg = <TerminalIcon weight="fill" />;
+				break;
+			case "traffic-policy":
+				svg = <TrafficPolicyFileIcon />;
+				break;
+		}
+	}
+	return (
+		<MantleIcon
+			data-slot="code-block-icon"
+			className={cx("size-5", className)}
+			svg={svg}
+			{...props}
+		/>
+	);
+}
+
+type CodeBlockTabListProps = Omit<ComponentProps<typeof RadixTabsList>, "asChild" | "loop">;
+
+/**
+ * A tab list for the `CodeBlock` header. Renders pill-styled tab triggers
+ * that switch which code is displayed. Built on Radix Tabs primitives.
+ *
+ * Place this inside `CodeBlock.Header` and pair with `CodeBlock.TabContent`
+ * in `CodeBlock.Body` to conditionally render code based on the active tab.
+ * `CodeBlock.Root` owns the tab state via `defaultTab` / `activeTab` / `onActiveTabChange`.
+ *
+ * When the tabs exceed the available width they scroll horizontally with an edge
+ * fade (`scroll-fade-x`) instead of wrapping to a second row.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblocktablist
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Root defaultTab="yml">
+ *   <CodeBlock.Header>
+ *     <CodeBlock.TabList>
+ *       <CodeBlock.TabTrigger value="yml">policy.yml</CodeBlock.TabTrigger>
+ *       <CodeBlock.TabTrigger value="json">policy.json</CodeBlock.TabTrigger>
+ *     </CodeBlock.TabList>
+ *   </CodeBlock.Header>
+ *   <CodeBlock.Body>
+ *     <CodeBlock.CopyButton />
+ *     <CodeBlock.TabContent value="yml">
+ *       <CodeBlock.Code value={ymlValue} />
+ *     </CodeBlock.TabContent>
+ *     <CodeBlock.TabContent value="json">
+ *       <CodeBlock.Code value={jsonValue} />
+ *     </CodeBlock.TabContent>
+ *   </CodeBlock.Body>
+ * </CodeBlock.Root>
+ * ```
+ */
+const TabList = ({ className, ref, ...props }: CodeBlockTabListProps) => (
+	<RadixTabsList
+		data-slot="code-block-tab-list"
+		className={cx(
+			"scroll-fade-x flex min-w-0 items-center gap-1 overflow-x-auto overscroll-x-none",
+			// Reserve room inside the scroll box for each trigger's focus ring: `overflow-x-auto`
+			// promotes `overflow-y` to `auto`, which would otherwise clip the `ring-4` box-shadow.
+			// The negative margin cancels the padding so the header layout is unchanged. `min-w-0`
+			// lets the list shrink (and thus scroll) inside the flex `CodeBlock.Header`.
+			"-m-1 p-1",
+			className,
+		)}
+		ref={ref}
+		{...props}
+	/>
+);
+
+type CodeBlockTabTriggerProps = Omit<ComponentProps<typeof RadixTabsTrigger>, "asChild">;
+
+/**
+ * A pill-styled tab trigger for the `CodeBlock` header.
+ * Must be rendered within a `CodeBlock.TabList`.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblocktabtrigger
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.TabList>
+ *   <CodeBlock.TabTrigger value="yml">policy.yml</CodeBlock.TabTrigger>
+ *   <CodeBlock.TabTrigger value="json">policy.json</CodeBlock.TabTrigger>
+ * </CodeBlock.TabList>
+ * ```
+ */
+const TabTrigger = ({ className, ref, ...props }: CodeBlockTabTriggerProps) => (
+	<RadixTabsTrigger
+		data-slot="code-block-tab-trigger"
+		className={cx(
+			"shrink-0 cursor-pointer rounded px-1.5 py-0.5 font-sans text-xs font-medium whitespace-nowrap",
+			"text-gray-600 outline-hidden",
+			"hover:text-gray-900",
+			"data-[state=active]:bg-neutral-500/15 data-[state=active]:text-strong",
+			"focus-visible:ring-focus-accent focus-visible:ring-4",
+			className,
+		)}
+		ref={ref}
+		{...props}
+	/>
+);
+
+type CodeBlockTabContentProps = Omit<
+	ComponentProps<typeof RadixTabsContent>,
+	"asChild" | "forceMount"
+>;
+
+/**
+ * Conditionally renders its children when the associated tab is active.
+ * Pair with `CodeBlock.TabList` and `CodeBlock.TabTrigger` in the header,
+ * and set `defaultTab` / `activeTab` on `CodeBlock.Root`.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block#codeblocktabcontent
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Body>
+ *   <CodeBlock.CopyButton />
+ *   <CodeBlock.TabContent value="yml">
+ *     <CodeBlock.Code value={ymlValue} />
+ *   </CodeBlock.TabContent>
+ *   <CodeBlock.TabContent value="json">
+ *     <CodeBlock.Code value={jsonValue} />
+ *   </CodeBlock.TabContent>
+ * </CodeBlock.Body>
+ * ```
+ */
+const TabContent = (props: CodeBlockTabContentProps) => (
+	<RadixTabsContent data-slot="code-block-tab-content" {...props} />
+);
+
+/**
+ * Shiki-powered code blocks with build-time syntax highlighting and zero browser bundle.
+ *
+ * Use `mantleCodeBlockPlugins()` to enable pre-rendering at build time.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/code-block
+ *
+ * @example
+ * Composition:
+ * ```
+ * # Standard
+ * CodeBlock.Root
+ * ├── CodeBlock.Header
+ * │   ├── CodeBlock.Icon
+ * │   └── CodeBlock.Title
+ * ├── CodeBlock.Body
+ * │   ├── CodeBlock.CopyButton
+ * │   └── CodeBlock.Code
+ * └── CodeBlock.ExpanderButton
+ *
+ * # Tabbed
+ * CodeBlock.Root
+ * ├── CodeBlock.Header
+ * │   └── CodeBlock.TabList
+ * │       └── CodeBlock.TabTrigger
+ * ├── CodeBlock.Body
+ * │   ├── CodeBlock.CopyButton
+ * │   └── CodeBlock.TabContent
+ * │       └── CodeBlock.Code
+ * └── CodeBlock.ExpanderButton
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <CodeBlock.Root>
+ *   <CodeBlock.Header>
+ *     <CodeBlock.Icon preset="file" />
+ *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+ *   </CodeBlock.Header>
+ *   <CodeBlock.Body>
+ *     <CodeBlock.CopyButton />
+ *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+ *   </CodeBlock.Body>
+ *   <CodeBlock.ExpanderButton />
+ * </CodeBlock.Root>
+ *
+ * // Server-highlighted HTML fetched via an action route + React Query mutation
+ * const highlightMutation = useMutation({
+ *   mutationFn: async () => {
+ *     const response = await fetch("/api/shiki-highlight", {
+ *       method: "POST",
+ *       headers: { "Content-Type": "application/json" },
+ *       body: JSON.stringify({ code: source, language: "typescript" }),
+ *     });
+ *     return response.json();
+ *   },
+ * });
+ *
+ * const serverValue = createMantleCodeBlockValue({
+ *   language: "typescript",
+ *   code: source,
+ *   preHtml: highlightMutation.data?.html,
+ * });
+ * ```
+ */
+const CodeBlock = {
+	/**
+	 * The root component of the `CodeBlock`.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockroot
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root>
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.Icon preset="file" />
+	 *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+	 *   </CodeBlock.Body>
+	 *   <CodeBlock.ExpanderButton />
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * The body of the `CodeBlock`. Contains `Code` and optional `CopyButton`.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockbody
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root>
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.Icon preset="file" />
+	 *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+	 *   </CodeBlock.Body>
+	 *   <CodeBlock.ExpanderButton />
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	Body,
+	/**
+	 * The code content. Renders pre-highlighted Shiki HTML when the Vite plugin is active.
+	 *
+	 * The `<pre>` always carries `translate="no"`, so a browser translation engine
+	 * skips the code.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockcode
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root>
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.Icon preset="file" />
+	 *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+	 *   </CodeBlock.Body>
+	 *   <CodeBlock.ExpanderButton />
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	Code,
+	/**
+	 * The optional copy button. Copies the raw source of the mounted
+	 * `CodeBlock.Code` to the clipboard — in a tabbed block, the active tab's
+	 * code. Omit it to render the code block without a copy control.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockcopybutton
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root>
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.Icon preset="file" />
+	 *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+	 *   </CodeBlock.Body>
+	 *   <CodeBlock.ExpanderButton />
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	CopyButton,
+	/**
+	 * The optional expander button for collapsible code blocks.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockexpanderbutton
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root>
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.Icon preset="file" />
+	 *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+	 *   </CodeBlock.Body>
+	 *   <CodeBlock.ExpanderButton />
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	ExpanderButton,
+	/**
+	 * The optional header slot for icon and title.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockheader
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root>
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.Icon preset="file" />
+	 *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+	 *   </CodeBlock.Body>
+	 *   <CodeBlock.ExpanderButton />
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	Header,
+	/**
+	 * A small icon for the code block header. Use `preset` or `svg`.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblockicon
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root>
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.Icon preset="file" />
+	 *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+	 *   </CodeBlock.Body>
+	 *   <CodeBlock.ExpanderButton />
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	Icon: CodeBlockIconComponent,
+	/**
+	 * Conditionally renders children when the associated tab is active.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblocktabcontent
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root defaultTab="yml">
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.TabList>
+	 *       <CodeBlock.TabTrigger value="yml">policy.yml</CodeBlock.TabTrigger>
+	 *       <CodeBlock.TabTrigger value="json">policy.json</CodeBlock.TabTrigger>
+	 *     </CodeBlock.TabList>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.TabContent value="yml">
+	 *       <CodeBlock.Code value={ymlValue} />
+	 *     </CodeBlock.TabContent>
+	 *     <CodeBlock.TabContent value="json">
+	 *       <CodeBlock.Code value={jsonValue} />
+	 *     </CodeBlock.TabContent>
+	 *   </CodeBlock.Body>
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	TabContent,
+	/**
+	 * A tab list for the code block header. Renders pill-styled tabs for switching code.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblocktablist
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root defaultTab="yml">
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.TabList>
+	 *       <CodeBlock.TabTrigger value="yml">policy.yml</CodeBlock.TabTrigger>
+	 *       <CodeBlock.TabTrigger value="json">policy.json</CodeBlock.TabTrigger>
+	 *     </CodeBlock.TabList>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.TabContent value="yml">
+	 *       <CodeBlock.Code value={ymlValue} />
+	 *     </CodeBlock.TabContent>
+	 *     <CodeBlock.TabContent value="json">
+	 *       <CodeBlock.Code value={jsonValue} />
+	 *     </CodeBlock.TabContent>
+	 *   </CodeBlock.Body>
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	TabList,
+	/**
+	 * A pill-styled tab trigger for the code block header. Must be inside `TabList`.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblocktabtrigger
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root defaultTab="yml">
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.TabList>
+	 *       <CodeBlock.TabTrigger value="yml">policy.yml</CodeBlock.TabTrigger>
+	 *       <CodeBlock.TabTrigger value="json">policy.json</CodeBlock.TabTrigger>
+	 *     </CodeBlock.TabList>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.TabContent value="yml">
+	 *       <CodeBlock.Code value={ymlValue} />
+	 *     </CodeBlock.TabContent>
+	 *     <CodeBlock.TabContent value="json">
+	 *       <CodeBlock.Code value={jsonValue} />
+	 *     </CodeBlock.TabContent>
+	 *   </CodeBlock.Body>
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	TabTrigger,
+	/**
+	 * The optional title rendered in the header.
+	 *
+	 * The heading carries `translate="no"` by default, because the title usually
+	 * names a file. Pass `translate="yes"` when the title is prose instead.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/code-block#codeblocktitle
+	 *
+	 * @example
+	 * ```tsx
+	 * <CodeBlock.Root>
+	 *   <CodeBlock.Header>
+	 *     <CodeBlock.Icon preset="file" />
+	 *     <CodeBlock.Title>example.ts</CodeBlock.Title>
+	 *   </CodeBlock.Header>
+	 *   <CodeBlock.Body>
+	 *     <CodeBlock.CopyButton />
+	 *     <CodeBlock.Code value={mantleCode("typescript")`const x = "hello";`} />
+	 *   </CodeBlock.Body>
+	 *   <CodeBlock.ExpanderButton />
+	 * </CodeBlock.Root>
+	 * ```
+	 */
+	Title,
+} as const;
+
+export {
+	//,
+	CodeBlock,
+};

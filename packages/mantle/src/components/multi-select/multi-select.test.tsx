@@ -1,0 +1,832 @@
+import { act, render, screen, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+import type { ReactNode } from "react";
+import { createRef, useState } from "react";
+import { describe, expect, test, vi } from "vitest";
+import { translateTextNodes } from "../../test-utils/translate-text-nodes.js";
+import { Field } from "../field/field.js";
+import { Sheet } from "../sheet/sheet.js";
+import { MultiSelect } from "./multi-select.js";
+
+const snapshotAttributes = (element: HTMLElement) =>
+	new Map(Array.from(element.attributes, ({ name, value }) => [name, value]));
+
+const restoreAttributes = (element: HTMLElement, attributes: Map<string, string>) => {
+	for (const { name } of Array.from(element.attributes)) {
+		if (!attributes.has(name)) {
+			element.removeAttribute(name);
+		}
+	}
+
+	for (const [name, value] of attributes) {
+		element.setAttribute(name, value);
+	}
+};
+
+/**
+ * Finds a tag's option span via its remove button's aria-label, which is
+ * the most reliable anchor since the span's own accessible name varies by
+ * ARIA implementation.
+ */
+const getTagOption = (value: string): HTMLElement => {
+	const removeBtn = screen.getByLabelText(`Remove ${value}`);
+	const tagElement = removeBtn.closest<HTMLElement>('[role="listitem"]');
+	if (tagElement == null) {
+		throw new Error(`Tag option for "${value}" not found`);
+	}
+	return tagElement;
+};
+
+describe("MultiSelect", () => {
+	test("renders the combobox input with placeholder", () => {
+		render(
+			<MultiSelect.Root>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Select items..." />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+					<MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+				</MultiSelect.Content>
+			</MultiSelect.Root>,
+		);
+		expect(screen.getByRole("combobox")).toHaveAttribute("placeholder", "Select items...");
+	});
+
+	test("renders selected values as tags", () => {
+		render(
+			<MultiSelect.Root selectedValue={["apple", "banana"]} setSelectedValue={() => {}}>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Select items..." />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+					<MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+				</MultiSelect.Content>
+			</MultiSelect.Root>,
+		);
+		expect(screen.getByText("apple")).toBeInTheDocument();
+		expect(screen.getByText("banana")).toBeInTheDocument();
+	});
+
+	test("hides placeholder when values are selected", () => {
+		render(
+			<MultiSelect.Root selectedValue={["apple"]} setSelectedValue={() => {}}>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Select items..." />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+				</MultiSelect.Content>
+			</MultiSelect.Root>,
+		);
+		expect(screen.getByRole("combobox")).not.toHaveAttribute("placeholder");
+	});
+
+	test("renders the tags as a named list of listitems, with no option outside a listbox", () => {
+		render(
+			<MultiSelect.Root selectedValue={["apple", "banana"]} setSelectedValue={() => {}}>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Select items..." />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+					<MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+				</MultiSelect.Content>
+			</MultiSelect.Root>,
+		);
+		const list = screen.getByRole("list", { name: "Selected values" });
+		const tags = within(list).getAllByRole("listitem");
+		expect(tags).toHaveLength(2);
+		expect(within(list).getByRole("button", { name: "Remove apple" })).toBeInTheDocument();
+		expect(screen.queryAllByRole("option")).toHaveLength(0);
+		expect(screen.queryByRole("group")).not.toBeInTheDocument();
+	});
+
+	test("renders no tag list while nothing is selected, and honors a custom list name", () => {
+		const { rerender } = render(
+			<MultiSelect.Root selectedValue={[]} setSelectedValue={() => {}}>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues aria-label="Chosen fruits" />
+					<MultiSelect.Input placeholder="Select items..." />
+				</MultiSelect.Trigger>
+			</MultiSelect.Root>,
+		);
+		expect(screen.queryByRole("list")).not.toBeInTheDocument();
+
+		rerender(
+			<MultiSelect.Root selectedValue={["apple"]} setSelectedValue={() => {}}>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues aria-label="Chosen fruits" />
+					<MultiSelect.Input placeholder="Select items..." />
+				</MultiSelect.Trigger>
+			</MultiSelect.Root>,
+		);
+		expect(screen.getByRole("list", { name: "Chosen fruits" })).toBeInTheDocument();
+	});
+
+	test("renders the empty state when popover is open", () => {
+		render(
+			<MultiSelect.Root open>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Select items..." />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					<MultiSelect.Empty>No results found</MultiSelect.Empty>
+				</MultiSelect.Content>
+			</MultiSelect.Root>,
+		);
+		expect(screen.getByText("No results found")).toBeInTheDocument();
+	});
+
+	test("inside a modal sheet, portals the popover into the sheet content", async () => {
+		const user = userEvent.setup();
+		const bodyAttributes = snapshotAttributes(document.body);
+		const documentElementAttributes = snapshotAttributes(document.documentElement);
+		let unmount = () => {};
+
+		try {
+			({ unmount } = render(
+				<Sheet.Root open>
+					<Sheet.Content>
+						<Sheet.Header>
+							<Sheet.Title>Test Sheet</Sheet.Title>
+						</Sheet.Header>
+						<MultiSelect.Root>
+							<MultiSelect.Trigger>
+								<MultiSelect.TagValues />
+								<MultiSelect.Input placeholder="Select items..." />
+							</MultiSelect.Trigger>
+							<MultiSelect.Content>
+								<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+								<MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+							</MultiSelect.Content>
+						</MultiSelect.Root>
+					</Sheet.Content>
+				</Sheet.Root>,
+			));
+
+			await user.click(screen.getByRole("combobox"));
+			const listbox = await screen.findByRole("listbox");
+			const sheetContent = screen.getByRole("combobox").closest("[data-mantle-modal-content]");
+
+			expect(sheetContent?.contains(listbox)).toBe(true);
+
+			await user.click(within(listbox).getByRole("option", { name: /Apple/ }));
+			expect(screen.getByLabelText("Remove apple")).toBeInTheDocument();
+		} finally {
+			unmount();
+			restoreAttributes(document.body, bodyAttributes);
+			restoreAttributes(document.documentElement, documentElementAttributes);
+		}
+	});
+
+	describe("keyboard navigation", () => {
+		/**
+		 * Stateful wrapper for keyboard nav tests — uses useState so that
+		 * removeValue calls actually update the rendered tag list.
+		 */
+		const Subject = ({
+			initialValues = ["apple", "banana", "cherry"],
+		}: {
+			initialValues?: string[];
+		}) => {
+			const [values, setValues] = useState(initialValues);
+			return (
+				<MultiSelect.Root selectedValue={values} setSelectedValue={setValues}>
+					<MultiSelect.Trigger>
+						<MultiSelect.TagValues />
+						<MultiSelect.Input placeholder="Select items..." />
+					</MultiSelect.Trigger>
+					<MultiSelect.Content>
+						<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+						<MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+						<MultiSelect.Item value="cherry">Cherry</MultiSelect.Item>
+					</MultiSelect.Content>
+				</MultiSelect.Root>
+			);
+		};
+
+		/**
+		 * Waits for one rAF tick after the component's rAF has already been
+		 * scheduled. Because the browser/happy-dom processes rAF callbacks
+		 * FIFO, this resolves only after the focusTag callback has fired.
+		 * Wrapped in act() so any resulting React state updates are flushed.
+		 */
+		const waitForRaf = () =>
+			act(
+				() =>
+					new Promise<void>((resolve) => {
+						requestAnimationFrame(() => {
+							resolve();
+						});
+					}),
+			);
+
+		test("ArrowLeft from input focuses the first tag to the left of the input", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			await user.click(screen.getByRole("combobox"));
+			// Why Escape first: while the modal popover is open, Ariakit marks the tag list
+			// `inert`, so `focus()` cannot enter a tag.
+			await user.keyboard("{Escape}");
+			await user.keyboard("{ArrowLeft}");
+			expect(getTagOption("cherry")).toHaveFocus();
+		});
+
+		test("the focused tag is marked data-active, never aria-current, and drops it on blur", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			const cherry = getTagOption("cherry");
+			expect(cherry).not.toHaveAttribute("data-active");
+
+			act(() => {
+				cherry.focus();
+			});
+			expect(cherry).toHaveFocus();
+			expect(cherry).toHaveAttribute("data-active");
+			// Why: `aria-current` names the current item in a set, not keyboard focus.
+			expect(cherry).not.toHaveAttribute("aria-current");
+			expect(getTagOption("banana")).not.toHaveAttribute("data-active");
+
+			await user.keyboard("{ArrowRight}");
+			expect(screen.getByRole("combobox")).toHaveFocus();
+			expect(cherry).not.toHaveAttribute("data-active");
+		});
+
+		test("ArrowLeft on a non-first tag focuses the previous tag", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			getTagOption("banana").focus();
+			await user.keyboard("{ArrowLeft}");
+			expect(getTagOption("apple")).toHaveFocus();
+		});
+
+		test("ArrowLeft on the first tag does not move focus", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			getTagOption("apple").focus();
+			await user.keyboard("{ArrowLeft}");
+			expect(getTagOption("apple")).toHaveFocus();
+		});
+
+		test("ArrowRight on a non-last tag focuses the next tag", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			getTagOption("apple").focus();
+			await user.keyboard("{ArrowRight}");
+			expect(getTagOption("banana")).toHaveFocus();
+		});
+
+		test("ArrowRight on the last tag focuses the input", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			getTagOption("cherry").focus();
+			await user.keyboard("{ArrowRight}");
+			expect(screen.getByRole("combobox")).toHaveFocus();
+		});
+
+		test("Backspace on an empty input removes the last tag", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			await user.click(screen.getByRole("combobox"));
+			await user.keyboard("{Backspace}");
+			expect(screen.queryByLabelText("Remove cherry")).not.toBeInTheDocument();
+		});
+
+		test("Backspace on the first tag with remaining tags focuses the new first tag", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			getTagOption("apple").focus();
+			await user.keyboard("{Backspace}");
+			await waitForRaf();
+			expect(screen.queryByLabelText("Remove apple")).not.toBeInTheDocument();
+			expect(getTagOption("banana")).toHaveFocus();
+		});
+
+		test("Backspace on the only tag focuses the input", async () => {
+			const user = userEvent.setup();
+			render(<Subject initialValues={["apple"]} />);
+			getTagOption("apple").focus();
+			await user.keyboard("{Backspace}");
+			await waitForRaf();
+			expect(screen.queryByLabelText("Remove apple")).not.toBeInTheDocument();
+			expect(screen.getByRole("combobox")).toHaveFocus();
+		});
+
+		test("Backspace on a non-first tag focuses the previous tag", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			getTagOption("banana").focus();
+			await user.keyboard("{Backspace}");
+			await waitForRaf();
+			expect(screen.queryByLabelText("Remove banana")).not.toBeInTheDocument();
+			expect(getTagOption("apple")).toHaveFocus();
+		});
+
+		test("Delete on a non-last tag focuses the tag that slides into its index", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			getTagOption("apple").focus();
+			await user.keyboard("{Delete}");
+			await waitForRaf();
+			expect(screen.queryByLabelText("Remove apple")).not.toBeInTheDocument();
+			expect(getTagOption("banana")).toHaveFocus();
+		});
+
+		test("Delete on the last tag focuses the input", async () => {
+			const user = userEvent.setup();
+			render(<Subject />);
+			getTagOption("cherry").focus();
+			await user.keyboard("{Delete}");
+			await waitForRaf();
+			expect(screen.queryByLabelText("Remove cherry")).not.toBeInTheDocument();
+			expect(screen.getByRole("combobox")).toHaveFocus();
+		});
+	});
+
+	describe("locked values", () => {
+		// Why hoisted items: a memoized or compiled consumer keeps one element per `Item`
+		// across renders. React bails out of the render on that identity, so the lock must
+		// reach the `Item` through context, not through a parent re-render.
+		const hoistedItems = (
+			<>
+				<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+				<MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+			</>
+		);
+
+		const LockableSubject = ({
+			initialValues = ["apple"],
+			lockedValues = [],
+		}: {
+			initialValues?: string[];
+			lockedValues?: string[];
+		}) => {
+			const [values, setValues] = useState(initialValues);
+			return (
+				<MultiSelect.Root selectedValue={values} setSelectedValue={setValues}>
+					<MultiSelect.Trigger>
+						<MultiSelect.TagValues lockedValues={lockedValues} />
+						<MultiSelect.Input placeholder="Select items..." />
+					</MultiSelect.Trigger>
+					<MultiSelect.Content>{hoistedItems}</MultiSelect.Content>
+				</MultiSelect.Root>
+			);
+		};
+
+		const getAppleOption = () =>
+			within(screen.getByRole("listbox")).getByRole("option", { name: "Apple" });
+
+		test("locking a value while the popover is open keeps its item selected on click", async () => {
+			const user = userEvent.setup();
+			const { rerender } = render(<LockableSubject />);
+			await user.click(screen.getByRole("combobox"));
+			await screen.findByRole("listbox");
+			expect(getAppleOption()).toHaveAttribute("aria-selected", "true");
+
+			rerender(<LockableSubject lockedValues={["apple"]} />);
+
+			await user.click(getAppleOption());
+			expect(getAppleOption()).toHaveAttribute("aria-selected", "true");
+			expect(screen.getByLabelText("Remove apple")).toBeInTheDocument();
+		});
+
+		test("unlocking a value while the popover is open lets a click deselect its item", async () => {
+			const user = userEvent.setup();
+			const { rerender } = render(<LockableSubject lockedValues={["apple"]} />);
+			await user.click(screen.getByRole("combobox"));
+			await screen.findByRole("listbox");
+			expect(getAppleOption()).toHaveAttribute("aria-selected", "true");
+
+			rerender(<LockableSubject lockedValues={[]} />);
+
+			await user.click(getAppleOption());
+			expect(getAppleOption()).toHaveAttribute("aria-selected", "false");
+			expect(screen.queryByLabelText("Remove apple")).not.toBeInTheDocument();
+		});
+
+		test("Backspace on an empty input removes the last tag once it is unlocked", async () => {
+			const user = userEvent.setup();
+			const { rerender } = render(<LockableSubject lockedValues={["apple"]} />);
+			await user.click(screen.getByRole("combobox"));
+			await user.keyboard("{Backspace}");
+			expect(screen.getByLabelText("Remove apple")).toBeInTheDocument();
+
+			rerender(<LockableSubject lockedValues={[]} />);
+
+			await user.keyboard("{Backspace}");
+			expect(screen.queryByLabelText("Remove apple")).not.toBeInTheDocument();
+		});
+
+		test("unmounting TagValues releases its locks in the popover", async () => {
+			const user = userEvent.setup();
+			const Subject = ({ showTags }: { showTags: boolean }) => {
+				const [values, setValues] = useState(["apple"]);
+				return (
+					<MultiSelect.Root selectedValue={values} setSelectedValue={setValues}>
+						<MultiSelect.Trigger>
+							{showTags && <MultiSelect.TagValues lockedValues={["apple"]} />}
+							<MultiSelect.Input placeholder="Select items..." />
+						</MultiSelect.Trigger>
+						<MultiSelect.Content>{hoistedItems}</MultiSelect.Content>
+					</MultiSelect.Root>
+				);
+			};
+			const { rerender } = render(<Subject showTags />);
+			await user.click(screen.getByRole("combobox"));
+			await screen.findByRole("listbox");
+
+			rerender(<Subject showTags={false} />);
+
+			await user.click(getAppleOption());
+			expect(getAppleOption()).toHaveAttribute("aria-selected", "false");
+		});
+
+		test("a lock reaches an Item that renders before TagValues", async () => {
+			const user = userEvent.setup();
+			// Why `portal={false}` and `open`: Ariakit's portal mounts the popover children
+			// one commit later, after `TagValues` publishes its locks. Rendering in place
+			// with the popover open puts the `Item` ahead of `TagValues` in the first commit.
+			const Subject = () => {
+				const [values, setValues] = useState(["apple"]);
+				return (
+					<MultiSelect.Root open selectedValue={values} setSelectedValue={setValues}>
+						<MultiSelect.Content portal={false}>{hoistedItems}</MultiSelect.Content>
+						<MultiSelect.Trigger>
+							<MultiSelect.TagValues lockedValues={["apple"]} />
+							<MultiSelect.Input placeholder="Select items..." />
+						</MultiSelect.Trigger>
+					</MultiSelect.Root>
+				);
+			};
+			render(<Subject />);
+			await screen.findByRole("listbox");
+
+			await user.click(getAppleOption());
+			expect(getAppleOption()).toHaveAttribute("aria-selected", "true");
+			expect(screen.getByLabelText("Remove apple")).toBeInTheDocument();
+		});
+	});
+
+	test("unmounting TagValues drops its Backspace handler from the input", async () => {
+		const user = userEvent.setup();
+		const setSelectedValue = vi.fn<(value: string[]) => void>();
+		const Subject = ({ showTags }: { showTags: boolean }) => (
+			<MultiSelect.Root
+				defaultSelectedValue={["apple", "banana"]}
+				setSelectedValue={setSelectedValue}
+			>
+				<MultiSelect.Trigger>
+					{showTags && <MultiSelect.TagValues />}
+					<MultiSelect.Input placeholder="Select items..." />
+				</MultiSelect.Trigger>
+			</MultiSelect.Root>
+		);
+		const { rerender } = render(<Subject showTags />);
+		expect(screen.getByLabelText("Remove banana")).toBeInTheDocument();
+
+		rerender(<Subject showTags={false} />);
+
+		await user.click(screen.getByRole("combobox"));
+		// Why the focus guard: the zero-call assertion below also passes when the
+		// keystroke never reaches the input.
+		expect(screen.getByRole("combobox")).toHaveFocus();
+		await user.keyboard("{Backspace}");
+		expect(setSelectedValue).toHaveBeenCalledTimes(0);
+	});
+
+	describe("custom tag renderer", () => {
+		const CustomSubject = ({
+			initialValues,
+			lockedValues = [],
+		}: {
+			initialValues: string[];
+			lockedValues?: string[];
+		}) => {
+			const [values, setValues] = useState(initialValues);
+			return (
+				<MultiSelect.Root selectedValue={values} setSelectedValue={setValues}>
+					<MultiSelect.Trigger>
+						<MultiSelect.TagValues lockedValues={lockedValues}>
+							{(props) => <MultiSelect.Tag key={props.value} {...props} />}
+						</MultiSelect.TagValues>
+						<MultiSelect.Input placeholder="Select items..." />
+					</MultiSelect.Trigger>
+					<MultiSelect.Content>
+						<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+						<MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+						<MultiSelect.Item value="cherry">Cherry</MultiSelect.Item>
+					</MultiSelect.Content>
+				</MultiSelect.Root>
+			);
+		};
+
+		test("the render props carry the lock, the focus registration, and both removal paths", async () => {
+			const user = userEvent.setup();
+			render(
+				<CustomSubject initialValues={["apple", "banana", "cherry"]} lockedValues={["apple"]} />,
+			);
+			// `locked` reaches the tag
+			expect(screen.getByLabelText("Remove apple")).toHaveAttribute("aria-disabled", "true");
+			expect(screen.getByLabelText("Remove cherry")).not.toHaveAttribute("aria-disabled");
+			// `ref` registers the tag, so ArrowLeft from the input can focus it. Escape closes
+			// the popover first, because Ariakit marks the tag list `inert` while it is open.
+			await user.click(screen.getByRole("combobox"));
+			await user.keyboard("{Escape}");
+			await user.keyboard("{ArrowLeft}");
+			expect(getTagOption("cherry")).toHaveFocus();
+			// `onKeyDown` removes the focused tag
+			await user.keyboard("{Backspace}");
+			expect(screen.queryByLabelText("Remove cherry")).not.toBeInTheDocument();
+			// `onRemove` removes the tag whose button the user clicked
+			await user.click(screen.getByLabelText("Remove banana"));
+			expect(screen.queryByLabelText("Remove banana")).not.toBeInTheDocument();
+			expect(screen.getByLabelText("Remove apple")).toBeInTheDocument();
+		});
+
+		test("clicking a custom tag opens the popover", async () => {
+			const user = userEvent.setup();
+			render(<CustomSubject initialValues={["apple"]} />);
+			await user.click(getTagOption("apple"));
+			expect(await screen.findByRole("listbox")).toBeInTheDocument();
+		});
+	});
+
+	test("given validation='error', renders trigger with data-validation='error'", () => {
+		render(
+			<MultiSelect.Root>
+				<MultiSelect.Trigger data-testid="trigger" validation="error">
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Select items..." />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+				</MultiSelect.Content>
+			</MultiSelect.Root>,
+		);
+		expect(screen.getByTestId("trigger")).toHaveAttribute("data-validation", "error");
+	});
+
+	test("inherits validation from Field.Item through Field.Control", () => {
+		render(
+			<Field.Item name="example" validation="warning">
+				<MultiSelect.Root>
+					<Field.Control>
+						<MultiSelect.Trigger data-testid="trigger">
+							<MultiSelect.TagValues />
+							<MultiSelect.Input placeholder="Select items..." />
+						</MultiSelect.Trigger>
+					</Field.Control>
+					<MultiSelect.Content>
+						<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+					</MultiSelect.Content>
+				</MultiSelect.Root>
+			</Field.Item>,
+		);
+		expect(screen.getByTestId("trigger")).toHaveAttribute("data-validation", "warning");
+	});
+
+	test("Field.Control wrapping MultiSelect.Root applies field ARIA wiring to the input", () => {
+		render(
+			<Field.Item name="example">
+				<Field.Control>
+					<MultiSelect.Root>
+						<MultiSelect.Trigger>
+							<MultiSelect.TagValues />
+							<MultiSelect.Input
+								aria-describedby="ignored-description"
+								aria-errormessage="ignored-error"
+								data-testid="input"
+								id="ignored-input"
+								name="ignored-name"
+								placeholder="Select items..."
+							/>
+						</MultiSelect.Trigger>
+						<MultiSelect.Content>
+							<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+						</MultiSelect.Content>
+					</MultiSelect.Root>
+				</Field.Control>
+				<Field.Errors data-testid="errors" messages={["Required."]} />
+				<Field.Description data-testid="desc">Pick items.</Field.Description>
+			</Field.Item>,
+		);
+
+		const input = screen.getByTestId("input");
+		const errors = screen.getByTestId("errors");
+		const description = screen.getByTestId("desc");
+		expect(input).toHaveAttribute("aria-invalid", "true");
+		expect(input.getAttribute("aria-describedby")).toContain(errors.id);
+		expect(input.getAttribute("aria-describedby")).toContain(description.id);
+		expect(input.getAttribute("aria-describedby")).not.toContain("ignored-description");
+		expect(input).toHaveAttribute("aria-errormessage", errors.id);
+		expect(input).not.toHaveAttribute("id", "ignored-input");
+		// The field name lands on the hidden inputs that carry the selected values, not on the
+		// combobox input — whose value is the typeahead filter text and never a submitted value.
+		expect(input).not.toHaveAttribute("name");
+	});
+
+	test("submits the selected values under the field name, not the filter text", async () => {
+		const user = userEvent.setup();
+		render(
+			<Field.Item name="fruits">
+				<Field.Control>
+					<MultiSelect.Root>
+						<MultiSelect.Trigger>
+							<MultiSelect.TagValues />
+							<MultiSelect.Input data-testid="input" placeholder="Select items..." />
+						</MultiSelect.Trigger>
+						<MultiSelect.Content>
+							<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+							<MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+						</MultiSelect.Content>
+					</MultiSelect.Root>
+				</Field.Control>
+			</Field.Item>,
+		);
+
+		const hiddenValues = () =>
+			Array.from(
+				document.querySelectorAll<HTMLInputElement>('input[type="hidden"][name="fruits"]'),
+				(hidden) => hidden.value,
+			);
+
+		expect(hiddenValues()).toEqual([]);
+
+		await user.click(screen.getByTestId("input"));
+		await user.click(await screen.findByRole("option", { name: "Apple" }));
+		expect(hiddenValues()).toEqual(["apple"]);
+
+		await user.click(await screen.findByRole("option", { name: "Banana" }));
+		expect(hiddenValues()).toEqual(["apple", "banana"]);
+	});
+
+	test("lets trigger validation override field validation", () => {
+		render(
+			<Field.Item name="example" validation="success">
+				<MultiSelect.Root>
+					<Field.Control>
+						<MultiSelect.Trigger data-testid="trigger" validation="warning">
+							<MultiSelect.TagValues />
+							<MultiSelect.Input placeholder="Select items..." />
+						</MultiSelect.Trigger>
+					</Field.Control>
+					<MultiSelect.Content>
+						<MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+					</MultiSelect.Content>
+				</MultiSelect.Root>
+			</Field.Item>,
+		);
+		expect(screen.getByTestId("trigger")).toHaveAttribute("data-validation", "warning");
+	});
+});
+
+describe("MultiSelect.Item label slot", () => {
+	function Options({ label }: { label: ReactNode }) {
+		return (
+			<MultiSelect.Root>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Pick fruit" />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					<MultiSelect.Item value="apple">{label}</MultiSelect.Item>
+				</MultiSelect.Content>
+			</MultiSelect.Root>
+		);
+	}
+
+	test("wraps children in a label div", async () => {
+		const user = userEvent.setup();
+		render(<Options label="Apple" />);
+		await user.click(screen.getByRole("combobox"));
+
+		const item = await screen.findByRole("option", { name: "Apple" });
+		const label = item.querySelector('[data-slot="multi-select-item-label"]');
+		expect(label).toHaveTextContent("Apple");
+		expect(label?.parentElement).toBe(item);
+	});
+
+	test("keeps rendering when a translated label swaps to an element", async () => {
+		const user = userEvent.setup();
+		const { rerender } = render(<Options label="Apple" />);
+		await user.click(screen.getByRole("combobox"));
+
+		const item = await screen.findByRole("option", { name: "Apple" });
+		translateTextNodes(item);
+		expect(item).toHaveTextContent("[Apple-es]");
+
+		rerender(<Options label={<strong>Apple</strong>} />);
+
+		expect(item.querySelector("font")).toBeNull();
+		expect(item.querySelector("strong")).toHaveTextContent("Apple");
+	});
+});
+
+describe("MultiSelect.Item asChild", () => {
+	function Options({ label }: { label: ReactNode }) {
+		return (
+			<MultiSelect.Root>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Pick fruit" />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					<MultiSelect.Item value="apple" asChild>
+						<a href="#apple">{label}</a>
+					</MultiSelect.Item>
+				</MultiSelect.Content>
+			</MultiSelect.Root>
+		);
+	}
+
+	test("slots onto the anchor, merges class, data-*, and ref, and keeps the label div inside it", async () => {
+		const user = userEvent.setup();
+		const ref = createRef<HTMLAnchorElement>();
+		render(
+			<MultiSelect.Root>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Pick fruit" />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					<MultiSelect.Item value="apple" asChild className="mine" data-testid="custom">
+						<a href="#apple" className="theirs" ref={ref}>
+							Apple
+						</a>
+					</MultiSelect.Item>
+				</MultiSelect.Content>
+			</MultiSelect.Root>,
+		);
+		await user.click(screen.getByRole("combobox"));
+
+		const item = await screen.findByRole("option", { name: "Apple" });
+		expect(item.tagName).toBe("A");
+		expect(item).toHaveAttribute("href", "#apple");
+		expect(item).toHaveClass("mine", "theirs");
+		expect(item).toHaveAttribute("data-testid", "custom");
+		expect(item).toHaveAttribute("data-slot", "multi-select-item");
+		expect(ref.current).toBe(item);
+
+		const label = item.querySelector('[data-slot="multi-select-item-label"]');
+		expect(label).toHaveTextContent("Apple");
+		expect(label?.parentElement).toBe(item);
+		expect(Array.from(item.childNodes).every((node) => node instanceof Element)).toBe(true);
+	});
+
+	test("selects through the anchor and shows the check inside it", async () => {
+		const user = userEvent.setup();
+		render(<Options label="Apple" />);
+		await user.click(screen.getByRole("combobox"));
+
+		const item = await screen.findByRole("option", { name: "Apple" });
+		await user.click(item);
+
+		expect(item).toHaveAttribute("aria-selected", "true");
+		expect(item.querySelector("svg")?.closest('[role="option"]')).toBe(item);
+	});
+
+	test("keeps rendering when a translated label swaps to an element", async () => {
+		const user = userEvent.setup();
+		const { rerender } = render(<Options label="Apple" />);
+		await user.click(screen.getByRole("combobox"));
+
+		const item = await screen.findByRole("option", { name: "Apple" });
+		translateTextNodes(item);
+		expect(item).toHaveTextContent("[Apple-es]");
+
+		rerender(<Options label={<strong>Apple</strong>} />);
+
+		expect(item.querySelector("font")).toBeNull();
+		expect(item.querySelector("strong")).toHaveTextContent("Apple");
+	});
+
+	test("throws with the reason when the child is bare text", async () => {
+		const user = userEvent.setup();
+		// Why silence: React logs the error a render throws before it rethrows it.
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		render(
+			<MultiSelect.Root>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Pick fruit" />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					<MultiSelect.Item value="apple" asChild>
+						Apple
+					</MultiSelect.Item>
+				</MultiSelect.Content>
+			</MultiSelect.Root>,
+		);
+
+		await expect(user.click(screen.getByRole("combobox"))).rejects.toThrow(
+			"When using `asChild`, MultiSelect.Item must be passed a single child as a JSX tag.",
+		);
+	});
+});

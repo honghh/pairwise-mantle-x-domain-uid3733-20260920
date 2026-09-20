@@ -1,0 +1,483 @@
+---
+title: Hooks
+description: Custom React hooks exported from @ngrok/mantle/hooks
+---
+
+import { Example } from "~/components/example";
+import { UseInViewDemo } from "~/features/use-in-view-demo";
+
+# Hooks
+
+Custom React hooks exported from `@ngrok/mantle/hooks`.
+
+## Overview
+
+| Hook                        | Description                                                                             |
+| --------------------------- | --------------------------------------------------------------------------------------- |
+| `useBreakpoint`             | The largest Tailwind breakpoint the viewport width matches, or `"default"` below `2xs`. |
+| `useIsBelowBreakpoint`      | `true` while the viewport is narrower than the given breakpoint.                        |
+| `useCallbackRef`            | Returns a memoized callback that always refers to the latest function passed to it.     |
+| `useComposedRefs`           | Composes multiple React refs into a single callback ref.                                |
+| `useCopyToClipboard`        | Copies a string to the clipboard.                                                       |
+| `useDebounce`               | Returns a debounced copy of a value that updates after changes pause.                   |
+| `useDebouncedCallback`      | Creates a debounced version of a callback function.                                     |
+| `useIsHydrated`             | Returns whether the component tree has been hydrated on the client.                     |
+| `useIsomorphicLayoutEffect` | Uses `useLayoutEffect` on the client and `useEffect` on the server.                     |
+| `useLocalStorage`           | SSR-safe localStorage string state, synced across hook instances and tabs.              |
+| `useSessionStorage`         | SSR-safe sessionStorage string state for per-tab persistence.                           |
+| `useMatchesMediaQuery`      | Subscribes to and returns the result of a CSS media query.                              |
+| `usePrefersReducedMotion`   | Returns `true` when the user prefers reduced motion.                                    |
+| `useScrollBehavior`         | Returns a `ScrollBehavior` that respects the user's reduced motion preference.          |
+| `useInView`                 | Returns `true` when a DOM element is visible within the viewport.                       |
+| `useUndoRedo`               | Generic undo/redo history stacks for snapshotting state.                                |
+
+## useBreakpoint
+
+```tsx
+const breakpoint = useBreakpoint();
+```
+
+The largest Tailwind breakpoint the viewport width matches, or `"default"` below `2xs`. Shares one app-wide subscription to the min-width media queries.
+
+```tsx
+import { useBreakpoint } from "@ngrok/mantle/hooks";
+
+function ResponsiveComponent() {
+	const breakpoint = useBreakpoint();
+	return <p>Current breakpoint: {breakpoint}</p>;
+}
+```
+
+## useIsBelowBreakpoint
+
+```tsx
+const isMobile = useIsBelowBreakpoint("md");
+```
+
+`true` while the viewport is narrower than the given breakpoint. Accepts a `TailwindBreakpoint` (`"2xs"`, `"xs"`, `"sm"`, `"md"`, `"lg"`, `"xl"`, `"2xl"`).
+
+```tsx
+import { useIsBelowBreakpoint } from "@ngrok/mantle/hooks";
+
+function ResponsiveSidebar() {
+	const isMobile = useIsBelowBreakpoint("md");
+	return isMobile ? <MobileNav /> : <DesktopNav />;
+}
+```
+
+## useCallbackRef
+
+```tsx
+const stableCallback = useCallbackRef(onChange);
+```
+
+Returns a memoized callback that always refers to the latest callback passed to the hook. Useful when passing a callback that may or may not be memoized to a child component without causing re-renders.
+
+```tsx
+import { useCallbackRef } from "@ngrok/mantle/hooks";
+
+function Example({ onChange }: { onChange?: (value: string) => void }) {
+	const stableOnChange = useCallbackRef(onChange);
+	// stableOnChange always calls the latest onChange
+}
+```
+
+## useComposedRefs
+
+```tsx
+const ref = useComposedRefs(internalRef, forwardedRef);
+```
+
+Composes multiple React refs (callback refs and `RefObject`s) into a single stable callback ref using `useCallback`. Useful when a component accepts a `ref` prop while also keeping an internal one.
+
+```tsx
+import { useRef, type ComponentProps } from "react";
+import { useComposedRefs } from "@ngrok/mantle/hooks";
+
+const MyInput = ({ ref: forwardedRef, ...props }: ComponentProps<"input">) => {
+	const internalRef = useRef<HTMLInputElement>(null);
+	const ref = useComposedRefs(internalRef, forwardedRef);
+	return <input ref={ref} {...props} />;
+};
+```
+
+## useCopyToClipboard
+
+```tsx
+const copy = useCopyToClipboard();
+```
+
+Returns a stable async function that copies a string to the clipboard. Uses the Clipboard API when available and falls back to a polyfill for older browsers. `await` the call to observe success; it throws when copying fails.
+
+```tsx
+import { useCopyToClipboard } from "@ngrok/mantle/hooks";
+import { useState } from "react";
+
+function CopyButton({ text }: { text: string }) {
+	const copy = useCopyToClipboard();
+	const [copied, setCopied] = useState(false);
+
+	return (
+		<button
+			onClick={async () => {
+				await copy(text);
+				setCopied(true);
+			}}
+		>
+			{copied ? "Copied!" : "Copy"}
+		</button>
+	);
+}
+```
+
+## useDebounce
+
+```tsx
+const debouncedValue = useDebounce(value, { waitMs: 300 });
+```
+
+Returns a debounced copy of a value: it only updates after the value has stopped changing for `waitMs` milliseconds. Rapid successive changes collapse into a single trailing update. To debounce a function instead of a value, use `useDebouncedCallback`.
+
+```tsx
+import { useDebounce } from "@ngrok/mantle/hooks";
+import { useState } from "react";
+
+function Search() {
+	const [query, setQuery] = useState("");
+	const debouncedQuery = useDebounce(query, { waitMs: 300 });
+	// fetches keyed on debouncedQuery fire once per typing pause
+	const results = useSearchResults(debouncedQuery);
+
+	return <input value={query} onChange={(event) => setQuery(event.target.value)} />;
+}
+```
+
+## useDebouncedCallback
+
+```tsx
+const debouncedFn = useDebouncedCallback(fn, { waitMs: 300 });
+```
+
+Creates a debounced version of a callback function. Delays execution until a period of inactivity has passed (`options.waitMs`). The debounced callback is stable and safe to use in dependency arrays.
+
+```tsx
+import { useDebouncedCallback } from "@ngrok/mantle/hooks";
+
+function SearchInput() {
+	const debouncedSearch = useDebouncedCallback((query: string) => fetchResults(query), {
+		waitMs: 300,
+	});
+	return <input onChange={(event) => debouncedSearch(event.target.value)} />;
+}
+```
+
+## useIsHydrated
+
+```tsx
+const isHydrated = useIsHydrated();
+```
+
+Returns whether the component tree has been hydrated on the client. Returns `false` on the server and `true` after hydration on the client. Uses `useSyncExternalStore` to prevent hydration mismatches.
+
+```tsx
+import { useIsHydrated } from "@ngrok/mantle/hooks";
+import type { PropsWithChildren } from "react";
+
+function ClientOnly({ children }: PropsWithChildren) {
+	const isHydrated = useIsHydrated();
+	if (!isHydrated) {
+		return <span style={{ visibility: "hidden" }}>Loading…</span>;
+	}
+	return <>{children}</>;
+}
+```
+
+## useIsomorphicLayoutEffect
+
+```tsx
+useIsomorphicLayoutEffect(() => {
+	/* ... */
+}, [deps]);
+```
+
+Uses `useLayoutEffect` on the client and `useEffect` on the server. Avoids SSR warnings about `useLayoutEffect` doing nothing on the server.
+
+```tsx
+import { useIsomorphicLayoutEffect } from "@ngrok/mantle/hooks";
+
+function MeasureElement() {
+	useIsomorphicLayoutEffect(() => {
+		// safely measure DOM on client, no-op on server
+	}, []);
+}
+```
+
+## useLocalStorage
+
+```tsx
+const [value, setValue] = useLocalStorage("key", "default");
+```
+
+SSR-safe localStorage-backed string state. Server rendering returns the default and never touches localStorage. Values are JSON-encoded on write and decoded on read. The setter keeps every same-key hook instance in the tab in sync, and cross-tab changes arrive via the native `storage` event. Missing or corrupt entries resolve to the default instead of throwing.
+
+Reads and writes never throw. If the browser denies storage access, the value is the default. If a write fails (a full origin, Safari private browsing, blocked site data), the hook keeps the value in memory, so it still advances until the page reloads. A later write that succeeds, or a `storage` event from another document, restores storage as the source of truth.
+
+```tsx
+import { useLocalStorage } from "@ngrok/mantle/hooks";
+
+function DateFormatPicker() {
+	const [dateFormat, setDateFormat] = useLocalStorage("dateFormat", "MMM d, y");
+
+	return (
+		<select value={dateFormat} onChange={(event) => setDateFormat(event.target.value)}>
+			<option value="MMM d, y">Aug 9, 2025</option>
+			<option value="y-MM-dd">2025-08-09</option>
+		</select>
+	);
+}
+```
+
+## useSessionStorage
+
+```tsx
+const [value, setValue] = useSessionStorage("key", "default");
+```
+
+The per-tab sibling of `useLocalStorage` with the same contract, backed by sessionStorage: values persist for the rest of the tab session and every same-key hook instance in the tab stays in sync.
+
+```tsx
+import { useSessionStorage } from "@ngrok/mantle/hooks";
+
+function MfaWarningBanner() {
+	const [dismissed, setDismissed] = useSessionStorage("mfa-warning-dismissed", "false");
+
+	if (dismissed === "true") {
+		return null;
+	}
+
+	return (
+		<div role="alert">
+			Enable MFA to secure your account.
+			<button onClick={() => setDismissed("true")}>Dismiss</button>
+		</div>
+	);
+}
+```
+
+## useMatchesMediaQuery
+
+```tsx
+const matches = useMatchesMediaQuery("(prefers-color-scheme: dark)");
+```
+
+Subscribes to and returns the result of a CSS media query string. Uses `window.matchMedia` and `useSyncExternalStore` for concurrent rendering compatibility.
+
+```tsx
+import { useMatchesMediaQuery } from "@ngrok/mantle/hooks";
+
+function DarkModeDetector() {
+	const isDark = useMatchesMediaQuery("(prefers-color-scheme: dark)");
+	return <p>Dark mode: {isDark ? "Yes" : "No"}</p>;
+}
+```
+
+## usePrefersReducedMotion
+
+```tsx
+const reduce = usePrefersReducedMotion();
+```
+
+Returns `true` when the user has opted out of animations (i.e., prefers reduced motion). Defaults to `true` during SSR and before hydration: animations are suppressed until the real preference is known on the client.
+
+```tsx
+import { usePrefersReducedMotion } from "@ngrok/mantle/hooks";
+
+function AnimatedComponent() {
+	const reduce = usePrefersReducedMotion();
+	const duration = reduce ? 0 : 200;
+	return <div style={{ transitionDuration: duration + "ms" }} />;
+}
+```
+
+### getPrefersReducedMotion
+
+```tsx
+const reduce = getPrefersReducedMotion();
+```
+
+Imperatively reads the current `prefers-reduced-motion` preference. Useful in event handlers and plain functions where a hook cannot be called.
+
+Returns `true` when the user has opted out of animations. Defaults to `true` in SSR environments (no DOM available), matching the conservative default of `usePrefersReducedMotion`.
+
+```tsx
+import { getPrefersReducedMotion } from "@ngrok/mantle/hooks";
+
+function shakeElement(element: HTMLElement) {
+	if (getPrefersReducedMotion()) {
+		return;
+	}
+	element.animate(/* ... */);
+}
+```
+
+## useScrollBehavior
+
+```tsx
+const behavior = useScrollBehavior(); // "smooth" | "auto"
+```
+
+Returns a `ScrollBehavior` (`"auto"` or `"smooth"`) that respects the user's reduced motion preference. Returns `"auto"` when the user prefers reduced motion, otherwise `"smooth"`.
+
+```tsx
+import { useScrollBehavior } from "@ngrok/mantle/hooks";
+
+function ScrollToTop() {
+	const behavior = useScrollBehavior();
+	return <button onClick={() => window.scrollTo({ top: 0, behavior })}>Back to top</button>;
+}
+```
+
+## useInView
+
+React hook that tracks whether a DOM element is visible within the viewport (or a scrollable container).
+Returns `true` when the element is in view, otherwise `false`.
+
+```tsx
+const isInView = useInView(ref);
+const isInView = useInView(ref, { once: true, amount: 0.5 });
+```
+
+```tsx
+import { useRef } from "react";
+import { useInView } from "@ngrok/mantle/hooks";
+
+function FadeIn() {
+	const ref = useRef<HTMLDivElement>(null);
+	const isInView = useInView(ref);
+
+	return <div ref={ref} style={{ opacity: isInView ? 1 : 0, transition: "opacity 0.5s" }} />;
+}
+```
+
+Trigger once on first entry:
+
+```tsx
+import { useRef } from "react";
+import { useInView } from "@ngrok/mantle/hooks";
+
+function AnimateOnce() {
+	const ref = useRef<HTMLDivElement>(null);
+	const isInView = useInView(ref, { once: true });
+
+	return <div ref={ref} className={isInView ? "animate" : ""} />;
+}
+```
+
+### useInView options:
+
+| Option    | Type                         | Default  | Description                                                                                                        |
+| --------- | ---------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| `root`    | `RefObject<Element \| null>` | viewport | Ref to a scrollable container to use as the intersection root.                                                     |
+| `margin`  | `string`                     | `"0px"`  | Expand or contract the root bounds. Same syntax as CSS `margin` (e.g. `"10px"`, `"10% 0px"`).                      |
+| `amount`  | `"some" \| "all" \| number`  | `"some"` | How much of the element must be visible. `"some"` = any part, `"all"` = fully visible, or a ratio between `0`–`1`. |
+| `once`    | `boolean`                    | `false`  | Stop observing after the element enters the viewport for the first time.                                           |
+| `initial` | `boolean`                    | `false`  | Initial visibility state before the observer attaches.                                                             |
+
+### useInView example
+
+Live demo for the useInView hook.
+A scrollable container where the observed element transitions between in-view and out-of-view states as you scroll.
+
+<Example className="p-0 overflow-hidden">
+	<UseInViewDemo />
+</Example>
+
+## useUndoRedo
+
+```tsx
+const { canUndo, canRedo, push, undo, redo } = useUndoRedo<T>();
+```
+
+Generic undo/redo hook that maintains two history stacks (undo and redo). The hook does not own your application state — it helps you snapshot it. Call `push(snapshot)` _before_ mutating state, then `undo(current)` or `redo(current)` return the snapshot to apply, or `undefined` when their stack is empty. Pushing a new snapshot clears the redo stack, matching standard editor semantics.
+
+```tsx
+import { useUndoRedo } from "@ngrok/mantle/hooks";
+import { useState } from "react";
+
+function TagEditor() {
+	const [tags, setTags] = useState<string[]>([]);
+	const { push, undo, redo, canUndo, canRedo } = useUndoRedo<string[]>();
+
+	function removeTag(tag: string) {
+		push(tags); // snapshot before mutation
+		setTags((previous) => previous.filter((entry) => entry !== tag));
+	}
+
+	return (
+		<div>
+			<button
+				disabled={!canUndo}
+				onClick={() => {
+					const previous = undo(tags);
+					if (previous) {
+						setTags(previous);
+					}
+				}}
+			>
+				Undo
+			</button>
+			<button
+				disabled={!canRedo}
+				onClick={() => {
+					const next = redo(tags);
+					if (next) {
+						setTags(next);
+					}
+				}}
+			>
+				Redo
+			</button>
+			{tags.map((tag) => (
+				<button key={tag} onClick={() => removeTag(tag)}>
+					{tag} ✕
+				</button>
+			))}
+		</div>
+	);
+}
+```
+
+```tsx
+"use client";
+
+import { cx } from "@ngrok/mantle/cx";
+import { useInView } from "@ngrok/mantle/hooks";
+import { useRef, type ComponentRef } from "react";
+
+export function UseInViewDemo() {
+	const ref = useRef<ComponentRef<"div">>(null);
+	const isInView = useInView(ref, { amount: 0.5 });
+
+	return (
+		<div className="h-72 w-full overflow-y-scroll overscroll-contain">
+			<div className="flex flex-col items-center gap-4 px-8 py-6">
+				<p className="select-none font-mono text-sm text-muted">↓ scroll down</p>
+				<div className="h-60" />
+				<div
+					ref={ref}
+					className={cx(
+						"flex h-28 w-64 items-center justify-center rounded-xl border-2 font-mono text-sm transition-all duration-500",
+						isInView
+							? "scale-100 border-accent-600 bg-accent-600/10 text-accent-600 opacity-100"
+							: "scale-95 border-card-muted bg-gray-50 text-muted opacity-30",
+					)}
+				>
+					isInView: {String(isInView)}
+				</div>
+				<div className="h-60" />
+				<p className="select-none font-mono text-sm text-muted">↑ scroll up</p>
+			</div>
+		</div>
+	);
+}
+```

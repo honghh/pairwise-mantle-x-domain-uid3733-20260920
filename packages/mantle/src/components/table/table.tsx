@@ -1,0 +1,1111 @@
+"use client";
+
+import type { ComponentProps, ComponentRef } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { useComposedRefs } from "../../utils/compose-refs/compose-refs.js";
+import { cx } from "../../utils/cx/cx.js";
+
+/**
+ * The `<Table.Root>` is the root container element for all `Table`s.
+ * It draws the border and rounded corners, and scrolls wide content
+ * horizontally with a fading scroll edge.
+ *
+ * Must be used as the parent of a `<Table.Element>`.
+ *
+ * @example
+ * ```tsx
+ * <Table.Root>
+ *   <Table.Element>
+ *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+ *     <Table.Head>
+ *       <Table.Row>
+ *         <Table.Header className="w-25">Invoice</Table.Header>
+ *         <Table.Header>Status</Table.Header>
+ *         <Table.Header>Method</Table.Header>
+ *         <Table.Header className="text-right">Amount</Table.Header>
+ *       </Table.Row>
+ *     </Table.Head>
+ *     <Table.Body>
+ *       {invoices.map((invoice) => (
+ *         <Table.Row key={invoice.invoice}>
+ *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+ *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+ *         </Table.Row>
+ *       ))}
+ *     </Table.Body>
+ *     <Table.Foot>
+ *       <Table.Row>
+ *         <Table.Cell colSpan={3}>Total</Table.Cell>
+ *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+ *       </Table.Row>
+ *     </Table.Foot>
+ *   </Table.Element>
+ * </Table.Root>
+ * ```
+ *
+ * `ref` lands on the inner scroll container, so a consumer can read or set its
+ * scroll position. Every other prop lands on the outer element.
+ *
+ * Data attributes it stamps on the outer element, for your own CSS to target:
+ *
+ * - `data-x-overflow="true" | "false"` — whether the content is wider than the
+ *   container. Always present, so match the value, not the attribute.
+ * - `data-x-scroll-end="true" | "false"` — whether an overflowing container is
+ *   scrolled to its right edge. Always present.
+ * - `data-sticky-active` — present only while the container overflows and is not
+ *   scrolled to the end. `DataTable`'s pinned action column keys its shadow off
+ *   this through `group-data-sticky-active/table:`.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/table#tableroot
+ */
+const Root = ({ children, className, ref, ...props }: ComponentProps<"div">) => {
+	const horizontalOverflow = useHorizontalOverflowObserver<ComponentRef<"div">>();
+	const scrollContainerRef = useComposedRefs(horizontalOverflow.ref, ref);
+
+	return (
+		<div
+			data-slot="table"
+			className={cx(
+				"group/table relative w-full overflow-hidden rounded-lg border border-card bg-white dark:bg-gray-100",
+				className,
+			)}
+			data-sticky-active={
+				(horizontalOverflow.state.hasOverflow && !horizontalOverflow.state.scrolledToEnd) ||
+				undefined
+			}
+			data-x-overflow={horizontalOverflow.state.hasOverflow}
+			data-x-scroll-end={
+				horizontalOverflow.state.hasOverflow && horizontalOverflow.state.scrolledToEnd
+			}
+			{...props}
+		>
+			<div
+				className={cx(
+					"scrollbar scroll-fade-x overflow-x-auto overflow-y-clip overscroll-x-none",
+					// The edge fade is driven by the `scroll-fade-x` utility (a CSS
+					// scroll-driven animation). When the table contains a sticky right column
+					// (e.g., DataTable.ActionCell / DataTable.ActionHeader), suppress the
+					// container's right-side fade so the pinned column stays fully opaque. The
+					// pinned column draws its own left-side gradient for the scroll-under
+					// effect.
+					"has-data-mantle-table-sticky-right:[--_fade-right:black]",
+				)}
+				ref={scrollContainerRef}
+			>
+				{children}
+			</div>
+		</div>
+	);
+};
+
+/**
+ * The `<Table.Element>` is a structured way to display data in rows and columns. The API
+ * matches the HTML `<table>` element 1:1.
+ *
+ * Permitted content in this order:
+ * 1. optional: `<Table.Caption>`
+ * 2. 0 or more: `<colgroup>` elements
+ * 3. optional: `<Table.Head>`
+ * 4. either one of the following:
+ *    - 0 or more: `<Table.Body>`
+ *    - 0 or more: `<Table.Row>`
+ * 5. optional: `<Table.Foot>`
+ *
+ * @description
+ * Establishes a table formatting context. Elements inside the `<Table.Element>`
+ * generate rectangular boxes. Each box occupies a number of table cells
+ * according to the following rules:
+ *   1. The row boxes fill the table in the source code order from top to bottom.
+ *      Each row box occupies one row of cells.
+ *   2. A row group box occupies one or more row boxes.
+ *   3. Column boxes are placed next to each other in source code order.
+ *      Depending on the value of the dir attribute, the columns are laid in
+ *      left-to-right or right-to-left direction. A column box occupies one or
+ *      more columns of table cells.
+ *   4. A column group box occupies one or more column boxes.
+ *   5. A cell box may span over multiple rows and columns. User agents trim
+ *      cells to fit in the available number of rows and columns.
+ * Table cells do have padding. Boxes that make up a table do not have margins.
+ * For more in depth information, see the [MDN documentation](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/table).
+ *
+ * @example
+ * ```tsx
+ * <Table.Root>
+ *   <Table.Element>
+ *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+ *     <Table.Head>
+ *       <Table.Row>
+ *         <Table.Header className="w-25">Invoice</Table.Header>
+ *         <Table.Header>Status</Table.Header>
+ *         <Table.Header>Method</Table.Header>
+ *         <Table.Header className="text-right">Amount</Table.Header>
+ *       </Table.Row>
+ *     </Table.Head>
+ *     <Table.Body>
+ *       {invoices.map((invoice) => (
+ *         <Table.Row key={invoice.invoice}>
+ *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+ *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+ *         </Table.Row>
+ *       ))}
+ *     </Table.Body>
+ *     <Table.Foot>
+ *       <Table.Row>
+ *         <Table.Cell colSpan={3}>Total</Table.Cell>
+ *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+ *       </Table.Row>
+ *     </Table.Foot>
+ *   </Table.Element>
+ * </Table.Root>
+ * ```
+ *
+ * @see https://mantle.ngrok.com/components/data-display/table#tableelement
+ */
+const Element = ({ children, className, ref, ...props }: ComponentProps<"table">) => {
+	return (
+		<table
+			data-slot="table-element"
+			ref={ref}
+			className={cx(
+				"table-auto border-separate border-spacing-0 caption-bottom w-full min-w-full text-left",
+				className,
+			)}
+			{...props}
+		>
+			{children}
+		</table>
+	);
+};
+
+/**
+ * The `<Table.Head>` is a container for the table's column headers.
+ * Encapsulates a set of `<Table.Row>`s, indicating that they comprise the head
+ * of a table with information about the table's columns. This is usually in the
+ * form of column headers (`<Table.Header>`).
+ *
+ * Must be used as a child of a `<Table.Element>`. It should only come after any
+ * `<Table.Caption>` or `<colgroup>` and before any `<Table.Body>` or `<Table.Foot>`.
+ *
+ * Permitted Content:
+ * 1. 0 or more: `<Table.Row>`
+ *
+ * @example
+ * ```tsx
+ * <Table.Root>
+ *   <Table.Element>
+ *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+ *     <Table.Head>
+ *       <Table.Row>
+ *         <Table.Header className="w-25">Invoice</Table.Header>
+ *         <Table.Header>Status</Table.Header>
+ *         <Table.Header>Method</Table.Header>
+ *         <Table.Header className="text-right">Amount</Table.Header>
+ *       </Table.Row>
+ *     </Table.Head>
+ *     <Table.Body>
+ *       {invoices.map((invoice) => (
+ *         <Table.Row key={invoice.invoice}>
+ *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+ *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+ *         </Table.Row>
+ *       ))}
+ *     </Table.Body>
+ *     <Table.Foot>
+ *       <Table.Row>
+ *         <Table.Cell colSpan={3}>Total</Table.Cell>
+ *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+ *       </Table.Row>
+ *     </Table.Foot>
+ *   </Table.Element>
+ * </Table.Root>
+ * ```
+ *
+ * @see https://mantle.ngrok.com/components/data-display/table#tablehead
+ */
+const Head = ({ children, className, ref, ...props }: ComponentProps<"thead">) => (
+	<thead
+		data-slot="table-head"
+		ref={ref}
+		className={cx(
+			//,
+			// In border-separate, <tr>/<thead> borders don't render, so apply
+			// dividers directly to cells.
+			"[&>tr:last-child>*]:border-b [&>tr:last-child>*]:border-card-muted",
+			"[&>tr+tr>*]:border-t [&>tr+tr>*]:border-card-muted",
+			"text-muted bg-base",
+			"[&>tr]:bg-base", // Row styling
+			className,
+		)}
+		{...props}
+	>
+		{children}
+	</thead>
+);
+
+/**
+ * The `<Table.Body>` encapsulates a set of `<Table.Row>`s, indicating that they
+ * comprise the body of a table's (main) data.
+ *
+ * Must be used as a child of a `<Table.Element>` and only come after any
+ * `<Table.Caption>`, `<colgroup>`, or `<Table.Head>`.
+ *
+ * Permitted Content:
+ * 1. 0 or more: `<Table.Row>`
+ *
+ * @example
+ * ```tsx
+ * <Table.Root>
+ *   <Table.Element>
+ *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+ *     <Table.Head>
+ *       <Table.Row>
+ *         <Table.Header className="w-25">Invoice</Table.Header>
+ *         <Table.Header>Status</Table.Header>
+ *         <Table.Header>Method</Table.Header>
+ *         <Table.Header className="text-right">Amount</Table.Header>
+ *       </Table.Row>
+ *     </Table.Head>
+ *     <Table.Body>
+ *       {invoices.map((invoice) => (
+ *         <Table.Row key={invoice.invoice}>
+ *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+ *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+ *         </Table.Row>
+ *       ))}
+ *     </Table.Body>
+ *     <Table.Foot>
+ *       <Table.Row>
+ *         <Table.Cell colSpan={3}>Total</Table.Cell>
+ *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+ *       </Table.Row>
+ *     </Table.Foot>
+ *   </Table.Element>
+ * </Table.Root>
+ * ```
+ *
+ * @see https://mantle.ngrok.com/components/data-display/table#tablebody
+ */
+const Body = ({ children, className, ref, ...props }: ComponentProps<"tbody">) => (
+	<tbody
+		data-slot="table-body"
+		className={cx(
+			//,
+			// In border-separate, <tr>/<tbody> borders don't render, so apply
+			// dividers directly to cells.
+			"[&>tr+tr>*]:border-t [&>tr+tr>*]:border-card-muted",
+			"text-body",
+			// Body row styling. The focus variant mirrors hover for a keyboard user:
+			// a row lights up when a link or button inside it has visible focus, as
+			// it does under the pointer.
+			"[&>tr]:bg-card [&>tr]:not-only:hover:bg-card-hover [&>tr]:not-only:has-focus-visible:bg-card-hover",
+			className,
+		)}
+		ref={ref}
+		{...props}
+	>
+		{children}
+	</tbody>
+);
+
+/**
+ * The `<Table.Foot>` encapsulates a set of `<Table.Row>`s, indicating that they
+ * comprise the foot of a table with information about the table's columns. This
+ * is usually a summary of the columns, e.g., a sum of the given numbers in a
+ * column.
+ *
+ * Must be used as a child of a `<Table.Element>` and only come after any
+ * `<Table.Caption>`, `<colgroup>`, `<Table.Head>`, and `<Table.Body>`.
+ *
+ * Permitted Content:
+ * 1. 0 or more: `<Table.Row>` elements
+ *
+ * @example
+ * ```tsx
+ * <Table.Root>
+ *   <Table.Element>
+ *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+ *     <Table.Head>
+ *       <Table.Row>
+ *         <Table.Header className="w-25">Invoice</Table.Header>
+ *         <Table.Header>Status</Table.Header>
+ *         <Table.Header>Method</Table.Header>
+ *         <Table.Header className="text-right">Amount</Table.Header>
+ *       </Table.Row>
+ *     </Table.Head>
+ *     <Table.Body>
+ *       {invoices.map((invoice) => (
+ *         <Table.Row key={invoice.invoice}>
+ *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+ *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+ *         </Table.Row>
+ *       ))}
+ *     </Table.Body>
+ *     <Table.Foot>
+ *       <Table.Row>
+ *         <Table.Cell colSpan={3}>Total</Table.Cell>
+ *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+ *       </Table.Row>
+ *     </Table.Foot>
+ *   </Table.Element>
+ * </Table.Root>
+ * ```
+ *
+ * @see https://mantle.ngrok.com/components/data-display/table#tablefoot
+ */
+const Foot = ({ children, className, ref, ...props }: ComponentProps<"tfoot">) => (
+	<tfoot
+		data-slot="table-foot"
+		ref={ref}
+		className={cx(
+			//,
+			"font-medium text-body",
+			// In border-separate, <tr>/<tfoot> borders don't render, so apply
+			// dividers directly to cells.
+			"[&>tr:first-child>*]:border-t [&>tr:first-child>*]:border-card-muted",
+			"[&>tr+tr>*]:border-t [&>tr+tr>*]:border-card-muted",
+			"[&>tr]:bg-gray-50/50 [&>tr]:hover:bg-card-hover", // Row styling
+			className,
+		)}
+		{...props}
+	>
+		{children}
+	</tfoot>
+);
+
+/**
+ * The `<Table.Row>` defines a row of cells in a table. The row's cells can then
+ * be established using a mix of `<Table.Cell>` and `<Table.Header>` components.
+ *
+ * Must be used as a child of a `<Table.Head>`, `<Table.Body>`, or `<Table.Foot>`.
+ *
+ * Permitted Content:
+ * 1. 0 or more: `<Table.Header>` or `<Table.Cell>`
+ *
+ * @example
+ * ```tsx
+ * <Table.Root>
+ *   <Table.Element>
+ *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+ *     <Table.Head>
+ *       <Table.Row>
+ *         <Table.Header className="w-25">Invoice</Table.Header>
+ *         <Table.Header>Status</Table.Header>
+ *         <Table.Header>Method</Table.Header>
+ *         <Table.Header className="text-right">Amount</Table.Header>
+ *       </Table.Row>
+ *     </Table.Head>
+ *     <Table.Body>
+ *       {invoices.map((invoice) => (
+ *         <Table.Row key={invoice.invoice}>
+ *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+ *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+ *         </Table.Row>
+ *       ))}
+ *     </Table.Body>
+ *     <Table.Foot>
+ *       <Table.Row>
+ *         <Table.Cell colSpan={3}>Total</Table.Cell>
+ *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+ *       </Table.Row>
+ *     </Table.Foot>
+ *   </Table.Element>
+ * </Table.Root>
+ * ```
+ *
+ * @see https://mantle.ngrok.com/components/data-display/table#tablerow
+ */
+const Row = ({ children, ref, ...props }: ComponentProps<"tr">) => (
+	<tr data-slot="table-row" ref={ref} {...props}>
+		{children}
+	</tr>
+);
+
+/**
+ * The `<Table.Header>` defines a cell as the header of a group of table cells
+ * and may be used as a child of a `<Table.Row>`. The `scope` and `headers`
+ * attributes define the exact nature of this group. `scope` defaults to
+ * `"col"`; pass `scope="row"` for a header cell inside a body row.
+ *
+ * Must be used as a child of a `<Table.Row>`.
+ *
+ * Permitted Content:
+ * 1. Flow content, but with no header, footer, sectioning content, or heading
+ * content descendants.
+ *
+ * @example
+ * ```tsx
+ * <Table.Root>
+ *   <Table.Element>
+ *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+ *     <Table.Head>
+ *       <Table.Row>
+ *         <Table.Header className="w-25">Invoice</Table.Header>
+ *         <Table.Header>Status</Table.Header>
+ *         <Table.Header>Method</Table.Header>
+ *         <Table.Header className="text-right">Amount</Table.Header>
+ *       </Table.Row>
+ *     </Table.Head>
+ *     <Table.Body>
+ *       {invoices.map((invoice) => (
+ *         <Table.Row key={invoice.invoice}>
+ *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+ *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+ *         </Table.Row>
+ *       ))}
+ *     </Table.Body>
+ *     <Table.Foot>
+ *       <Table.Row>
+ *         <Table.Cell colSpan={3}>Total</Table.Cell>
+ *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+ *       </Table.Row>
+ *     </Table.Foot>
+ *   </Table.Element>
+ * </Table.Root>
+ * ```
+ *
+ * @see https://mantle.ngrok.com/components/data-display/table#tableheader
+ */
+const Header = ({ children, className, ref, scope = "col", ...props }: ComponentProps<"th">) => (
+	<th
+		data-slot="table-header"
+		ref={ref}
+		scope={scope}
+		// `px-3` must equal the horizontal padding on `Table.Cell`, or the column label
+		// sits outboard of the body text.
+		className={cx(
+			"h-11 px-3 text-left align-middle text-sm font-medium [&:has([role=checkbox])]:pr-0",
+			className,
+		)}
+		{...props}
+	>
+		{children}
+	</th>
+);
+
+/**
+ * The `<Table.Cell>` defines a cell of a table that contains data and may be
+ * used as a child of a `<Table.Row>`.
+ *
+ * Must be used as a child of a `<Table.Row>`.
+ *
+ * Permitted Content:
+ * 1. Flow content
+ *
+ * @example
+ * ```tsx
+ * <Table.Root>
+ *   <Table.Element>
+ *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+ *     <Table.Head>
+ *       <Table.Row>
+ *         <Table.Header className="w-25">Invoice</Table.Header>
+ *         <Table.Header>Status</Table.Header>
+ *         <Table.Header>Method</Table.Header>
+ *         <Table.Header className="text-right">Amount</Table.Header>
+ *       </Table.Row>
+ *     </Table.Head>
+ *     <Table.Body>
+ *       {invoices.map((invoice) => (
+ *         <Table.Row key={invoice.invoice}>
+ *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+ *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+ *         </Table.Row>
+ *       ))}
+ *     </Table.Body>
+ *     <Table.Foot>
+ *       <Table.Row>
+ *         <Table.Cell colSpan={3}>Total</Table.Cell>
+ *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+ *       </Table.Row>
+ *     </Table.Foot>
+ *   </Table.Element>
+ * </Table.Root>
+ * ```
+ *
+ * @see https://mantle.ngrok.com/components/data-display/table#tablecell
+ */
+const Cell = ({ children, className, ref, ...props }: ComponentProps<"td">) => (
+	<td
+		data-slot="table-cell"
+		ref={ref}
+		className={cx("p-3 align-middle [&:has([role=checkbox])]:pr-0 font-mono text-mono", className)}
+		{...props}
+	>
+		{children}
+	</td>
+);
+
+/**
+ * The optional `<Table.Caption>` specifies the caption (or title) of a table,
+ * which gives the table its accessible name.
+ *
+ * If used, must be the first child of a `<Table.Element>`.
+ *
+ * Permitted Content:
+ * 1. Flow content
+ *
+ * @example
+ * ```tsx
+ * <Table.Root>
+ *   <Table.Element>
+ *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+ *     <Table.Head>
+ *       <Table.Row>
+ *         <Table.Header className="w-25">Invoice</Table.Header>
+ *         <Table.Header>Status</Table.Header>
+ *         <Table.Header>Method</Table.Header>
+ *         <Table.Header className="text-right">Amount</Table.Header>
+ *       </Table.Row>
+ *     </Table.Head>
+ *     <Table.Body>
+ *       {invoices.map((invoice) => (
+ *         <Table.Row key={invoice.invoice}>
+ *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+ *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+ *         </Table.Row>
+ *       ))}
+ *     </Table.Body>
+ *     <Table.Foot>
+ *       <Table.Row>
+ *         <Table.Cell colSpan={3}>Total</Table.Cell>
+ *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+ *       </Table.Row>
+ *     </Table.Foot>
+ *   </Table.Element>
+ * </Table.Root>
+ * ```
+ *
+ * @see https://mantle.ngrok.com/components/data-display/table#tablecaption
+ */
+const Caption = ({ children, className, ref, ...props }: ComponentProps<"caption">) => (
+	<caption
+		data-slot="table-caption"
+		ref={ref}
+		className={cx("py-4 text-sm text-gray-500", "border-t border-card-muted", className)}
+		{...props}
+	>
+		{children}
+	</caption>
+);
+
+/**
+ * Use `Table` for STATIC, layout-driven tabular data — read-only data dumps,
+ * simple key/value displays, plain markup tables. The API matches the HTML
+ * `<table>` element 1:1, with no built-in sorting, filtering, or pagination.
+ *
+ * For INTERACTIVE tabular data with sorting / filtering / pagination / row
+ * selection, use `DataTable` (built on TanStack Table) instead.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/table
+ *
+ * @example
+ * Composition:
+ * ```
+ * Table.Root
+ * └── Table.Element
+ *     ├── Table.Caption
+ *     ├── Table.Head
+ *     │   └── Table.Row
+ *     │       └── Table.Header
+ *     ├── Table.Body
+ *     │   └── Table.Row
+ *     │       └── Table.Cell
+ *     └── Table.Foot
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <Table.Root>
+ *   <Table.Element>
+ *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+ *     <Table.Head>
+ *       <Table.Row>
+ *         <Table.Header className="w-25">Invoice</Table.Header>
+ *         <Table.Header>Status</Table.Header>
+ *         <Table.Header>Method</Table.Header>
+ *         <Table.Header className="text-right">Amount</Table.Header>
+ *       </Table.Row>
+ *     </Table.Head>
+ *     <Table.Body>
+ *       {invoices.map((invoice) => (
+ *         <Table.Row key={invoice.invoice}>
+ *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+ *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+ *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+ *         </Table.Row>
+ *       ))}
+ *     </Table.Body>
+ *     <Table.Foot>
+ *       <Table.Row>
+ *         <Table.Cell colSpan={3}>Total</Table.Cell>
+ *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+ *       </Table.Row>
+ *     </Table.Foot>
+ *   </Table.Element>
+ * </Table.Root>
+ * ```
+ */
+const Table = {
+	/**
+	 * The `<Table.Body>` encapsulates a set of `<Table.Row>`s, indicating that they
+	 * comprise the body of a table's (main) data.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/table#tablebody
+	 *
+	 * @example
+	 * ```tsx
+	 * <Table.Root>
+	 *   <Table.Element>
+	 *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+	 *     <Table.Head>
+	 *       <Table.Row>
+	 *         <Table.Header className="w-25">Invoice</Table.Header>
+	 *         <Table.Header>Status</Table.Header>
+	 *         <Table.Header>Method</Table.Header>
+	 *         <Table.Header className="text-right">Amount</Table.Header>
+	 *       </Table.Row>
+	 *     </Table.Head>
+	 *     <Table.Body>
+	 *       {invoices.map((invoice) => (
+	 *         <Table.Row key={invoice.invoice}>
+	 *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+	 *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+	 *         </Table.Row>
+	 *       ))}
+	 *     </Table.Body>
+	 *     <Table.Foot>
+	 *       <Table.Row>
+	 *         <Table.Cell colSpan={3}>Total</Table.Cell>
+	 *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+	 *       </Table.Row>
+	 *     </Table.Foot>
+	 *   </Table.Element>
+	 * </Table.Root>
+	 * ```
+	 */
+	Body,
+	/**
+	 * The optional `<Table.Caption>` specifies the caption (or title) of a table,
+	 * which gives the table its accessible name.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/table#tablecaption
+	 *
+	 * @example
+	 * ```tsx
+	 * <Table.Root>
+	 *   <Table.Element>
+	 *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+	 *     <Table.Head>
+	 *       <Table.Row>
+	 *         <Table.Header className="w-25">Invoice</Table.Header>
+	 *         <Table.Header>Status</Table.Header>
+	 *         <Table.Header>Method</Table.Header>
+	 *         <Table.Header className="text-right">Amount</Table.Header>
+	 *       </Table.Row>
+	 *     </Table.Head>
+	 *     <Table.Body>
+	 *       {invoices.map((invoice) => (
+	 *         <Table.Row key={invoice.invoice}>
+	 *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+	 *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+	 *         </Table.Row>
+	 *       ))}
+	 *     </Table.Body>
+	 *     <Table.Foot>
+	 *       <Table.Row>
+	 *         <Table.Cell colSpan={3}>Total</Table.Cell>
+	 *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+	 *       </Table.Row>
+	 *     </Table.Foot>
+	 *   </Table.Element>
+	 * </Table.Root>
+	 * ```
+	 */
+	Caption,
+	/**
+	 * The `<Table.Cell>` defines a cell of a table that contains data and may be
+	 * used as a child of a `<Table.Row>`.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/table#tablecell
+	 *
+	 * @example
+	 * ```tsx
+	 * <Table.Root>
+	 *   <Table.Element>
+	 *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+	 *     <Table.Head>
+	 *       <Table.Row>
+	 *         <Table.Header className="w-25">Invoice</Table.Header>
+	 *         <Table.Header>Status</Table.Header>
+	 *         <Table.Header>Method</Table.Header>
+	 *         <Table.Header className="text-right">Amount</Table.Header>
+	 *       </Table.Row>
+	 *     </Table.Head>
+	 *     <Table.Body>
+	 *       {invoices.map((invoice) => (
+	 *         <Table.Row key={invoice.invoice}>
+	 *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+	 *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+	 *         </Table.Row>
+	 *       ))}
+	 *     </Table.Body>
+	 *     <Table.Foot>
+	 *       <Table.Row>
+	 *         <Table.Cell colSpan={3}>Total</Table.Cell>
+	 *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+	 *       </Table.Row>
+	 *     </Table.Foot>
+	 *   </Table.Element>
+	 * </Table.Root>
+	 * ```
+	 */
+	Cell,
+	/**
+	 * The `<Table.Element>` is a structured way to display data in rows and columns. The API
+	 * matches the HTML `<table>` element 1:1.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/table#tableelement
+	 *
+	 * @example
+	 * ```tsx
+	 * <Table.Root>
+	 *   <Table.Element>
+	 *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+	 *     <Table.Head>
+	 *       <Table.Row>
+	 *         <Table.Header className="w-25">Invoice</Table.Header>
+	 *         <Table.Header>Status</Table.Header>
+	 *         <Table.Header>Method</Table.Header>
+	 *         <Table.Header className="text-right">Amount</Table.Header>
+	 *       </Table.Row>
+	 *     </Table.Head>
+	 *     <Table.Body>
+	 *       {invoices.map((invoice) => (
+	 *         <Table.Row key={invoice.invoice}>
+	 *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+	 *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+	 *         </Table.Row>
+	 *       ))}
+	 *     </Table.Body>
+	 *     <Table.Foot>
+	 *       <Table.Row>
+	 *         <Table.Cell colSpan={3}>Total</Table.Cell>
+	 *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+	 *       </Table.Row>
+	 *     </Table.Foot>
+	 *   </Table.Element>
+	 * </Table.Root>
+	 * ```
+	 */
+	Element,
+	/**
+	 * The `<Table.Foot>` encapsulates a set of `<Table.Row>`s, indicating that they
+	 * comprise the foot of a table with information about the table's columns.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/table#tablefoot
+	 *
+	 * @example
+	 * ```tsx
+	 * <Table.Root>
+	 *   <Table.Element>
+	 *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+	 *     <Table.Head>
+	 *       <Table.Row>
+	 *         <Table.Header className="w-25">Invoice</Table.Header>
+	 *         <Table.Header>Status</Table.Header>
+	 *         <Table.Header>Method</Table.Header>
+	 *         <Table.Header className="text-right">Amount</Table.Header>
+	 *       </Table.Row>
+	 *     </Table.Head>
+	 *     <Table.Body>
+	 *       {invoices.map((invoice) => (
+	 *         <Table.Row key={invoice.invoice}>
+	 *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+	 *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+	 *         </Table.Row>
+	 *       ))}
+	 *     </Table.Body>
+	 *     <Table.Foot>
+	 *       <Table.Row>
+	 *         <Table.Cell colSpan={3}>Total</Table.Cell>
+	 *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+	 *       </Table.Row>
+	 *     </Table.Foot>
+	 *   </Table.Element>
+	 * </Table.Root>
+	 * ```
+	 */
+	Foot,
+	/**
+	 * The `<Table.Head>` is a container for the table's column headers.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/table#tablehead
+	 *
+	 * @example
+	 * ```tsx
+	 * <Table.Root>
+	 *   <Table.Element>
+	 *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+	 *     <Table.Head>
+	 *       <Table.Row>
+	 *         <Table.Header className="w-25">Invoice</Table.Header>
+	 *         <Table.Header>Status</Table.Header>
+	 *         <Table.Header>Method</Table.Header>
+	 *         <Table.Header className="text-right">Amount</Table.Header>
+	 *       </Table.Row>
+	 *     </Table.Head>
+	 *     <Table.Body>
+	 *       {invoices.map((invoice) => (
+	 *         <Table.Row key={invoice.invoice}>
+	 *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+	 *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+	 *         </Table.Row>
+	 *       ))}
+	 *     </Table.Body>
+	 *     <Table.Foot>
+	 *       <Table.Row>
+	 *         <Table.Cell colSpan={3}>Total</Table.Cell>
+	 *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+	 *       </Table.Row>
+	 *     </Table.Foot>
+	 *   </Table.Element>
+	 * </Table.Root>
+	 * ```
+	 */
+	Head,
+	/**
+	 * The `<Table.Header>` defines a cell as the header of a group of table cells
+	 * and may be used as a child of a `<Table.Row>`. `scope` defaults to `"col"`.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/table#tableheader
+	 *
+	 * @example
+	 * ```tsx
+	 * <Table.Root>
+	 *   <Table.Element>
+	 *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+	 *     <Table.Head>
+	 *       <Table.Row>
+	 *         <Table.Header className="w-25">Invoice</Table.Header>
+	 *         <Table.Header>Status</Table.Header>
+	 *         <Table.Header>Method</Table.Header>
+	 *         <Table.Header className="text-right">Amount</Table.Header>
+	 *       </Table.Row>
+	 *     </Table.Head>
+	 *     <Table.Body>
+	 *       {invoices.map((invoice) => (
+	 *         <Table.Row key={invoice.invoice}>
+	 *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+	 *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+	 *         </Table.Row>
+	 *       ))}
+	 *     </Table.Body>
+	 *     <Table.Foot>
+	 *       <Table.Row>
+	 *         <Table.Cell colSpan={3}>Total</Table.Cell>
+	 *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+	 *       </Table.Row>
+	 *     </Table.Foot>
+	 *   </Table.Element>
+	 * </Table.Root>
+	 * ```
+	 */
+	Header,
+	/**
+	 * The `<Table.Root>` is the root container element for all `Table`s.
+	 * It draws the border and rounded corners, and scrolls wide content
+	 * horizontally with a fading scroll edge.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/table#tableroot
+	 *
+	 * @example
+	 * ```tsx
+	 * <Table.Root>
+	 *   <Table.Element>
+	 *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+	 *     <Table.Head>
+	 *       <Table.Row>
+	 *         <Table.Header className="w-25">Invoice</Table.Header>
+	 *         <Table.Header>Status</Table.Header>
+	 *         <Table.Header>Method</Table.Header>
+	 *         <Table.Header className="text-right">Amount</Table.Header>
+	 *       </Table.Row>
+	 *     </Table.Head>
+	 *     <Table.Body>
+	 *       {invoices.map((invoice) => (
+	 *         <Table.Row key={invoice.invoice}>
+	 *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+	 *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+	 *         </Table.Row>
+	 *       ))}
+	 *     </Table.Body>
+	 *     <Table.Foot>
+	 *       <Table.Row>
+	 *         <Table.Cell colSpan={3}>Total</Table.Cell>
+	 *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+	 *       </Table.Row>
+	 *     </Table.Foot>
+	 *   </Table.Element>
+	 * </Table.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * The `<Table.Row>` defines a row of cells in a table. The row's cells can then
+	 * be established using a mix of `<Table.Cell>` and `<Table.Header>` components.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/table#tablerow
+	 *
+	 * @example
+	 * ```tsx
+	 * <Table.Root>
+	 *   <Table.Element>
+	 *     <Table.Caption>A list of your recent invoices.</Table.Caption>
+	 *     <Table.Head>
+	 *       <Table.Row>
+	 *         <Table.Header className="w-25">Invoice</Table.Header>
+	 *         <Table.Header>Status</Table.Header>
+	 *         <Table.Header>Method</Table.Header>
+	 *         <Table.Header className="text-right">Amount</Table.Header>
+	 *       </Table.Row>
+	 *     </Table.Head>
+	 *     <Table.Body>
+	 *       {invoices.map((invoice) => (
+	 *         <Table.Row key={invoice.invoice}>
+	 *           <Table.Cell className="font-medium">{invoice.invoice}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentStatus}</Table.Cell>
+	 *           <Table.Cell>{invoice.paymentMethod}</Table.Cell>
+	 *           <Table.Cell className="text-right">{invoice.totalAmount}</Table.Cell>
+	 *         </Table.Row>
+	 *       ))}
+	 *     </Table.Body>
+	 *     <Table.Foot>
+	 *       <Table.Row>
+	 *         <Table.Cell colSpan={3}>Total</Table.Cell>
+	 *         <Table.Cell className="text-right">$2,500.00</Table.Cell>
+	 *       </Table.Row>
+	 *     </Table.Foot>
+	 *   </Table.Element>
+	 * </Table.Root>
+	 * ```
+	 */
+	Row,
+} as const;
+
+export {
+	//,
+	Table,
+};
+
+/**
+ * A custom hook that observes the horizontal overflow of an element and determines
+ * if it has overflow and if it is scrolled to the end.
+ *
+ * @private
+ */
+function useHorizontalOverflowObserver<T extends HTMLElement>() {
+	const ref = useRef<T | null>(null);
+	const [state, setState] = useState({
+		hasOverflow: false,
+		scrolledToStart: true,
+		scrolledToEnd: false,
+	});
+
+	useLayoutEffect(() => {
+		const element = ref.current;
+		if (!element) {
+			return;
+		}
+
+		let frameId = 0;
+
+		const checkState = () => {
+			const hasOverflow = element.scrollWidth > element.clientWidth;
+			const scrolledToStart = element.scrollLeft < 1;
+			const scrolledToEnd =
+				Math.abs(element.scrollWidth - element.scrollLeft - element.clientWidth) < 1;
+
+			setState((previous) => {
+				if (
+					previous.hasOverflow !== hasOverflow ||
+					previous.scrolledToStart !== scrolledToStart ||
+					previous.scrolledToEnd !== scrolledToEnd
+				) {
+					return { hasOverflow, scrolledToStart, scrolledToEnd };
+				}
+				return previous; // No state change
+			});
+		};
+
+		// Coalesce rapid-fire events (scroll, mutation) into a single
+		// layout read per animation frame to avoid redundant work.
+		const scheduleCheck = () => {
+			if (frameId === 0) {
+				frameId = requestAnimationFrame(() => {
+					frameId = 0;
+					checkState();
+				});
+			}
+		};
+
+		// Why the observer does the first read: inside this effect, a `scrollWidth`
+		// read forces a layout of the whole table during React's commit. `observe()`
+		// delivers one notification after the browser's own layout, so the same read
+		// there costs nothing. Observer callbacks run before paint, so `flushSync`
+		// lands the new attributes in the first painted frame.
+		const resizeObserver = new ResizeObserver(() => {
+			flushSync(checkState);
+		});
+		resizeObserver.observe(element);
+
+		const mutationObserver = new MutationObserver(scheduleCheck);
+		mutationObserver.observe(element, { childList: true, subtree: true });
+
+		element.addEventListener("scroll", scheduleCheck, { passive: true });
+
+		return () => {
+			cancelAnimationFrame(frameId);
+			resizeObserver.disconnect();
+			mutationObserver.disconnect();
+			element.removeEventListener("scroll", scheduleCheck);
+		};
+	}, []);
+
+	return useMemo(() => ({ ref, state }), [state]);
+}

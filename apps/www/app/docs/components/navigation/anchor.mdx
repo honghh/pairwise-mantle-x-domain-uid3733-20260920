@@ -1,0 +1,121 @@
+---
+title: Anchor
+description: Fundamental component for rendering links to external addresses.
+---
+
+import { Anchor } from "@ngrok/mantle/anchor";
+import { BookIcon } from "@phosphor-icons/react/Book";
+import { ShrimpIcon } from "@phosphor-icons/react/Shrimp";
+import { Link, href } from "react-router";
+import { Example } from "~/components/example";
+
+# Anchor
+
+A styled hyperlink — a native `<a>` with mantle's link styling, focus treatment, optional leading/trailing icon, and a safer default for the `rel` attribute. Use for links that point _outside_ the current application.
+
+The `<Anchor>` element, with its `href` attribute, creates a hyperlink to web pages, files, email addresses, locations in the same page, or anything else a URL can address. See the [MDN docs](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/a) for more information.
+
+## When to use
+
+- External URLs (docs, marketing pages, third-party sites).
+- Links to files or `mailto:` / `tel:` destinations.
+
+## When not to use
+
+- Internal application routes — prefer the framework router's link primitive ([`react-router` `<Link>`](https://reactrouter.com/en/main/components/link)) so client-side navigation kicks in. Keep mantle's styling by composing (see [Polymorphism](#polymorphism)).
+- For triggering an action — use a [`Button`](/components/actions/button) instead. If it doesn't navigate, it's not a link.
+
+## Icons
+
+Pass `icon` (a phosphor or custom SVG) and optionally `iconPlacement` (`"start"` default, or `"end"`) to render a small inline icon — useful for "external link" or "download" affordances. Icons are decorative; the link text must still describe the destination on its own.
+
+## Security
+
+When `target="_blank"` and `rel` is omitted, the anchor renders `rel="noopener noreferrer"`. A `rel` you pass is used as-is. The `rel` prop accepts an array: duplicates are de-duped and sorted, so it's safe to merge token sets.
+
+## Accessibility
+
+Link text must be self-describing: avoid "click here" / "read more". The icon is decorative by default: it renders `aria-hidden` unless the SVG carries `aria-label`, `aria-labelledby`, `role`, or an explicit `aria-hidden`. For icon-only links, pass an `aria-label`.
+
+<Example className="flex-col">
+	<p>
+		This link will go to <Anchor href="https://ngrok.com/">ngrok.com</Anchor>!
+	</p>
+	<p>
+		You can add icons! This one renders at the start:{" "}
+		<Anchor href="https://ngrok.com/docs" icon={<BookIcon />}>
+			ngrok docs
+		</Anchor>
+		!
+	</p>
+	<p>
+		And this icon renders at the end:{" "}
+		<Anchor href="https://dashboard.ngrok.com" icon={<ShrimpIcon />} iconPlacement="end">
+			ngrok dashboard
+		</Anchor>
+		!
+	</p>
+</Example>
+
+```tsx
+import { Anchor } from "@ngrok/mantle/anchor";
+import { BookIcon } from "@phosphor-icons/react/Book";
+import { ShrimpIcon } from "@phosphor-icons/react/Shrimp";
+
+<p>
+	This link will go to <Anchor href="https://ngrok.com/">ngrok.com</Anchor>!
+</p>
+<p>
+	You can add icons! This one renders at the start:{" "}
+	<Anchor href="https://ngrok.com/docs" icon={<BookIcon />}>
+		ngrok docs
+	</Anchor>
+	!
+</p>
+<p>
+	And this icon renders at the end:{" "}
+	<Anchor href="https://dashboard.ngrok.com" icon={<ShrimpIcon />} iconPlacement="end">
+		ngrok dashboard
+	</Anchor>
+	!
+</p>
+```
+
+## Polymorphism
+
+Use the `asChild` prop to compose the `Anchor` styling onto another element, most commonly a `react-router` `<Link>` for internal, client-side navigation.
+
+<Example className="flex-col">
+	<Anchor asChild>
+		<Link to={href("/base/colors")}>See our colors!</Link>
+	</Anchor>
+</Example>
+
+```tsx
+import { Anchor } from "@ngrok/mantle/anchor";
+import { Link, href } from "react-router";
+
+<Anchor asChild>
+	<Link to={href("/base/colors")}>See our colors!</Link>
+</Anchor>;
+```
+
+## API Reference
+
+### Anchor
+
+All props from [a](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/a#attributes), plus:
+
+| Prop             | Type                                          | Default                                                   | Description                                                                                                                                             |
+| ---------------- | --------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `icon?`          | `ReactNode`                                   |                                                           | An icon to render inside the anchor. Decorative by default: rendered `aria-hidden` unless the SVG carries a name, a role, or an explicit `aria-hidden`. |
+| `iconPlacement?` | `"start"` \| `"end"`                          | `"start"`                                                 | The side that the icon will render on, if one is present.                                                                                               |
+| `rel?`           | `string` \| `(string \| null \| undefined)[]` | `"noopener noreferrer"` when `target="_blank"`, else none | The relationship between the linked resource and the current document. An array is trimmed, de-duplicated, sorted, and joined with a space.             |
+| `asChild?`       | `boolean`                                     | `false`                                                   | Use the `asChild` prop to compose the `Anchor` styling onto alternative element types or your own React components.                                     |
+
+#### Data attributes
+
+| Data Attribute | Value            | Description                                                                                            |
+| -------------- | ---------------- | ------------------------------------------------------------------------------------------------------ |
+| `data-slot`    | `"anchor"`       | On the anchor element. Stable styling hook that survives a `className` override or an `asChild` swap.  |
+| `data-slot`    | `"anchor-label"` | On the inline `<span>` wrapping `children`, between the two `icon` slots. Target it to style the text. |

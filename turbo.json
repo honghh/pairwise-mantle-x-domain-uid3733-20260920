@@ -1,0 +1,50 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "cacheMaxAge": "7d",
+  "globalEnv": ["VERCEL_GIT_COMMIT_SHA", "VERCEL_DEPLOYMENT_ID", "VERCEL"],
+  "globalPassThroughEnv": ["CI", "DISABLE_HEADLESS", "PLAYWRIGHT_WS_ENDPOINT"],
+  "tasks": {
+    "build": {
+      "cache": true,
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "!**/*.test.*"],
+      "dependsOn": ["^build"],
+      "outputs": ["**/build/**", "**/.vercel/**", "**/dist/**", "!**/node_modules/**"]
+    },
+    "clean": {
+      "cache": false
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "serve": {
+      "dependsOn": ["^build"],
+      "outputs": ["public/build/**"]
+    },
+    "start": {
+      "cache": false,
+      "persistent": true
+    },
+    "//#install:playwright": {
+      "cache": false
+    },
+    "//#test:scripts": {
+      "inputs": ["scripts/**"]
+    },
+    "test": {
+      "dependsOn": ["^build", "//#install:playwright", "//#test:scripts"]
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": ["**/.react-router/**"]
+    }
+  },
+  "remoteCache": {
+    "enabled": true,
+    "apiUrl": "https://turborepo.corp.ngrok.com"
+  }
+}

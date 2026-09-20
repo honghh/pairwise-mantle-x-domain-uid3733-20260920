@@ -1,0 +1,678 @@
+"use client";
+
+import {
+	Content as TabsPrimitiveContent,
+	List as TabsPrimitiveList,
+	Root as TabsPrimitiveRoot,
+	Trigger as TabsPrimitiveTrigger,
+} from "@radix-ui/react-tabs";
+import { cva } from "class-variance-authority";
+import type { ComponentProps, ComponentRef, HTMLAttributes } from "react";
+import {
+	Children,
+	cloneElement,
+	createContext,
+	isValidElement,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+} from "react";
+import invariant from "tiny-invariant";
+import { parseBooleanish } from "../../types/booleanish.js";
+import { useComposedRefs } from "../../utils/compose-refs/compose-refs.js";
+import { clsx } from "../../utils/cx/clsx.js";
+import { cx } from "../../utils/cx/cx.js";
+import { getPrefersReducedMotion } from "../../hooks/use-prefers-reduced-motion.js";
+import type { ScrollBehavior } from "../../hooks/use-scroll-behavior.js";
+
+type Orientation = "horizontal" | "vertical";
+type Appearance = "classic" | "pill";
+
+type TabsStateContextValue = {
+	orientation: Orientation;
+	appearance: Appearance;
+};
+
+const TabsStateContext = createContext<TabsStateContextValue>({
+	orientation: "horizontal",
+	appearance: "classic",
+});
+
+/**
+ * A set of layered sections of content—known as tab panels—that are displayed one at a time.
+ * The outermost part; it owns `orientation` and `appearance`. It stamps both as
+ * `data-orientation` and `data-appearance` for the parts below to style against.
+ *
+ * @see https://mantle.ngrok.com/components/navigation/tabs#tabsroot
+ *
+ * @example
+ * ```tsx
+ * <Tabs.Root defaultValue="account">
+ *   <Tabs.List>
+ *     <Tabs.Trigger value="account">Account</Tabs.Trigger>
+ *     <Tabs.Trigger value="password">Password</Tabs.Trigger>
+ *   </Tabs.List>
+ *   <Tabs.Content value="account">
+ *     <p>Make changes to your account here.</p>
+ *   </Tabs.Content>
+ *   <Tabs.Content value="password">
+ *     <p>Change your password here.</p>
+ *   </Tabs.Content>
+ * </Tabs.Root>
+ * ```
+ */
+const Root = ({
+	className,
+	children,
+	orientation = "horizontal",
+	appearance = "classic",
+	...props
+}: ComponentProps<typeof TabsPrimitiveRoot> & {
+	/**
+	 * The appearance of the tabs. Classic appearance shows the tab
+	 * list with an underline; pill appearance shows each tab as a pill.
+	 * @default "classic"
+	 */
+	appearance?: "classic" | "pill";
+}) => {
+	const contextValue = useMemo(() => ({ orientation, appearance }), [orientation, appearance]);
+	return (
+		<TabsPrimitiveRoot
+			data-slot="tabs"
+			data-appearance={appearance}
+			className={cx(
+				"flex gap-4",
+				orientation === "horizontal" ? "flex-col" : "flex-row",
+				className,
+			)}
+			orientation={orientation}
+			{...props}
+		>
+			<TabsStateContext.Provider value={contextValue}>{children}</TabsStateContext.Provider>
+		</TabsPrimitiveRoot>
+	);
+};
+
+/**
+ * The horizontal classic tablist's bottom border, drawn by default and
+ * removed by the `hideBorder` prop on `Tabs.List`.
+ *
+ * Painted as a content-box background on the list instead of `border-bottom`
+ * or an absolutely-positioned child because:
+ * - the tablist is a scroll container with `px-1 -mx-1` breathing room for
+ *   focus rings: a real border paints across the border box, which the
+ *   negative margins push past the container's content edge, and
+ * - absolutely-positioned children of a scroll container anchor to the scroll
+ *   origin, so a positioned rule scrolls away with the triggers on overflow.
+ *
+ * The content box excludes the breathing padding, so the rule stays inside
+ * the container and sits put while triggers scroll beneath it. `pb-px`
+ * reserves the 1px row below the triggers (and below the active trigger's
+ * decoration) that the rule occupies; the `calc(100% + 1px)` y-position
+ * drops the rule out of the content box into that row, and
+ * `--_fade-bottom-border: black` pins that row opaque in the scroll-fade
+ * mask so the border runs solid to the container edges while the scrolled
+ * triggers above it fade (see scroll-fade-x in mantle.css).
+ */
+const listBottomRule = cx(
+	"pb-px bg-origin-content bg-no-repeat bg-size-[100%_1px] bg-position-[0_calc(100%+1px)]",
+	"bg-[image:linear-gradient(var(--color-separator),var(--color-separator))]",
+	"[--_fade-bottom-border:black]",
+);
+
+/**
+ * Variants for the List component
+ */
+const listVariants = cva("flex", {
+	variants: {
+		orientation: {
+			horizontal:
+				"scroll-fade-x flex-row items-center overflow-x-auto overscroll-x-none w-full min-w-0 pt-1 -mt-1 px-1 -mx-1",
+			vertical: "flex-col items-end gap-3.5 self-stretch",
+		} as const satisfies Record<Orientation, string>,
+		appearance: {
+			classic: "",
+			pill: "",
+		} as const satisfies Record<Appearance, string>,
+		hideBorder: {
+			true: "",
+			false: "",
+		},
+	},
+	compoundVariants: [
+		{
+			orientation: "horizontal",
+			appearance: "pill",
+			// pb-1 -mb-1 gives the focus ring space below (ring-4 is box-shadow, clipped by overflow).
+			className: "gap-1 pb-1 -mb-1",
+		},
+		{
+			orientation: "horizontal",
+			appearance: "classic",
+			className: "gap-6",
+		},
+		{
+			orientation: "horizontal",
+			appearance: "classic",
+			hideBorder: false,
+			// see listBottomRule for why the border is a background, not border-bottom
+			className: listBottomRule,
+		},
+		{
+			orientation: "vertical",
+			appearance: "classic",
+			hideBorder: false,
+			className: "border-r border-separator",
+		},
+	],
+	// cva compound matching is strict equality, so an omitted hideBorder would
+	// silently skip the `hideBorder: false` compounds and drop the border; the
+	// default keeps the border-on contract inside the variant machine itself.
+	defaultVariants: {
+		hideBorder: false,
+	},
+});
+
+/**
+ * Contains the triggers that are aligned along the edge of the active content.
+ *
+ * By default a horizontal classic tablist draws a 1px bottom border in the
+ * `separator` color token, and a vertical classic tablist draws the matching
+ * side border. Pass `hideBorder` to remove it; the pill appearance never
+ * draws a border.
+ *
+ * @see https://mantle.ngrok.com/components/navigation/tabs#tabslist
+ *
+ * @example
+ * ```tsx
+ * <Tabs.Root defaultValue="account">
+ *   <Tabs.List>
+ *     <Tabs.Trigger value="account">Account</Tabs.Trigger>
+ *     <Tabs.Trigger value="password">Password</Tabs.Trigger>
+ *   </Tabs.List>
+ *   <Tabs.Content value="account">
+ *     <p>Make changes to your account here.</p>
+ *   </Tabs.Content>
+ * </Tabs.Root>
+ * ```
+ *
+ * @example
+ * ```tsx
+ * // render the tablist without its border
+ * <Tabs.List hideBorder>
+ *   <Tabs.Trigger value="account">Account</Tabs.Trigger>
+ *   <Tabs.Trigger value="password">Password</Tabs.Trigger>
+ * </Tabs.List>
+ * ```
+ */
+const List = ({
+	className,
+	hideBorder = false,
+	ref,
+	...props
+}: ComponentProps<typeof TabsPrimitiveList> & {
+	/**
+	 * Hide the tablist's border — the bottom border of a horizontal classic
+	 * tablist, or the side border of a vertical one. Also rendered as a
+	 * `data-hide-border` attribute on the tablist element. Has no effect on
+	 * the pill appearance, which never draws a border.
+	 * @default false
+	 */
+	hideBorder?: boolean;
+}) => {
+	const { orientation, appearance } = useContext(TabsStateContext);
+	const scrollRef = useRef<ComponentRef<typeof TabsPrimitiveList>>(null);
+	const composedRef = useComposedRefs(scrollRef, ref);
+
+	useEffect(() => {
+		const element = scrollRef.current;
+		if (!element || orientation !== "horizontal") {
+			return;
+		}
+
+		const abortController = new AbortController();
+		const { signal } = abortController;
+
+		// Why: a pointer press focuses the trigger before `click` fires. If that
+		// focus scrolled the list, an off-center trigger would move out from under
+		// the pointer and the click, and with it a link's navigation, would never
+		// happen. So the scroll below runs for keyboard focus only.
+		let focusFromPointer = false;
+		element.addEventListener(
+			"pointerdown",
+			() => {
+				focusFromPointer = true;
+			},
+			{ signal },
+		);
+		const clearPointerFlag = () => {
+			focusFromPointer = false;
+		};
+		element.addEventListener("pointerup", clearPointerFlag, { signal });
+		element.addEventListener("pointercancel", clearPointerFlag, { signal });
+		element.addEventListener("keydown", clearPointerFlag, { signal });
+
+		// The edge fade is handled declaratively by the `scroll-fade-x` utility
+		// (a CSS scroll-driven animation), so the only thing left for JS here is
+		// keeping a keyboard-focused trigger scrolled into view.
+		//
+		// When Radix moves focus via arrow keys it calls element.focus(), which doesn't
+		// always scroll the target into view inside an overflow container. We handle it
+		// explicitly here via event delegation so every trigger gets this behavior with
+		// a single listener rather than one per trigger.
+		element.addEventListener(
+			"focusin",
+			(event) => {
+				if (focusFromPointer) {
+					return;
+				}
+				if (event.target instanceof Element && event.target !== element) {
+					const scrollBehavior: ScrollBehavior = getPrefersReducedMotion() ? "auto" : "smooth";
+					event.target.scrollIntoView({
+						behavior: scrollBehavior,
+						// "center" rather than "nearest" so the focused tab lands in the middle
+						// of the visible area, giving the user context on both sides.
+						inline: "center",
+						block: "nearest",
+					});
+				}
+			},
+			{ signal },
+		);
+
+		return () => {
+			abortController.abort();
+		};
+	}, [orientation]);
+
+	return (
+		<TabsPrimitiveList
+			aria-orientation={orientation}
+			data-slot="tabs-list"
+			data-hide-border={hideBorder ? "" : undefined}
+			className={cx(listVariants({ orientation, appearance, hideBorder }), className)}
+			ref={composedRef}
+			{...props}
+		/>
+	);
+};
+
+type TabsTriggerProps = ComponentProps<typeof TabsPrimitiveTrigger>;
+
+/**
+ * Variants for the TabsTriggerDecoration component
+ */
+const triggerDecorationVariants = cva("absolute z-0", {
+	variants: {
+		orientation: {
+			horizontal: "bottom-0 left-0 right-0 h-0.75",
+			vertical: "-right-px bottom-0 top-0 w-0.75",
+		} as const satisfies Record<Orientation, string>,
+		appearance: {
+			classic: "group-data-state-active/tab-trigger:bg-neutral-950",
+			pill: "hidden",
+		} as const satisfies Record<Appearance, string>,
+	},
+});
+
+const TabsTriggerDecoration = () => {
+	const { orientation, appearance } = useContext(TabsStateContext);
+
+	return (
+		<span aria-hidden className={clsx(triggerDecorationVariants({ orientation, appearance }))} />
+	);
+};
+
+/**
+ * Variants for the Trigger component
+ */
+const triggerVariants = cva(
+	cx(
+		"group/tab-trigger relative flex cursor-pointer items-center gap-1 whitespace-nowrap py-3 text-sm font-medium text-gray-600",
+		"ring-focus-accent outline-hidden",
+		"aria-disabled:cursor-default aria-disabled:opacity-50",
+		"focus-visible:ring-4",
+		// Why slot-scoped: the label span makes a consumer's svg a grandchild, so a
+		// bare `[&>svg]` matches nothing. A `[&_svg]` would also size the glyph
+		// inside `Tabs.Badge`.
+		"[&>[data-slot=tabs-trigger-label]>svg]:shrink-0 [&>[data-slot=tabs-trigger-label]>svg]:size-5",
+		"not-aria-disabled:hover:text-gray-900",
+	),
+	{
+		variants: {
+			orientation: {
+				horizontal: "rounded-tl-md rounded-tr-md",
+				vertical: "rounded-bl-md rounded-tl-md pr-3",
+			} as const satisfies Record<Orientation, string>,
+			appearance: {
+				classic: cx(
+					"not-aria-disabled:hover:data-state-active:text-strong",
+					"data-state-active:text-strong",
+				),
+				pill: cx(
+					"not-aria-disabled:hover:data-state-active:text-strong",
+					"not-aria-disabled:hover:data-state-active:bg-neutral-500/15",
+					"data-state-active:text-strong",
+					"data-state-active:bg-neutral-500/15",
+					"rounded-full py-2 px-3",
+				),
+			} as const satisfies Record<Appearance, string>,
+		},
+	},
+);
+
+/**
+ * The button that activates its associated content.
+ *
+ * **Structure.** `children` render inside a
+ * `<span data-slot="tabs-trigger-label">`, on the plain path and the `asChild`
+ * path alike. The active-tab decoration is a permanent element sibling, so
+ * without the span a bare text label is never a lone child: a browser
+ * translation engine reparents that text node, and the removal React runs when
+ * the label changes shape or goes away throws. The span is `display: contents`,
+ * so the icon, the label, and `Tabs.Badge` stay flex items of the trigger and
+ * keep its `gap`. A `[&>svg]` class of your own no longer reaches an icon you
+ * pass as a child, because that icon is now a grandchild. Match the part's own
+ * variant instead — `[&>[data-slot=tabs-trigger-label]>svg]:size-4`. A `[&_svg]`
+ * or a class on the icon loses to the default, which is more specific.
+ *
+ * **Data attributes:**
+ *
+ * | Data Attribute | Value                    | Description                          |
+ * | -------------- | ------------------------ | ------------------------------------ |
+ * | `data-slot`    | `"tabs-trigger"`         | On the trigger element.              |
+ * | `data-slot`    | `"tabs-trigger-label"`   | On the `<span>` wrapping `children`. |
+ *
+ * @see https://mantle.ngrok.com/components/navigation/tabs#tabstrigger
+ *
+ * @example
+ * ```tsx
+ * <Tabs.Root defaultValue="account">
+ *   <Tabs.List>
+ *     <Tabs.Trigger value="account">Account</Tabs.Trigger>
+ *     <Tabs.Trigger value="password">Password</Tabs.Trigger>
+ *   </Tabs.List>
+ *   <Tabs.Content value="account">
+ *     <p>Make changes to your account here.</p>
+ *   </Tabs.Content>
+ * </Tabs.Root>
+ * ```
+ */
+const Trigger = ({
+	"aria-disabled": _ariaDisabled,
+	asChild = false,
+	children,
+	className,
+	disabled: _disabled,
+	ref,
+	...props
+}: TabsTriggerProps) => {
+	const { orientation, appearance } = useContext(TabsStateContext);
+	const disabled = parseBooleanish(_ariaDisabled ?? _disabled);
+
+	const tabsTriggerProps = {
+		"aria-disabled": _ariaDisabled ?? _disabled,
+		className: cx(triggerVariants({ orientation, appearance }), className),
+		disabled,
+		...props,
+	};
+
+	if (asChild) {
+		const singleChild = Children.only(children);
+		invariant(
+			isValidElement<TabsTriggerProps>(singleChild),
+			"When using `asChild`, TabsTrigger must be passed a single child as a JSX tag.",
+		);
+		const grandchildren = singleChild.props?.children;
+
+		// When disabled, prevent anchor/link children from being clickable by
+		// removing their href/to props. `<a>` has no `disabled` attribute and
+		// would stay navigable. `pointer-events-none` would also block tooltip
+		// interactions, which may be surprising, so it is not the default.
+		//
+		// Why no `tabIndex` when enabled: Radix rotates `tabIndex` between the
+		// triggers so only the active tab is a Tab stop, and a cloned `tabIndex`
+		// would win over it and put every tab in the Tab order.
+		const cloneProps = disabled ? { href: undefined, to: undefined } : {};
+
+		return (
+			<TabsPrimitiveTrigger asChild data-slot="tabs-trigger" {...tabsTriggerProps} ref={ref}>
+				{cloneElement(
+					disabled ? <button type="button" /> : singleChild,
+					cloneProps,
+					<>
+						<TabsTriggerDecoration />
+						{/* Why the label span: decisions/2026-08-04-translation-safe-label-wrappers.md */}
+						<span data-slot="tabs-trigger-label" className="contents">
+							{grandchildren}
+						</span>
+					</>,
+				)}
+			</TabsPrimitiveTrigger>
+		);
+	}
+
+	return (
+		<TabsPrimitiveTrigger data-slot="tabs-trigger" ref={ref} {...tabsTriggerProps}>
+			<TabsTriggerDecoration />
+			{/* Why the label span: decisions/2026-08-04-translation-safe-label-wrappers.md */}
+			<span data-slot="tabs-trigger-label" className="contents">
+				{children}
+			</span>
+		</TabsPrimitiveTrigger>
+	);
+};
+
+/**
+ * A badge to render inside a tab trigger, typically a count or a status indicator.
+ *
+ * @see https://mantle.ngrok.com/components/navigation/tabs#tabsbadge
+ *
+ * @example
+ * ```tsx
+ * <Tabs.Root defaultValue="account">
+ *   <Tabs.List>
+ *     <Tabs.Trigger value="account">
+ *       Account <Tabs.Badge>5</Tabs.Badge>
+ *     </Tabs.Trigger>
+ *     <Tabs.Trigger value="password">Password</Tabs.Trigger>
+ *   </Tabs.List>
+ * </Tabs.Root>
+ * ```
+ */
+const Badge = ({ className, children, ...props }: HTMLAttributes<HTMLSpanElement>) => (
+	<span
+		data-slot="tabs-badge"
+		className={cx(
+			"rounded-full bg-neutral-500/20 px-1.5 text-xs font-medium text-gray-600",
+			"group-data-state-active/tab-trigger:bg-neutral-950/10 group-data-state-active/tab-trigger:text-strong group-hover/tab-trigger:group-enabled/tab-trigger:group-data-state-active/tab-trigger:text-strong",
+			"group-hover/tab-trigger:group-enabled/tab-trigger:text-gray-700",
+			className,
+		)}
+		{...props}
+	>
+		{children}
+	</span>
+);
+
+/**
+ * Contains the content associated with each trigger.
+ * It renders when that trigger is active.
+ *
+ * @see https://mantle.ngrok.com/components/navigation/tabs#tabscontent
+ *
+ * @example
+ * ```tsx
+ * <Tabs.Root defaultValue="account">
+ *   <Tabs.List>
+ *     <Tabs.Trigger value="account">Account</Tabs.Trigger>
+ *     <Tabs.Trigger value="password">Password</Tabs.Trigger>
+ *   </Tabs.List>
+ *   <Tabs.Content value="account">
+ *     <p>Make changes to your account here.</p>
+ *   </Tabs.Content>
+ *   <Tabs.Content value="password">
+ *     <p>Change your password here.</p>
+ *   </Tabs.Content>
+ * </Tabs.Root>
+ * ```
+ */
+const Content = ({ className, ...props }: ComponentProps<typeof TabsPrimitiveContent>) => (
+	<TabsPrimitiveContent
+		data-slot="tabs-content"
+		className={cx("focus-visible:ring-focus-accent outline-hidden focus-visible:ring-4", className)}
+		{...props}
+	/>
+);
+
+/**
+ * A set of layered sections of content—known as tab panels—that are displayed one at a time.
+ *
+ * @see https://mantle.ngrok.com/components/navigation/tabs
+ *
+ * @example
+ * Composition:
+ * ```
+ * Tabs.Root
+ * ├── Tabs.List
+ * │   └── Tabs.Trigger
+ * │       └── Tabs.Badge
+ * └── Tabs.Content
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <Tabs.Root defaultValue="account">
+ *   <Tabs.List>
+ *     <Tabs.Trigger value="account">Account</Tabs.Trigger>
+ *     <Tabs.Trigger value="password">Password</Tabs.Trigger>
+ *   </Tabs.List>
+ *   <Tabs.Content value="account">
+ *     <p>Make changes to your account here.</p>
+ *   </Tabs.Content>
+ *   <Tabs.Content value="password">
+ *     <p>Change your password here.</p>
+ *   </Tabs.Content>
+ * </Tabs.Root>
+ * ```
+ */
+const Tabs = {
+	/**
+	 * A set of layered sections of content—known as tab panels—that are displayed one at a time.
+	 * The outermost part; it owns `orientation` and `appearance`. It stamps both as
+	 * `data-orientation` and `data-appearance` for the parts below to style against.
+	 *
+	 * @see https://mantle.ngrok.com/components/navigation/tabs#tabsroot
+	 *
+	 * @example
+	 * ```tsx
+	 * <Tabs.Root defaultValue="account">
+	 *   <Tabs.List>
+	 *     <Tabs.Trigger value="account">Account</Tabs.Trigger>
+	 *     <Tabs.Trigger value="password">Password</Tabs.Trigger>
+	 *   </Tabs.List>
+	 *   <Tabs.Content value="account">
+	 *     <p>Make changes to your account here.</p>
+	 *   </Tabs.Content>
+	 * </Tabs.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * Contains the content associated with each trigger.
+	 * It renders when that trigger is active.
+	 *
+	 * @see https://mantle.ngrok.com/components/navigation/tabs#tabscontent
+	 *
+	 * @example
+	 * ```tsx
+	 * <Tabs.Root defaultValue="account">
+	 *   <Tabs.List>
+	 *     <Tabs.Trigger value="account">Account</Tabs.Trigger>
+	 *   </Tabs.List>
+	 *   <Tabs.Content value="account">
+	 *     <p>Make changes to your account here.</p>
+	 *   </Tabs.Content>
+	 * </Tabs.Root>
+	 * ```
+	 */
+	Content,
+	/**
+	 * Contains the triggers that are aligned along the edge of the active content.
+	 *
+	 * By default a classic tablist draws a 1px border in the `separator` color
+	 * token (bottom border when horizontal, side border when vertical); pass
+	 * `hideBorder` to remove it. The pill appearance never draws a border.
+	 *
+	 * @see https://mantle.ngrok.com/components/navigation/tabs#tabslist
+	 *
+	 * @example
+	 * ```tsx
+	 * <Tabs.Root defaultValue="account">
+	 *   <Tabs.List>
+	 *     <Tabs.Trigger value="account">Account</Tabs.Trigger>
+	 *     <Tabs.Trigger value="password">Password</Tabs.Trigger>
+	 *   </Tabs.List>
+	 * </Tabs.Root>
+	 * ```
+	 */
+	List,
+	/**
+	 * The button that activates its associated content.
+	 *
+	 * **Structure.** `children` render inside a
+	 * `<span data-slot="tabs-trigger-label">`, on the plain path and the `asChild`
+	 * path alike. The active-tab decoration is a permanent element sibling, so
+	 * without the span a bare text label is never a lone child: a browser
+	 * translation engine reparents that text node, and the removal React runs when
+	 * the label changes shape or goes away throws. The span is `display: contents`,
+	 * so the icon, the label, and `Tabs.Badge` stay flex items of the trigger and
+	 * keep its `gap`. A `[&>svg]` class of your own no longer reaches an icon you
+	 * pass as a child, because that icon is now a grandchild. Match the part's own
+	 * variant instead — `[&>[data-slot=tabs-trigger-label]>svg]:size-4`. A `[&_svg]`
+	 * or a class on the icon loses to the default, which is more specific.
+	 *
+	 * **Data attributes:**
+	 *
+	 * | Data Attribute | Value                    | Description                          |
+	 * | -------------- | ------------------------ | ------------------------------------ |
+	 * | `data-slot`    | `"tabs-trigger"`         | On the trigger element.              |
+	 * | `data-slot`    | `"tabs-trigger-label"`   | On the `<span>` wrapping `children`. |
+	 *
+	 * @see https://mantle.ngrok.com/components/navigation/tabs#tabstrigger
+	 *
+	 * @example
+	 * ```tsx
+	 * <Tabs.Root defaultValue="account">
+	 *   <Tabs.List>
+	 *     <Tabs.Trigger value="account">Account</Tabs.Trigger>
+	 *     <Tabs.Trigger value="password">Password</Tabs.Trigger>
+	 *   </Tabs.List>
+	 * </Tabs.Root>
+	 * ```
+	 */
+	Trigger,
+	/**
+	 * A badge to render inside a tab trigger, typically a count or a status indicator.
+	 *
+	 * @see https://mantle.ngrok.com/components/navigation/tabs#tabsbadge
+	 *
+	 * @example
+	 * ```tsx
+	 * <Tabs.Root defaultValue="account">
+	 *   <Tabs.List>
+	 *     <Tabs.Trigger value="account">
+	 *       Account <Tabs.Badge>5</Tabs.Badge>
+	 *     </Tabs.Trigger>
+	 *   </Tabs.List>
+	 * </Tabs.Root>
+	 * ```
+	 */
+	Badge,
+} as const;
+
+export {
+	//
+	Tabs,
+};

@@ -1,0 +1,550 @@
+"use client";
+
+import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle";
+import { InfoIcon } from "@phosphor-icons/react/Info";
+import { WarningIcon } from "@phosphor-icons/react/Warning";
+import { WarningDiamondIcon } from "@phosphor-icons/react/WarningDiamond";
+import {
+	type ComponentProps,
+	type MouseEvent,
+	type ReactNode,
+	createContext,
+	useContext,
+	useMemo,
+} from "react";
+import { Toaster as SonnerToaster, toast as sonnerToast } from "sonner";
+import type { WithAsChild } from "../../types/as-child.js";
+import type { WithStyleProps } from "../../types/with-style-props.js";
+import { cx } from "../../utils/cx/cx.js";
+import { Icon as IconComponent } from "../icon/icon.js";
+import type { SvgOnlyProps } from "../icon/svg-only.js";
+import { Slot } from "../slot/index.js";
+import { useAppliedTheme } from "../theme/theme-provider.js";
+
+type ToasterPrimitiveProps = ComponentProps<typeof SonnerToaster>;
+type ToasterPrimitiveTheme = ToasterPrimitiveProps["theme"];
+
+type ToasterProps = WithStyleProps &
+	Pick<ToasterPrimitiveProps, "containerAriaLabel" | "dir" | "position"> & {
+		/**
+		 * Time in milliseconds that should elapse before automatically dismissing toasts.
+		 * When set here, this will be the default duration for all toasts.
+		 * A value `<= 0` or `Number.POSITIVE_INFINITY` keeps toasts open until the user dismisses them.
+		 * @default 4000
+		 */
+		duration_ms?: number;
+	};
+
+/**
+ * Resolves a `duration_ms` option to the value sonner expects. A value `<= 0`
+ * keeps a toast open until the user dismisses it, so it becomes
+ * `Number.POSITIVE_INFINITY`; every other value passes through unchanged.
+ *
+ * @example
+ * ```ts
+ * resolveToastDuration(0); // Number.POSITIVE_INFINITY
+ * resolveToastDuration(5000); // 5000
+ * resolveToastDuration(undefined); // undefined
+ * ```
+ */
+function resolveToastDuration(duration_ms: number | undefined) {
+	if (typeof duration_ms === "number" && duration_ms <= 0) {
+		return Number.POSITIVE_INFINITY;
+	}
+	return duration_ms;
+}
+
+/**
+ * A container for displaying all toasts.
+ *
+ * Only one `<Toaster />` should be rendered in an app a time, preferably at the
+ * root level of the app.
+ *
+ * @see https://mantle.ngrok.com/components/feedback/toast#toaster
+ *
+ * @example
+ * ```tsx
+ * <Toaster
+ *   position="top-right"
+ *   duration_ms={5000}
+ * />
+ * ```
+ */
+const Toaster = ({
+	//,
+	className,
+	containerAriaLabel,
+	dir,
+	duration_ms = 4000,
+	position = "top-center",
+	style,
+}: ToasterProps) => {
+	const theme = useAppliedTheme();
+
+	return (
+		<SonnerToaster
+			data-slot="toaster"
+			className={cx("toaster overlay-prompt pointer-events-auto *:duration-200", className)}
+			containerAriaLabel={containerAriaLabel}
+			dir={dir}
+			duration={resolveToastDuration(duration_ms)}
+			gap={12}
+			position={position ?? "top-center"}
+			style={style}
+			theme={theme as ToasterPrimitiveTheme} // we have additional themes that are not in the sonner types, so we need to cast for now
+			toastOptions={{
+				unstyled: true,
+			}}
+		/>
+	);
+};
+
+const ToastIdContext = createContext<string | number>("");
+
+type MakeToastOptions = {
+	/**
+	 * Time in milliseconds that should elapse before automatically closing the toast.
+	 * Defaults to the `<Toaster />`'s `duration_ms` when omitted.
+	 *
+	 * You can keep the toast open until manually dismissed by passing a value <= 0 or Number.POSITIVE_INFINITY
+	 */
+	duration_ms?: number;
+	/**
+	 * An optional custom ID for this toast. When omitted, the toast gets a unique generated ID.
+	 */
+	id?: string;
+};
+
+/**
+ * Create a toast. Pass a `<Toast.Root>` component as the `children` to render
+ * inside the `<Toaster />` section.
+ *
+ * @see https://mantle.ngrok.com/components/feedback/toast#maketoast
+ *
+ * @example
+ * ```tsx
+ * // Basic toast with auto-dismiss (default 4000ms, inherits from `<Toaster>`)
+ * makeToast(
+ *   <Toast.Root intent="success">
+ *     <Toast.Icon />
+ *     <Toast.Message>Operation completed successfully!</Toast.Message>
+ *     <Toast.Action>Dismiss</Toast.Action>
+ *   </Toast.Root>
+ * );
+ *
+ * // Toast that stays open until manually dismissed
+ * makeToast(
+ *   <Toast.Root intent="warning">
+ *     <Toast.Icon />
+ *     <Toast.Message>Action required</Toast.Message>
+ *     <Toast.Action>Dismiss</Toast.Action>
+ *   </Toast.Root>,
+ *   { duration_ms: Number.POSITIVE_INFINITY }
+ * );
+ * ```
+ */
+function makeToast(children: ReactNode, options?: MakeToastOptions) {
+	const duration = resolveToastDuration(options?.duration_ms);
+
+	return sonnerToast.custom(
+		(toastId) => <ToastIdContext.Provider value={toastId}>{children}</ToastIdContext.Provider>,
+		{
+			//
+			duration,
+			// If a caller passes a custom ID, use it, else use the toastId from the sonner library
+			// don't set an ID to `undefined` as it breaks the sonner library
+			...(options?.id ? { id: options.id } : {}),
+			unstyled: true,
+		},
+	);
+}
+
+const intents = [
+	//,
+	"danger",
+	"info",
+	"success",
+	"warning",
+] as const;
+
+/**
+ * The intent of a toast: the tone or status that the toast's color communicates.
+ */
+type ToastIntent = (typeof intents)[number];
+
+type ToastState = {
+	intent: ToastIntent;
+};
+
+const ToastStateContext = createContext<ToastState>({
+	intent: "info",
+});
+
+/**
+ * Props for `Toast.Root`. `asChild` is omitted: the root renders the intent
+ * accent bar next to the label div holding `children`, so a slot would receive
+ * two elements and throw.
+ */
+type ToastProps = ComponentProps<"div"> & {
+	/**
+	 * The intent of the toast: the tone or status that the toast's color communicates.
+	 */
+	intent: ToastIntent;
+};
+
+/**
+ * A succinct message with an intent that appears temporarily. The intent
+ * is the tone or status that the toast's color communicates.
+ * Toasts give the user feedback without interrupting their workflow.
+ *
+ * **Structure.** `children` render inside a
+ * `<div data-slot="toast-label">`. The intent accent bar is a permanent element
+ * sibling, so without the wrapper a bare text child is never a lone child: a
+ * browser translation engine reparents that text node, and the removal React
+ * runs when the content changes shape or goes away throws. The wrapper is a
+ * `<div>` because `Toast.Message` renders a `<p>`, which a `<span>` may not
+ * contain. It is `display: contents`, so the icon, the message, and an action
+ * stay flex items of the root and `Toast.Message`'s `flex-1` still resolves.
+ *
+ * **Data attributes:**
+ *
+ * | Data Attribute | Value | Description |
+ * | --- | --- | --- |
+ * | `data-slot` | `"toast"` | On the toast root. |
+ * | `data-slot` | `"toast-label"` | On the `<div>` wrapping `children`, not only the message text. |
+ *
+ * @see https://mantle.ngrok.com/components/feedback/toast#toastroot
+ *
+ * @example
+ * ```tsx
+ * <Toast.Root intent="success">
+ *   <Toast.Icon />
+ *   <Toast.Message>Changes saved successfully!</Toast.Message>
+ *   <Toast.Action>Undo</Toast.Action>
+ * </Toast.Root>
+ * ```
+ */
+const Root = ({ children, className, intent, ref, ...props }: ToastProps) => {
+	const contextValue = useMemo(() => ({ intent }), [intent]);
+
+	return (
+		<ToastStateContext.Provider value={contextValue}>
+			<div
+				data-slot="toast"
+				className={cx(
+					"relative flex items-start gap-2 text-sm font-sans",
+					"p-3 pl-3.75",
+					"bg-popover high-contrast:border-popover rounded rounded-r-[0.3125rem] border border-gray-500/35 shadow-lg",
+					/**
+					 * Do not apply overflow-hidden because we want the intent bar accent
+					 * to overlap the toast border, else the border flows over the
+					 * intent bar.
+					 */
+					className,
+				)}
+				ref={ref}
+				{...props}
+			>
+				<IntentBarAccent intent={intent} />
+				{/* Why the label div: decisions/2026-08-04-translation-safe-label-wrappers.md
+				    Why a div and not a span: `Toast.Message` renders a `<p>`, which a
+				    `<span>` may not contain. */}
+				<div data-slot="toast-label" className="contents">
+					{children}
+				</div>
+			</div>
+		</ToastStateContext.Provider>
+	);
+};
+
+type ToastIconProps = Partial<SvgOnlyProps>;
+
+/**
+ * An icon that visually represents the intent of the toast.
+ * If you do not pass an icon, the toast uses the default icon and color for the intent.
+ *
+ * @see https://mantle.ngrok.com/components/feedback/toast#toasticon
+ *
+ * @example
+ * ```tsx
+ * <Toast.Root intent="warning">
+ *   <Toast.Icon />
+ *   <Toast.Message>Warning message</Toast.Message>
+ *   <Toast.Action>Dismiss</Toast.Action>
+ * </Toast.Root>
+ * ```
+ */
+const Icon = ({ className, svg, ref, ...props }: ToastIconProps) => {
+	const ctx = useContext(ToastStateContext);
+
+	switch (ctx.intent) {
+		case "danger":
+			return (
+				<IconComponent
+					data-slot="toast-icon"
+					className={cx("text-danger-600", className)}
+					ref={ref}
+					svg={svg ?? <WarningIcon weight="fill" />}
+					{...props}
+				/>
+			);
+		case "warning":
+			return (
+				<IconComponent
+					data-slot="toast-icon"
+					className={cx("text-warning-600", className)}
+					ref={ref}
+					svg={svg ?? <WarningDiamondIcon weight="fill" />}
+					{...props}
+				/>
+			);
+		case "success":
+			return (
+				<IconComponent
+					data-slot="toast-icon"
+					className={cx("text-success-600", className)}
+					ref={ref}
+					svg={svg ?? <CheckCircleIcon weight="fill" />}
+					{...props}
+				/>
+			);
+		case "info":
+			return (
+				<IconComponent
+					data-slot="toast-icon"
+					className={cx("text-accent-600", className)}
+					ref={ref}
+					svg={svg ?? <InfoIcon weight="fill" />}
+					{...props}
+				/>
+			);
+		default:
+			throw new Error(`Unreachable Case: ${ctx.intent}`);
+	}
+};
+
+type ToastActionProps = ComponentProps<"button"> & WithAsChild;
+
+/**
+ * A button that dismisses the toast when clicked.
+ * You can prevent the toast from being dismissed `onClick` by calling `event.preventDefault()`
+ *
+ * @see https://mantle.ngrok.com/components/feedback/toast#toastaction
+ *
+ * @example
+ * ```tsx
+ * <Toast.Root intent="info">
+ *   <Toast.Icon />
+ *   <Toast.Message>File uploaded successfully</Toast.Message>
+ *   <Toast.Action>View File</Toast.Action>
+ * </Toast.Root>
+ * ```
+ */
+const Action = ({ asChild, className, onClick, ref, ...props }: ToastActionProps) => {
+	const ctx = useContext(ToastIdContext);
+
+	const Component = asChild ? Slot : "button";
+
+	return (
+		<Component
+			data-slot="toast-action"
+			className={cx(
+				//,
+				"shrink-0",
+				// 👇 wiggle the bits so that icon buttons toast actions are aligned with the toast icon
+				"data-icon-button:-mr-0.5 data-icon-button:-mt-0.5 data-icon-button:rounded-xs",
+				className,
+			)}
+			// Why: the asChild union (Slot | "button") no longer infers a single
+			// event type; React event handlers are bivariant, so pin the param.
+			onClick={(event: MouseEvent<HTMLButtonElement>) => {
+				onClick?.(event);
+				if (event.defaultPrevented) {
+					return;
+				}
+				sonnerToast.dismiss(ctx);
+			}}
+			ref={ref}
+			{...props}
+		/>
+	);
+};
+
+type ToastMessageProps = ComponentProps<"p"> & WithAsChild;
+
+/**
+ * The message content of the toast.
+ *
+ * @see https://mantle.ngrok.com/components/feedback/toast#toastmessage
+ *
+ * @example
+ * ```tsx
+ * <Toast.Root intent="success">
+ *   <Toast.Icon />
+ *   <Toast.Message>Your changes have been saved</Toast.Message>
+ *   <Toast.Action>Undo</Toast.Action>
+ * </Toast.Root>
+ * ```
+ */
+const Message = ({ asChild, className, ref, ...props }: ToastMessageProps) => {
+	const Component = asChild ? Slot : "p";
+
+	return (
+		<Component
+			//
+			data-slot="toast-message"
+			className={cx("text-strong flex-1 text-sm font-body", className)}
+			ref={ref}
+			{...props}
+		/>
+	);
+};
+
+/**
+ * A succinct message that appears temporarily. Toasts give the user feedback
+ * without interrupting their workflow.
+ *
+ * @see https://mantle.ngrok.com/components/feedback/toast
+ *
+ * @example
+ * Composition:
+ * ```
+ * Toast.Root
+ * ├── Toast.Icon
+ * ├── Toast.Message
+ * └── Toast.Action
+ * ```
+ *
+ * @example
+ * ```tsx
+ * makeToast(
+ *   <Toast.Root intent="success">
+ *     <Toast.Icon />
+ *     <Toast.Message>Operation completed successfully!</Toast.Message>
+ *     <Toast.Action>Dismiss</Toast.Action>
+ *   </Toast.Root>
+ * );
+ * ```
+ */
+const Toast = {
+	/**
+	 * A succinct message with an intent that appears temporarily.
+	 *
+	 * **Structure.** `children` render inside a
+	 * `<div data-slot="toast-label">`. The intent accent bar is a permanent element
+	 * sibling, so without the wrapper a bare text child is never a lone child: a
+	 * browser translation engine reparents that text node, and the removal React
+	 * runs when the content changes shape or goes away throws. The wrapper is a
+	 * `<div>` because `Toast.Message` renders a `<p>`, which a `<span>` may not
+	 * contain. It is `display: contents`, so the icon, the message, and an action
+	 * stay flex items of the root and `Toast.Message`'s `flex-1` still resolves.
+	 *
+	 * **Data attributes:**
+	 *
+	 * | Data Attribute | Value | Description |
+	 * | --- | --- | --- |
+	 * | `data-slot` | `"toast"` | On the toast root. |
+	 * | `data-slot` | `"toast-label"` | On the `<div>` wrapping `children`, not only the message text. |
+	 *
+	 * @see https://mantle.ngrok.com/components/feedback/toast#toastroot
+	 *
+	 * @example
+	 * ```tsx
+	 * <Toast.Root intent="success">
+	 *   <Toast.Icon />
+	 *   <Toast.Message>Changes saved successfully!</Toast.Message>
+	 *   <Toast.Action>Undo</Toast.Action>
+	 * </Toast.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * A button that dismisses the toast when clicked.
+	 *
+	 * @see https://mantle.ngrok.com/components/feedback/toast#toastaction
+	 *
+	 * @example
+	 * ```tsx
+	 * <Toast.Root intent="info">
+	 *   <Toast.Icon />
+	 *   <Toast.Message>File uploaded successfully</Toast.Message>
+	 *   <Toast.Action>View File</Toast.Action>
+	 * </Toast.Root>
+	 * ```
+	 */
+	Action,
+	/**
+	 * An icon that visually represents the intent of the toast.
+	 *
+	 * @see https://mantle.ngrok.com/components/feedback/toast#toasticon
+	 *
+	 * @example
+	 * ```tsx
+	 * <Toast.Root intent="warning">
+	 *   <Toast.Icon />
+	 *   <Toast.Message>Warning message</Toast.Message>
+	 *   <Toast.Action>Dismiss</Toast.Action>
+	 * </Toast.Root>
+	 * ```
+	 */
+	Icon,
+	/**
+	 * The message content of the toast.
+	 *
+	 * @see https://mantle.ngrok.com/components/feedback/toast#toastmessage
+	 *
+	 * @example
+	 * ```tsx
+	 * <Toast.Root intent="success">
+	 *   <Toast.Icon />
+	 *   <Toast.Message>Your changes have been saved</Toast.Message>
+	 *   <Toast.Action>Undo</Toast.Action>
+	 * </Toast.Root>
+	 * ```
+	 */
+	Message,
+} as const;
+
+export {
+	//,
+	makeToast,
+	resolveToastDuration,
+	Toast,
+	Toaster,
+};
+
+export type {
+	//,
+	ToastIntent,
+};
+
+const intentBackgroundColor = {
+	info: "bg-accent-600",
+	warning: "bg-warning-600",
+	success: "bg-success-600",
+	danger: "bg-danger-600",
+} as const satisfies Record<ToastIntent, string>;
+
+type IntentBarAccentProps = Omit<ComponentProps<"div">, "children"> & {
+	intent: ToastIntent;
+};
+
+/**
+ * @private
+ *
+ * A colored bar that visually represents the intent of the toast.
+ */
+function IntentBarAccent({ className, intent, ...props }: IntentBarAccentProps) {
+	return (
+		<div
+			aria-hidden
+			className={cx(
+				//
+				"z-1 absolute -inset-px right-auto w-1.5 rounded-l",
+				intentBackgroundColor[intent],
+				className,
+			)}
+			{...props}
+		/>
+	);
+}

@@ -1,0 +1,278 @@
+"use client";
+
+import { CheckCircleIcon } from "@phosphor-icons/react/CheckCircle";
+import { WarningIcon } from "@phosphor-icons/react/Warning";
+import { WarningDiamondIcon } from "@phosphor-icons/react/WarningDiamond";
+import type {
+	ComponentProps,
+	ComponentRef,
+	InputHTMLAttributes,
+	MutableRefObject,
+	PropsWithChildren,
+	Ref,
+} from "react";
+import { createContext, useContext, useMemo, useRef } from "react";
+import { parseBooleanish } from "../../types/booleanish.js";
+import { useComposedRefs } from "../../utils/compose-refs/compose-refs.js";
+import { clsx } from "../../utils/cx/clsx.js";
+import { cx } from "../../utils/cx/cx.js";
+import { parseValidation, useFieldValidation } from "../field/validation.js";
+import type { Validation, WithValidation } from "../field/validation.js";
+import { Icon } from "../icon/icon.js";
+import type { WithAutoComplete, WithInputType } from "./types.js";
+
+type BaseProps = WithAutoComplete & WithInputType & WithValidation;
+
+/**
+ * The props for the `Input` component.
+ */
+type InputProps = Omit<ComponentProps<"input">, "autoComplete" | "type"> &
+	BaseProps &
+	PropsWithChildren;
+
+/**
+ * An interactive form control that accepts data from the user. Supports many
+ * input types and validation states, and composes with adornment children.
+ *
+ * @see https://mantle.ngrok.com/components/forms/input
+ *
+ * @example
+ * ```tsx
+ * <Input
+ *   type="email"
+ *   placeholder="Enter your email"
+ *   validation="success"
+ * />
+ * ```
+ */
+const Input = ({ children, className, ref, ...props }: InputProps) => {
+	const hasChildren = Boolean(children);
+	const innerRef = useRef<ComponentRef<"input">>(null);
+
+	if (hasChildren) {
+		return (
+			<InputContainer className={className} forwardedRef={ref} innerRef={innerRef} {...props}>
+				{children}
+			</InputContainer>
+		);
+	}
+
+	return (
+		<InputContainer {...props} className={className} forwardedRef={ref} innerRef={innerRef}>
+			<InputCapture {...props} />
+		</InputContainer>
+	);
+};
+
+type InputCaptureProps = Omit<ComponentProps<"input">, "autoComplete" | "type"> & BaseProps;
+
+/**
+ * The actual <input /> element that captures user input.
+ * Used internally by Input component or when you need direct control over the input element.
+ *
+ * @see https://mantle.ngrok.com/components/forms/input
+ *
+ * @example
+ * ```tsx
+ * <Input>
+ *   <InputCapture />
+ *   <Icon svg={<SearchIcon />} />
+ * </Input>
+ * ```
+ */
+const InputCapture = ({
+	"aria-invalid": _ariaInvalid,
+	className,
+	ref,
+	validation: _validation,
+	...restProps
+}: InputCaptureProps) => {
+	const {
+		"aria-invalid": ctxAriaInvalid,
+		forwardedRef: ctxForwardedRef,
+		innerRef: ctxInnerRef,
+		validation: ctxValidation,
+		...ctx
+	} = useContext(InputContext);
+	const fieldValidation = useFieldValidation();
+
+	const { ariaInvalid, validation } = parseValidation({
+		"aria-invalid": ctxAriaInvalid ?? _ariaInvalid,
+		validation: ctxValidation ?? _validation ?? fieldValidation,
+	});
+	const props = {
+		...ctx,
+		...restProps,
+		type: restProps.type ?? ctx.type ?? "text",
+	};
+	const composedRef = useComposedRefs(ref, ctxForwardedRef, ctxInnerRef);
+
+	return (
+		<input
+			aria-invalid={ariaInvalid}
+			data-slot="input-capture"
+			data-validation={validation}
+			className={cx(
+				"placeholder:text-placeholder min-w-0 flex-1 bg-transparent text-left autofill:shadow-[inset_0_0_0px_1000px_var(--color-blue-50)] focus:outline-hidden",
+				className,
+			)}
+			ref={composedRef}
+			{...props}
+		/>
+	);
+};
+
+type InputContextType = Omit<InputHTMLAttributes<HTMLInputElement>, "autoComplete" | "type"> &
+	BaseProps & {
+		/**
+		 * inner ref for the input element, controlled by `Input`
+		 */
+		innerRef: MutableRefObject<HTMLInputElement | null>;
+		/**
+		 * ref to the input element, passed from `Input` to `InputCapture`
+		 */
+		forwardedRef?: Ref<HTMLInputElement>;
+	};
+
+const InputContext = createContext<InputContextType>({
+	validation: undefined,
+	innerRef: { current: null },
+});
+
+type InputContainerProps = InputHTMLAttributes<HTMLInputElement> &
+	BaseProps & {
+		/**
+		 * @private inner ref for the input element, controlled by `Input`
+		 */
+		innerRef: MutableRefObject<HTMLInputElement | null>;
+		/**
+		 * @private ref to the input element, passed from `Input` to `InputCapture`
+		 */
+		forwardedRef: Ref<HTMLInputElement> | undefined;
+	};
+
+/**
+ * The chrome around a bare `<input>` — the border, the `focus-within` ring, and
+ * the `data-slot` hook. A click anywhere on it focuses that input.
+ */
+const InputContainer = ({
+	"aria-invalid": _ariaInvalid,
+	"aria-disabled": _ariaDisabled,
+	"data-slot": dataSlot = "input",
+	children,
+	className,
+	disabled,
+	forwardedRef,
+	innerRef,
+	style,
+	type,
+	validation: _validation,
+	...props
+}: InputContainerProps & { "data-slot"?: string }) => {
+	const fieldValidation = useFieldValidation();
+	const { validation } = parseValidation({
+		"aria-invalid": _ariaInvalid,
+		validation: _validation ?? fieldValidation,
+	});
+	const contextValue = useMemo(
+		() => ({
+			"aria-invalid": _ariaInvalid,
+			"aria-disabled": _ariaDisabled,
+			disabled,
+			type,
+			validation: _validation,
+			...props,
+			forwardedRef,
+			innerRef,
+		}),
+		[_ariaInvalid, _ariaDisabled, disabled, type, _validation, props, forwardedRef, innerRef],
+	);
+	return (
+		<InputContext.Provider value={contextValue}>
+			<div
+				role="none"
+				data-slot={dataSlot}
+				// Why parseBooleanish: `aria-disabled="false"` is a string, and the
+				// `data-disabled:` variant matches presence, so it must not stamp.
+				data-disabled={parseBooleanish(disabled ?? _ariaDisabled) || undefined}
+				data-validation={validation || undefined}
+				className={cx(
+					"pointer-coarse:text-base h-9 text-sm",
+					"bg-form relative flex w-full items-center gap-1.5 rounded-md border px-3 py-2 file:border-0 file:bg-transparent file:text-sm file:font-medium focus-within:outline-hidden focus-within:ring-4",
+					"data-disabled:opacity-50",
+					"has-[input:not(:first-child)]:ps-2.5 has-[input:not(:last-child)]:pe-2.5 [&>:not(input)]:shrink-0 [&_svg]:size-5",
+					"border-form text-strong focus-within:border-accent-600 focus-within:ring-focus-accent",
+					"data-validation-success:border-success-600 focus-within:data-validation-success:border-success-600 focus-within:data-validation-success:ring-focus-success",
+					"data-validation-warning:border-warning-600 focus-within:data-validation-warning:border-warning-600 focus-within:data-validation-warning:ring-focus-warning",
+					"data-validation-error:border-danger-600 focus-within:data-validation-error:border-danger-600 focus-within:data-validation-error:ring-focus-danger",
+					"autofill:shadow-[inset_0_0_0px_1000px_var(--color-blue-50)] has-autofill:bg-blue-50 has-autofill:[-webkit-text-fill-color:var(--text-color-strong)]", // Autofill styling on the input itself and any children with autofill styling
+					className,
+				)}
+				onMouseDown={(event) => {
+					// Prevent mousedown on non-input children (icons, buttons, etc.) from
+					// blurring the input, which would cause the focus ring to flicker.
+					if (event.target !== innerRef?.current) {
+						event.preventDefault();
+					}
+				}}
+				onClick={(event) => {
+					const input = innerRef.current;
+					if (input == null) {
+						return;
+					}
+					// Why `detail`: a keyboard user who activates an adornment button
+					// (Enter or Space) must keep focus on it. The browser sets `detail`
+					// to 0 on a keyboard or programmatic click and to the click count on
+					// a pointer click, so this moves only a pointer click into the input.
+					// The focused element cannot tell the two apart: a pointer click on
+					// a button that already has focus leaves focus there.
+					if (event.detail === 0) {
+						return;
+					}
+					input.focus();
+				}}
+				style={style}
+			>
+				{children}
+				<ValidationFeedback name={props.name} validation={validation} />
+			</div>
+		</InputContext.Provider>
+	);
+};
+
+export { Input, InputCapture };
+export type { InputProps, InputCaptureProps };
+
+const ValidationFeedback = ({
+	name,
+	validation,
+}: {
+	name?: string;
+	validation: Validation | undefined;
+}) => {
+	switch (validation) {
+		case "error":
+			return (
+				<div className="text-danger-600 order-last select-none">
+					<span className="sr-only">
+						{clsx("The value entered for the", name, "input has failed validation.")}
+					</span>
+					<Icon svg={<WarningIcon aria-hidden weight="fill" />} />
+				</div>
+			);
+		case "success":
+			return (
+				<div className="text-success-600 order-last select-none">
+					<Icon svg={<CheckCircleIcon weight="fill" />} />
+				</div>
+			);
+		case "warning":
+			return (
+				<div className="text-warning-600 order-last select-none">
+					<Icon svg={<WarningDiamondIcon weight="fill" />} />
+				</div>
+			);
+		default:
+			return null;
+	}
+};

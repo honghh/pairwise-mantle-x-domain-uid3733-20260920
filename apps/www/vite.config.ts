@@ -1,0 +1,199 @@
+import mdx from "@mdx-js/rollup";
+import { reactRouter } from "@react-router/dev/vite";
+import tailwindcss from "@tailwindcss/vite";
+import { mantleCodeBlockPlugins, mantleSourcesPlugin } from "@ngrok/mantle-vite-plugins";
+import path from "node:path";
+import { transform } from "oxc-transform-react";
+import rehypeSlug from "rehype-slug";
+import remarkFrontmatter from "remark-frontmatter";
+import { remarkMdxGithubAlerts } from "@ngrok/remark-mdx-github-alerts";
+import remarkGfm from "remark-gfm";
+import { defineConfig, type Plugin } from "vite";
+import devtoolsJson from "vite-plugin-devtools-json";
+
+import { remarkMdxNoParagraphWrap } from "@ngrok/remark-mdx-no-paragraph-wrap";
+import { mantleChangelogMdx } from "./vite-plugins/mantle-changelog-mdx.ts";
+import { mdxDocComponentImports } from "./vite-plugins/mdx-doc-component-imports.ts";
+import { mdxGeneratedCode } from "./vite-plugins/mdx-generated-code.ts";
+import { rawMdxDocs } from "./vite-plugins/raw-mdx-docs.ts";
+import { rehypeMdxDocHandle } from "./vite-plugins/rehype-mdx-doc-handle.ts";
+import { remarkMdxDemoteLowercaseExports } from "./vite-plugins/remark-mdx-demote-lowercase-exports.ts";
+import { remarkMdxFrontmatterData } from "./vite-plugins/remark-mdx-frontmatter-data.ts";
+import { workspacePluginCacheKey } from "./vite-plugins/workspace-plugin-cache-key.ts";
+
+const codeBlockPlugins = mantleCodeBlockPlugins();
+
+/**
+ * Runs the React Compiler over the app and over the mantle source that
+ * `resolve.conditions` maps in. The published dist ships compiled output (see
+ * `packages/mantle/tsdown.config.ts`), so compiling mantle here keeps docs
+ * pages rendering the library exactly as npm consumers get it.
+ *
+ * Why `enforce: "pre"`: Vite's own transform strips the JSX the compiler must
+ * see, and the React Router Fast Refresh transform rewrites components.
+ */
+const reactCompiler = (): Plugin => ({
+	name: "react-compiler",
+	enforce: "pre",
+	transform: {
+		filter: {
+			id: {
+				include: [
+					/[\\/]apps[\\/]www[\\/]app[\\/].+\.tsx?$/,
+					/[\\/]packages[\\/]mantle[\\/]src[\\/].+\.tsx?$/,
+				],
+				exclude: [/\.test\.tsx?$/],
+			},
+		},
+		async handler(code, id) {
+			const result = await transform(id, code, {
+				jsx: "preserve",
+				sourcemap: true,
+				reactCompiler: { target: "19" },
+			});
+			if (result.fatal) {
+				const messages = result.errors.map((error) => error.message).join("\n");
+				throw new Error(`The React Compiler pass failed for ${id}:\n${messages}`);
+			}
+			return { code: result.code, map: result.map };
+		},
+	},
+});
+
+export default defineConfig(({ command }) => ({
+	optimizeDeps: {
+		exclude: ["@ngrok/mantle"],
+		// Why: the compiler adds the `react/compiler-runtime` import in the transform, so
+		// Vite's dependency scanner never sees it in source. Without this include, the dev
+		// server discovers it on the first request, re-optimizes, and reloads the page.
+		include: ["react/compiler-runtime"],
+	},
+	plugins: [
+		//
+		...codeBlockPlugins.vitePlugins,
+		mdxGeneratedCode(path.resolve(import.meta.dirname, "app/docs")),
+		rawMdxDocs(path.resolve(import.meta.dirname, "app/docs")),
+		mdxDocComponentImports(path.resolve(import.meta.dirname, "app/docs")),
+		mantleChangelogMdx(path.resolve(import.meta.dirname, "../../packages/mantle/CHANGELOG.md")),
+		devtoolsJson(),
+		tailwindcss(),
+		// Why here: this app resolves mantle to source through `resolve.conditions`, so the
+		// listed files are `packages/mantle/src` modules. The `@source "../../../packages/mantle/src"`
+		// line in `app/global.css` already covers them, and the plugin's `@source not` lines drop
+		// the neighbors outside the client graph, such as test files, from that broad scan. The
+		// plugin runs here to prove the graph walk and the bundle check on a real React Router build.
+		mantleSourcesPlugin(),
+		mdx({
+			// Only treat `.mdx` files as MDX. `.md` is left alone so `?raw`
+			// imports of plain markdown stay raw — `@mdx-js/rollup`'s filter
+			// strips the `?raw` query before checking the include pattern,
+			// so widening this would clobber raw imports. The one exception
+			// is the synthetic CHANGELOG module exposed by
+			// `mantleChangelogMdx`, which intentionally ends in `.md` so MDX
+			// runs in CommonMark-only mode.
+			include: [/\.mdx$/, /__virtual__\/@ngrok\/mantle\/changelog\.md$/],
+			// Docs MDX files are route modules, so their exports must stay
+			// compatible with React Fast Refresh: component exports plus the
+			// route exports React Router accept-lists (`handle`). Frontmatter
+			// and toc ship in the `handle` export that `rehypeMdxDocHandle`
+			// emits, and author-written lowercase exports (demo data, a schema)
+			// compile as plain module-local declarations.
+			remarkPlugins: [
+				remarkFrontmatter,
+				// Parses the YAML block into `file.data` for `rehypeMdxDocHandle`.
+				remarkMdxFrontmatterData,
+				remarkMdxDemoteLowercaseExports,
+				remarkGfm,
+				remarkMdxGithubAlerts,
+				remarkMdxNoParagraphWrap,
+			],
+			rehypePlugins: [rehypeSlug, rehypeMdxDocHandle, ...codeBlockPlugins.rehypePlugins],
+			providerImportSource: "@mdx-js/react",
+		}),
+		// The React Router plugin's Fast Refresh transform injects a preamble
+		// check that throws when .tsx modules load under Vitest, and tests
+		// don't need the framework plugin — component tests render directly.
+		...(process.env.VITEST ? [] : [reactRouter()]),
+		reactCompiler(),
+		workspacePluginCacheKey([
+			"@ngrok/mantle-vite-plugins",
+			"@ngrok/mantle-server-syntax-highlighter",
+			// Why these subpaths: `mdxGeneratedCode` imports the theme scripts, and the two plugin
+			// packages leave these mantle imports external, so a mantle rebuild changes their output.
+			"@ngrok/mantle/theme",
+			"@ngrok/mantle/highlight-utils",
+			"@ngrok/mantle/types",
+		]),
+	],
+	// A spy or global stub a test installs and then fails to tear down leaks into every test that
+	// runs after it, turning an unrelated failure into a cascade and making results order-dependent.
+	// Restoring centrally means an inline `mockRestore()` is never load-bearing — a test that throws
+	// before reaching its cleanup line still leaves the environment pristine. Mirrors
+	// `packages/mantle/vitest.config.ts`, which CONVENTIONS.md § Testing documents repo-wide.
+	test: {
+		restoreMocks: true,
+		unstubEnvs: true,
+		unstubGlobals: true,
+		// Why: a run spends three quarters of its time in the MDX, React Compiler, and code-block
+		// transforms, so keeping their output in `node_modules/.vitest-cache` cuts a warm run from
+		// 17s to 7s. `workspacePluginCacheKey` folds the built workspace plugins into the key.
+		// Why not in CI: a fresh runner has nothing to read, so the run only pays the writes.
+		fsModuleCache: !(process.env.CI === "1" || /true/i.test(process.env.CI ?? "")),
+	},
+	resolve: {
+		// Ensure Mantle components resolve to source in dev mode (not dist)
+		// so client HMR picks up changes immediately
+		conditions: ["@ngrok/src-live-types"],
+		tsconfigPaths: true,
+		alias: {
+			// CSS @import doesn't go through Vite's resolve.conditions,
+			// so we alias the CSS entry point to the source file directly
+			"@ngrok/mantle/mantle.css": path.resolve(
+				import.meta.dirname,
+				"../../packages/mantle/src/mantle.css",
+			),
+		},
+	},
+	server: {
+		port: 3333,
+		allowedHosts: true,
+		warmup: {
+			clientFiles: [
+				"./app/**/!(*.server|*.test)*.tsx", // Include all .tsx files except server and test files (add more patterns if required)
+			],
+		},
+		watch: {
+			// Explicitly watch mantle source files for HMR
+			ignored: ["!**/node_modules/@ngrok/mantle/src/**"],
+		},
+	},
+	preview: {
+		// React Router prerenders by booting a Vite *preview* server and issuing
+		// HTTP requests to `resolvedUrls.local[0]` (always IPv4 `127.0.0.1`).
+		// Without pinning the host, Vite binds loopback as `localhost`, which
+		// inside Linux build containers (e.g. the Docker image) resolves to IPv6
+		// `::1` only — so the prerender request to 127.0.0.1 is refused and the
+		// build dies with `ECONNREFUSED` on the first route. macOS aligns both
+		// stacks, which is why it only fails in containers. Pinning IPv4 makes
+		// the bind interface match the request target.
+		host: "127.0.0.1",
+	},
+	ssr: {
+		noExternal:
+			command === "build"
+				? // Bundle every dependency into the server build so the production
+					// image can run without an app `node_modules` (the Docker runner
+					// stage ships only `@react-router/serve` and its runtime deps).
+					true
+				: [
+						// https://github.com/phosphor-icons/react/issues/45#issuecomment-2721119452
+						"@phosphor-icons/react",
+					],
+		resolve: {
+			// Same as above, but for the SSR renderer.
+			// Without this, the server falls back to dist and causes hydration mismatches
+			// (className warnings, missing styles, etc.) on hard refresh.
+			conditions: ["@ngrok/src-live-types"],
+		},
+	},
+}));

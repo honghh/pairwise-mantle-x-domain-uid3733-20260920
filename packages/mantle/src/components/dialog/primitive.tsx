@@ -1,0 +1,223 @@
+"use client";
+
+import {
+	createDialogScope,
+	Close as DialogPrimitiveClose,
+	Content as DialogPrimitiveContent,
+	Description as DialogPrimitiveDescription,
+	Overlay as DialogPrimitiveOverlay,
+	Portal as DialogPrimitivePortal,
+	Root as DialogPrimitiveRoot,
+	Title as DialogPrimitiveTitle,
+	Trigger as DialogPrimitiveTrigger,
+} from "@radix-ui/react-dialog";
+import type { ComponentProps, ComponentPropsWithoutRef, Ref } from "react";
+import { Slot } from "../slot/index.js";
+import { preventCloseOnPromptInteraction } from "../toast/prevent-close-on-prompt-interaction.js";
+import { parseBooleanish } from "../../types/booleanish.js";
+import {
+	LayerContainerContext,
+	useLayerContainer,
+} from "../../utils/layer-container/layer-container.js";
+
+type DialogPrimitiveContentProps = ComponentProps<typeof DialogPrimitiveContent>;
+
+const Root = DialogPrimitiveRoot;
+const Trigger = DialogPrimitiveTrigger;
+
+/**
+ * Mounts dialog layers into the nearest layer container — an enclosing
+ * overlay's positioner when one is open, else `document.body`. An explicit
+ * `container` prop wins over both.
+ */
+const Portal = ({ container, ...props }: ComponentProps<typeof DialogPrimitivePortal>) => {
+	const layerContainer = useLayerContainer();
+	const resolvedContainer = container ?? layerContainer;
+
+	// Why the provider: `Dialog.Content` portals again internally, so the
+	// resolved container must also become the layer container for the wrapped
+	// subtree — otherwise the inner portal would ignore an explicit `container`.
+	return (
+		<LayerContainerContext.Provider value={resolvedContainer}>
+			<DialogPrimitivePortal container={resolvedContainer} {...props} />
+		</LayerContainerContext.Provider>
+	);
+};
+
+const Close = DialogPrimitiveClose;
+
+const Overlay = (props: ComponentProps<typeof DialogPrimitiveOverlay>) => (
+	<DialogPrimitiveOverlay
+		/**
+		 * Mark the overlay with a data attribute so we can target it, e.g. in
+		 * event handlers
+		 */
+		data-overlay
+		{...props}
+	/>
+);
+
+const Content = ({
+	onEscapeKeyDown,
+	onInteractOutside,
+	onPointerDownOutside,
+	ref,
+	...props
+}: DialogPrimitiveContentProps) => (
+	<DialogPrimitiveContent
+		ref={ref}
+		onEscapeKeyDown={(event) => {
+			preventCloseOnNestedPopupEscape(event);
+			onEscapeKeyDown?.(event);
+		}}
+		onInteractOutside={(event) => {
+			preventCloseOnPromptInteraction(event);
+			onInteractOutside?.(event);
+		}}
+		onPointerDownOutside={(event) => {
+			preventCloseOnPromptInteraction(event);
+			onPointerDownOutside?.(event);
+		}}
+		// Why no `aria-describedby` here: Radix sets it only while a `Description`
+		// is mounted. Radix spreads these props after that computed value, so a
+		// value set here, even `undefined`, replaces the Radix one.
+		{...props}
+	/>
+);
+
+const Title = DialogPrimitiveTitle;
+
+/**
+ * An accessible description for the dialog primitive.
+ * This is a low-level primitive used by higher-level dialog components.
+ * Renders as a `div` by default, but can be changed to any other element using the `asChild` prop.
+ */
+const Description = ({
+	asChild,
+	children,
+	ref,
+	...props
+}: ComponentPropsWithoutRef<typeof DialogPrimitiveDescription> & {
+	ref?: Ref<HTMLDivElement>;
+}) => {
+	const Component = asChild ? Slot : "div";
+
+	// Why the props go on the Radix part: Radix reads `__scopeDialog` off them,
+	// and its slot merges the rest onto the child.
+	return (
+		<DialogPrimitiveDescription ref={ref} asChild {...props}>
+			<Component>{children}</Component>
+		</DialogPrimitiveDescription>
+	);
+};
+
+/**
+ * Type guard to check if the event target is the overlay component
+ */
+function isDialogOverlayTarget(target: EventTarget | null): boolean {
+	if (target instanceof HTMLElement) {
+		return target.hasAttribute("data-overlay");
+	}
+	return false;
+}
+
+export {
+	//,
+	createDialogScope,
+	Root,
+	Trigger,
+	Portal,
+	Close,
+	Overlay,
+	Content,
+	Description,
+	Title,
+	isDialogOverlayTarget,
+};
+
+/**
+ * Prevents the parent dialog/sheet/alert-dialog from closing on Escape when a
+ * nested popup owner inside the same modal content is currently expanded.
+ *
+ * Flow:
+ * - If focus is outside the nested popup owner, Escape closes the parent modal.
+ * - If focus is inside the nested popup owner and its controlled popup is open,
+ *   the first Escape closes only the nested popup and keeps the parent modal open.
+ * - Once the nested popup has closed, a subsequent Escape closes the parent modal.
+ */
+function preventCloseOnNestedPopupEscape(
+	event: Parameters<NonNullable<DialogPrimitiveContentProps["onEscapeKeyDown"]>>[0],
+): void {
+	if (!isParentNode(event.currentTarget)) {
+		return;
+	}
+
+	const currentTarget = event.currentTarget;
+	const activeElement =
+		currentTarget instanceof Document
+			? currentTarget.activeElement
+			: (currentTarget.ownerDocument?.activeElement ?? null);
+
+	const owner = getExpandedPopupOwner(event.target) ?? getExpandedPopupOwner(activeElement);
+
+	const popup = owner ? getControlledPopup(owner) : null;
+
+	if (
+		owner != null &&
+		parseBooleanish(owner.getAttribute("aria-expanded")) &&
+		popup != null &&
+		currentTarget.contains(owner) &&
+		currentTarget.contains(popup) &&
+		// Only block closing if the popup is actively open. Always-visible lists
+		// without open/close state (e.g. cmdk) carry neither attribute and should
+		// never block the dialog from closing.
+		// - Ariakit sets `data-open="true"` when its popover is open.
+		// - Radix sets `data-state="open"` when its popup is open.
+		(popup.getAttribute("data-open") === "true" || popup.getAttribute("data-state") === "open")
+	) {
+		event.preventDefault();
+	}
+}
+
+/**
+ * Finds the nearest expanded popup owner for a node using ARIA relationships.
+ *
+ * A matching owner must expose `aria-expanded="true"` and `aria-controls`, which
+ * lets nested controls like comboboxes and input-attached popovers signal that an
+ * inner surface is currently open.
+ */
+function getExpandedPopupOwner(node: EventTarget | null): HTMLElement | null {
+	if (!isHTMLElement(node)) {
+		return null;
+	}
+
+	const owner = node.closest<HTMLElement>("[aria-expanded='true'][aria-controls]");
+	return owner;
+}
+
+/**
+ * Resolves the popup element controlled by an expanded owner via `aria-controls`.
+ */
+function getControlledPopup(owner: HTMLElement): HTMLElement | null {
+	const popupId = owner.getAttribute("aria-controls");
+	if (!popupId) {
+		return null;
+	}
+
+	const popup = owner.ownerDocument.getElementById(popupId);
+	return popup instanceof HTMLElement ? popup : null;
+}
+
+/**
+ * Narrows an event target to an HTMLElement so DOM traversal helpers can be used safely.
+ */
+function isHTMLElement(value: EventTarget | null): value is HTMLElement {
+	return value instanceof HTMLElement;
+}
+
+/**
+ * Narrows an event target to a queryable DOM parent node, such as an Element or Document.
+ */
+function isParentNode(value: EventTarget | null): value is ParentNode & Node {
+	return value instanceof Node && "querySelector" in value;
+}

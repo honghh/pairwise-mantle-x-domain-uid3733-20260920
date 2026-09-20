@@ -1,0 +1,1377 @@
+"use client";
+
+import { InfoIcon } from "@phosphor-icons/react/Info";
+import { WarningIcon } from "@phosphor-icons/react/Warning";
+import { type ComponentProps, type ReactNode, createContext, useContext, useMemo } from "react";
+import invariant from "tiny-invariant";
+import type { WithAsChild } from "../../types/as-child.js";
+import { cx } from "../../utils/cx/cx.js";
+import { LayerContainer } from "../../utils/layer-container/layer-container.js";
+import { Button, type ButtonAppearance, type ButtonProps } from "../button/button.js";
+import type { ButtonIntent } from "../button/intents.js";
+import {
+	Close as AlertDialogPrimitiveClose,
+	Content as AlertDialogPrimitiveContent,
+	Description as AlertDialogPrimitiveDescription,
+	Overlay as AlertDialogPrimitiveOverlay,
+	Portal as AlertDialogPrimitivePortal,
+	Root as AlertDialogPrimitiveRoot,
+	Title as AlertDialogPrimitiveTitle,
+	Trigger as AlertDialogPrimitiveTrigger,
+} from "../dialog/primitive.js";
+import { SvgOnly } from "../icon/svg-only.js";
+import type { SvgAttributes } from "../icon/types.js";
+import { Slot } from "../slot/index.js";
+
+const intents = ["info", "danger"] as const;
+type AlertDialogIntent = (typeof intents)[number];
+
+type AlertDialogContextValue = {
+	intent: AlertDialogIntent;
+};
+
+const AlertDialogContext = createContext<AlertDialogContextValue | null>(null);
+
+function useAlertDialogContext() {
+	const context = useContext(AlertDialogContext);
+	invariant(context, "AlertDialog child component used outside of AlertDialog parent!");
+	return context;
+}
+
+type AlertDialogProps = ComponentProps<typeof AlertDialogPrimitiveRoot> & {
+	/**
+	 * The intent of the AlertDialog — the tone its color communicates to the
+	 * user, affecting the color and styling of descendants like
+	 * `AlertDialog.Icon` and `AlertDialog.Action`.
+	 */
+	intent: AlertDialogIntent;
+};
+
+/**
+ * A modal dialog that interrupts the user with important content and expects a
+ * response. Holds the open state and the `intent` that `AlertDialog.Icon` and
+ * `AlertDialog.Action` read.
+ *
+ * `AlertDialog` renders its floating layer at Tailwind `z-60`, Mantle's overlay
+ * tier, above every float (`z-50`). Floats composed inside the content portal
+ * into the positioner (`data-slot="alert-dialog-positioner"`) and paint above
+ * the content. When multiple overlays are open, the most recently mounted
+ * overlay renders on top.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogroot
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+function Root({ intent, ...props }: AlertDialogProps) {
+	const context: AlertDialogContextValue = useMemo(() => ({ intent }), [intent]);
+
+	return (
+		<AlertDialogContext.Provider value={context}>
+			<AlertDialogPrimitiveRoot {...props} />
+		</AlertDialogContext.Provider>
+	);
+}
+
+/**
+ * A button that opens the Alert Dialog.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogtrigger
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Trigger = ({ ref, ...props }: ComponentProps<typeof AlertDialogPrimitiveTrigger>) => (
+	<AlertDialogPrimitiveTrigger ref={ref} data-slot="alert-dialog-trigger" {...props} />
+);
+
+/**
+ * Mounts `AlertDialogOverlay` and `AlertDialog.Content` outside the app's DOM
+ * tree.
+ *
+ * @private
+ */
+const AlertDialogPortal = AlertDialogPrimitivePortal;
+
+/**
+ * A layer that covers the inert portion of the view when the dialog is open.
+ *
+ * @private
+ */
+const AlertDialogOverlay = ({
+	className,
+	ref,
+	...props
+}: ComponentProps<typeof AlertDialogPrimitiveOverlay>) => (
+	<AlertDialogPrimitiveOverlay
+		data-slot="alert-dialog-overlay"
+		className={cx(
+			"data-state-open:animate-in data-state-closed:animate-out data-state-closed:fade-out-0 data-state-open:fade-in-0 bg-overlay fixed inset-0 z-60 backdrop-blur-xs",
+			className,
+		)}
+		{...props}
+		ref={ref}
+	/>
+);
+
+type AlertDialogContentProps = ComponentProps<typeof AlertDialogPrimitiveContent> & {
+	/**
+	 * The preferred width of the `AlertDialogContent` as a tailwind `max-w-` class.
+	 *
+	 * By default, a `AlertDialog`'s content width is responsive with a default
+	 * preferred width: the maximum width of the `AlertDialogContent`
+	 *
+	 * @default `max-w-md`
+	 */
+	preferredWidth?: `max-w-${string}`;
+};
+
+/**
+ * The popover alert dialog container.
+ *
+ * Renders on top of the overlay and is centered in the viewport. It carries
+ * `role="alertdialog"`, and a pointer interaction outside the content does not
+ * close it: the user must acknowledge the dialog through `AlertDialog.Cancel`,
+ * `AlertDialog.Close`, or the Escape key.
+ *
+ * `AlertDialog.Content` renders its floating layer at Tailwind `z-60`, Mantle's
+ * overlay tier, above every float (`z-50`). Floats composed inside the content
+ * portal into the positioner (`data-slot="alert-dialog-positioner"`) and paint
+ * above the content. When multiple overlays are open, the most recently mounted
+ * overlay renders on top.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogcontent
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Content = ({
+	className,
+	onInteractOutside,
+	preferredWidth = "max-w-md",
+	ref,
+	...props
+}: AlertDialogContentProps) => (
+	<AlertDialogPortal>
+		<AlertDialogOverlay />
+		{/* Why the positioner is the layer container: floats composed inside the
+		    alert dialog portal into it, after the content, so they paint above
+		    the content inside the alert dialog's own stacking context. It stays
+		    free of transforms — the open animation lives on the content — so a
+		    portaled float's `position: fixed` still resolves against the viewport. */}
+		<LayerContainer
+			data-slot="alert-dialog-positioner"
+			className="fixed inset-4 z-60 flex items-center justify-center"
+		>
+			<AlertDialogPrimitiveContent
+				role="alertdialog"
+				data-slot="alert-dialog-content"
+				data-mantle-modal-content
+				ref={ref}
+				onInteractOutside={(event) => {
+					onInteractOutside?.(event);
+					// Why: an alert dialog expects an explicit response, so a click on
+					// the backdrop must not dismiss it. Escape and the close parts still do.
+					event.preventDefault();
+				}}
+				className={cx(
+					"flex w-full flex-1 flex-col items-center gap-4 sm:flex-row sm:items-start",
+					"outline-hidden focus-within:outline-hidden",
+					"p-6",
+					"border-dialog bg-dialog rounded-xl border shadow-lg transition-transform duration-200",
+					"data-state-closed:animate-out data-state-closed:fade-out-0 data-state-closed:zoom-out-95 data-state-open:animate-in data-state-open:fade-in-0 data-state-open:zoom-in-95",
+					preferredWidth,
+					className,
+				)}
+				{...props}
+			/>
+		</LayerContainer>
+	</AlertDialogPortal>
+);
+
+/**
+ * Contains the main content of the alert dialog.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogbody
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Body = ({
+	asChild = false,
+	className,
+	ref,
+	...props
+}: ComponentProps<"div"> & WithAsChild) => {
+	const Component = asChild ? Slot : "div";
+
+	return (
+		<Component
+			data-slot="alert-dialog-body"
+			className={cx("flex-1 space-y-4", className)}
+			ref={ref}
+			{...props}
+		/>
+	);
+};
+
+/**
+ * Contains the header content of the dialog, including the title and description.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogheader
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Header = ({
+	asChild = false,
+	className,
+	ref,
+	...props
+}: ComponentProps<"div"> & WithAsChild) => {
+	const Component = asChild ? Slot : "div";
+
+	return (
+		<Component
+			data-slot="alert-dialog-header"
+			className={cx("flex flex-col space-y-2 text-center sm:text-start", className)}
+			ref={ref}
+			{...props}
+		/>
+	);
+};
+
+/**
+ * Contains the footer content of the dialog, including the action and cancel buttons.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogfooter
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Footer = ({
+	asChild = false,
+	className,
+	ref,
+	...props
+}: ComponentProps<"div"> & WithAsChild) => {
+	const Component = asChild ? Slot : "div";
+
+	return (
+		<Component
+			data-slot="alert-dialog-footer"
+			className={cx("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2", className)}
+			ref={ref}
+			{...props}
+		/>
+	);
+};
+
+/**
+ * An accessible name to be announced when the dialog is opened.
+ *
+ * Alternatively, pass `aria-label` or `aria-labelledby` to
+ * `AlertDialogContent` and exclude this component.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogtitle
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Title = ({ className, ref, ...props }: ComponentProps<typeof AlertDialogPrimitiveTitle>) => (
+	<AlertDialogPrimitiveTitle
+		ref={ref}
+		data-slot="alert-dialog-title"
+		className={cx("text-strong text-center text-lg font-medium sm:text-start", className)}
+		{...props}
+	/>
+);
+
+/**
+ * An accessible description to be announced when the dialog is opened.
+ * Renders as a `div` by default, but can be changed to any other element using
+ * the `asChild` prop.
+ *
+ * Alternatively, pass `aria-describedby` to `AlertDialogContent` and
+ * exclude this component.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogdescription
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Description = ({
+	className,
+	ref,
+	...props
+}: ComponentProps<typeof AlertDialogPrimitiveDescription>) => (
+	<AlertDialogPrimitiveDescription
+		ref={ref}
+		data-slot="alert-dialog-description"
+		className={cx("text-body text-center text-sm font-normal sm:text-start", className)}
+		{...props}
+	/>
+);
+
+type AlertDialogActionProps = Omit<ButtonProps, "appearance" | "intent"> & {
+	/**
+	 * The visual style of the action button. Optional here — `AlertDialog.Action`
+	 * defaults to `"filled"` so the confirming action carries the heaviest
+	 * visual weight in the dialog.
+	 *
+	 * @default "filled"
+	 */
+	appearance?: ButtonAppearance;
+	/**
+	 * The tone of the action button. Optional here — when omitted,
+	 * `AlertDialog.Action` derives the tone from the parent `AlertDialog.Root`'s
+	 * `intent` (`"danger"` → `"danger"`, `"info"` → `"neutral"`). A passed
+	 * value always wins over the context-derived tone.
+	 */
+	intent?: ButtonIntent;
+};
+
+/**
+ * Default `AlertDialog.Action` button tone for each `AlertDialog` intent.
+ */
+const actionIntentByDialogIntent = {
+	danger: "danger",
+	info: "neutral",
+} as const satisfies Record<AlertDialogIntent, ButtonIntent>;
+
+/**
+ * A button that confirms the Alert Dialog action.
+ * Defaults to `appearance="filled"`, with a tone derived from the parent
+ * `AlertDialog.Root`'s intent: danger dialogs get a danger button, info dialogs
+ * get a neutral one.
+ * Does not close the alert dialog by default.
+ *
+ * These buttons should be distinguished visually from the AlertDialogCancel button.
+ *
+ * Composes around the mantle Button component.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogaction
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Action = ({
+	//,
+	appearance = "filled",
+	intent,
+	ref,
+	...props
+}: AlertDialogActionProps) => {
+	const ctx = useAlertDialogContext();
+	const contextIntent = actionIntentByDialogIntent[ctx.intent];
+
+	return (
+		<Button
+			//
+			appearance={appearance}
+			data-slot="alert-dialog-action"
+			intent={intent ?? contextIntent}
+			ref={ref}
+			{...props}
+		/>
+	);
+};
+
+type AlertDialogCancelProps = Omit<ButtonProps, "appearance" | "intent"> & {
+	/**
+	 * The visual style of the cancel button. Optional here — `AlertDialog.Cancel`
+	 * defaults to `"outlined"` so it visually de-emphasizes against
+	 * `AlertDialog.Action`.
+	 *
+	 * @default "outlined"
+	 */
+	appearance?: ButtonAppearance;
+	/**
+	 * The tone of the cancel button. Optional here — `AlertDialog.Cancel`
+	 * defaults to `"neutral"`, the workhorse tone for routine actions.
+	 *
+	 * @default "neutral"
+	 */
+	intent?: ButtonIntent;
+};
+
+/**
+ * A button that closes the dialog and cancels the action.
+ * Defaults to `appearance="outlined"` and `intent="neutral"`.
+ *
+ * This button should be distinguished visually from AlertDialogAction buttons.
+ *
+ * Composes around the mantle Button component.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogcancel
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Cancel = ({
+	//,
+	appearance = "outlined",
+	className,
+	intent = "neutral",
+	ref,
+	...props
+}: AlertDialogCancelProps) => (
+	<AlertDialogPrimitiveClose asChild>
+		<Button
+			appearance={appearance}
+			data-slot="alert-dialog-cancel"
+			className={cx("mt-2 sm:mt-0", className)}
+			intent={intent}
+			ref={ref}
+			{...props}
+		/>
+	</AlertDialogPrimitiveClose>
+);
+
+type AlertDialogIconProps = Omit<SvgAttributes, "children"> & {
+	svg?: ReactNode;
+};
+
+/**
+ * Default `AlertDialog.Icon` glyphs for each `AlertDialog` intent.
+ */
+const defaultIcons = {
+	danger: <WarningIcon />,
+	info: <InfoIcon />,
+} as const satisfies Record<AlertDialogIntent, ReactNode>;
+
+/**
+ * Default `AlertDialog.Icon` text colors for each `AlertDialog` intent.
+ */
+const defaultIconColors = {
+	danger: "text-danger-600",
+	info: "text-accent-600",
+} as const satisfies Record<AlertDialogIntent, string>;
+
+/**
+ * An icon that visually represents the intent of the AlertDialog.
+ *
+ * Defaults to a warning icon for danger intent and an info icon for info
+ * intent with the appropriate color.
+ *
+ * Can be overridden with a custom icon using the `svg` prop.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogicon
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Icon = ({ className, ref, svg, ...props }: AlertDialogIconProps) => {
+	const ctx = useAlertDialogContext();
+	const defaultColor = defaultIconColors[ctx.intent];
+	const defaultIcon = defaultIcons[ctx.intent];
+
+	return (
+		<SvgOnly
+			ref={ref}
+			data-slot="alert-dialog-icon"
+			className={cx("size-12 sm:size-7", defaultColor, className)}
+			svg={svg ?? defaultIcon}
+			{...props}
+		/>
+	);
+};
+
+/**
+ * A button that closes the Alert Dialog. (Unstyled)
+ *
+ * `AlertDialog.Cancel` already closes the dialog by default. Reach for
+ * `AlertDialog.Close` when you need to attach close behavior to a custom
+ * element (typically wrapping `AlertDialog.Action` with `asChild` so the
+ * action both runs the operation and dismisses the dialog).
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogclose
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Close asChild>
+ *           <AlertDialog.Action type="button" onClick={() => doThing()}>
+ *             Do thing and close
+ *           </AlertDialog.Action>
+ *         </AlertDialog.Close>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const Close = ({ ref, ...props }: ComponentProps<typeof AlertDialogPrimitiveClose>) => (
+	<AlertDialogPrimitiveClose ref={ref} data-slot="alert-dialog-close" {...props} />
+);
+
+/**
+ * A modal dialog that interrupts the user with important content and expects a
+ * response. Use AlertDialog for destructive or irreversible confirmations
+ * (delete, sign out, leave without saving) where the user must explicitly
+ * acknowledge before proceeding — it blocks all background interaction by
+ * default. For non-destructive input modals or confirmation flows, use
+ * `Dialog` instead. For side-panel content (filter panels, detail views,
+ * navigation drawers), use `Sheet`.
+ *
+ * `AlertDialog` renders its floating layer at Tailwind `z-60`, Mantle's overlay
+ * tier, above every float (`z-50`). Floats composed inside the content portal
+ * into the positioner (`data-slot="alert-dialog-positioner"`) and paint above
+ * the content. When multiple overlays are open, the most recently mounted
+ * overlay renders on top.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/alert-dialog
+ *
+ * @example
+ * Composition:
+ * ```
+ * AlertDialog.Root
+ * ├── AlertDialog.Trigger
+ * └── AlertDialog.Content
+ *     ├── AlertDialog.Icon
+ *     └── AlertDialog.Body
+ *         ├── AlertDialog.Header
+ *         │   ├── AlertDialog.Title
+ *         │   └── AlertDialog.Description
+ *         └── AlertDialog.Footer
+ *             ├── AlertDialog.Cancel
+ *             └── AlertDialog.Action
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <AlertDialog.Root intent="danger">
+ *   <AlertDialog.Trigger asChild>
+ *     <Button type="button" appearance="outlined" intent="neutral">
+ *       Show Danger Alert Dialog
+ *     </Button>
+ *   </AlertDialog.Trigger>
+ *   <AlertDialog.Content>
+ *     <AlertDialog.Icon />
+ *     <AlertDialog.Body>
+ *       <AlertDialog.Header>
+ *         <AlertDialog.Title>
+ *           Are you absolutely sure?
+ *         </AlertDialog.Title>
+ *         <AlertDialog.Description>
+ *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+ *         </AlertDialog.Description>
+ *       </AlertDialog.Header>
+ *       <AlertDialog.Footer>
+ *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+ *         <AlertDialog.Action type="button">
+ *           Continue
+ *         </AlertDialog.Action>
+ *       </AlertDialog.Footer>
+ *     </AlertDialog.Body>
+ *   </AlertDialog.Content>
+ * </AlertDialog.Root>
+ * ```
+ */
+const AlertDialog = {
+	/**
+	 * A modal dialog that interrupts the user with important content and expects a
+	 * response. Holds the open state and the `intent` that `AlertDialog.Icon` and
+	 * `AlertDialog.Action` read.
+	 *
+	 * `AlertDialog` renders its floating layer at Tailwind `z-60`, Mantle's overlay
+	 * tier, above every float (`z-50`). Floats composed inside the content portal
+	 * into the positioner (`data-slot="alert-dialog-positioner"`) and paint above
+	 * the content. When multiple overlays are open, the most recently mounted
+	 * overlay renders on top.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogroot
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * A button that confirms the Alert Dialog action.
+	 * Defaults to `appearance="filled"`, with a tone derived from the parent
+	 * `AlertDialog.Root`'s intent: danger dialogs get a danger button, info dialogs
+	 * get a neutral one.
+	 * Does not close the alert dialog by default.
+	 *
+	 * These buttons should be distinguished visually from the AlertDialogCancel button.
+	 *
+	 * Composes around the mantle Button component.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogaction
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Action,
+	/**
+	 * Contains the main content of the alert dialog.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogbody
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Body,
+	/**
+	 * A button that closes the dialog and cancels the action.
+	 * Defaults to `appearance="outlined"` and `intent="neutral"`.
+	 *
+	 * This button should be distinguished visually from AlertDialogAction buttons.
+	 *
+	 * Composes around the mantle Button component.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogcancel
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Cancel,
+	/**
+	 * A button that closes the Alert Dialog. (Unstyled)
+	 *
+	 * `AlertDialog.Cancel` already closes the dialog by default. Reach for
+	 * `AlertDialog.Close` when you need to attach close behavior to a custom
+	 * element (typically wrapping `AlertDialog.Action` with `asChild` so the
+	 * action both runs the operation and dismisses the dialog).
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogclose
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Close asChild>
+	 *           <AlertDialog.Action type="button" onClick={() => doThing()}>
+	 *             Do thing and close
+	 *           </AlertDialog.Action>
+	 *         </AlertDialog.Close>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Close,
+	/**
+	 * The popover alert dialog container.
+	 *
+	 * Renders on top of the overlay and is centered in the viewport. It carries
+	 * `role="alertdialog"`, and a pointer interaction outside the content does not
+	 * close it: the user must acknowledge the dialog through `AlertDialog.Cancel`,
+	 * `AlertDialog.Close`, or the Escape key.
+	 *
+	 * `AlertDialog.Content` renders its floating layer at Tailwind `z-60`, Mantle's
+	 * overlay tier, above every float (`z-50`). Floats composed inside the content
+	 * portal into the positioner (`data-slot="alert-dialog-positioner"`) and paint
+	 * above the content. When multiple overlays are open, the most recently mounted
+	 * overlay renders on top.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogcontent
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Content,
+	/**
+	 * An accessible description to be announced when the dialog is opened.
+	 * Renders as a `div` by default, but can be changed to any other element using
+	 * the `asChild` prop.
+	 *
+	 * Alternatively, pass `aria-describedby` to `AlertDialogContent` and
+	 * exclude this component.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogdescription
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Description,
+	/**
+	 * Contains the footer content of the dialog, including the action and
+	 * cancel buttons.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogfooter
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Footer,
+	/**
+	 * Contains the header content of the dialog, including the title and
+	 * description.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogheader
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Header,
+	/**
+	 * An icon that visually represents the intent of the AlertDialog.
+	 *
+	 * Defaults to a warning icon for danger intent and an info icon for info
+	 * intent with the appropriate color.
+	 *
+	 * Can be overridden with a custom icon using the `svg` prop.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogicon
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Icon,
+	/**
+	 * An accessible name to be announced when the dialog is opened.
+	 * Alternatively, pass `aria-label` or `aria-labelledby` to
+	 * `AlertDialog.Content` and exclude this component.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogtitle
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Title,
+	/**
+	 * A button that opens the Alert Dialog.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/alert-dialog#alertdialogtrigger
+	 *
+	 * @example
+	 * ```tsx
+	 * <AlertDialog.Root intent="danger">
+	 *   <AlertDialog.Trigger asChild>
+	 *     <Button type="button" appearance="outlined" intent="neutral">
+	 *       Show Danger Alert Dialog
+	 *     </Button>
+	 *   </AlertDialog.Trigger>
+	 *   <AlertDialog.Content>
+	 *     <AlertDialog.Icon />
+	 *     <AlertDialog.Body>
+	 *       <AlertDialog.Header>
+	 *         <AlertDialog.Title>
+	 *           Are you absolutely sure?
+	 *         </AlertDialog.Title>
+	 *         <AlertDialog.Description>
+	 *           Proident quis nisi tempor irure sunt ut minim occaecat mollit sunt.
+	 *         </AlertDialog.Description>
+	 *       </AlertDialog.Header>
+	 *       <AlertDialog.Footer>
+	 *         <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+	 *         <AlertDialog.Action type="button">
+	 *           Continue
+	 *         </AlertDialog.Action>
+	 *       </AlertDialog.Footer>
+	 *     </AlertDialog.Body>
+	 *   </AlertDialog.Content>
+	 * </AlertDialog.Root>
+	 * ```
+	 */
+	Trigger,
+} as const;
+
+export {
+	//,
+	AlertDialog,
+};

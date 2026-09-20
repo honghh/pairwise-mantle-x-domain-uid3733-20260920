@@ -1,0 +1,4308 @@
+# @ngrok/mantle
+
+## 0.86.3
+
+### Patch Changes
+
+- [#1521](https://github.com/ngrok/mantle/pull/1521) [`a48d20b`](https://github.com/ngrok/mantle/commit/a48d20bbb81ed331d7021658f310658a7b947220) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Combobox` and `MultiSelect` import ariakit from `@ariakit/react/combobox` and `@ariakit/react/store` instead of the `@ariakit/react` barrel. The barrel re-exports every ariakit component, so one `Combobox` import evaluated tabs, menus, dialogs, and the rest. Every other component that wraps a Radix or sonner primitive now imports it by name as well, so no mantle module holds a namespace import of a primitive. No public API changes.
+
+  A production bundle does not change, because `@ariakit/react` and `@ariakit/react-components` both set `sideEffects: false` and a bundler already drops the unused chunks. A dev server evaluates the module graph on every SSR request, and a test runner that isolates each file in a fresh process evaluates it once per file. Both see the saving. The table reports a fresh Node 24 process per import with the ESM `import` condition, five rounds, and the median wall time:
+
+  | Entry point                  | Modules before | Modules after | Import time before | Import time after |
+  | ---------------------------- | -------------- | ------------- | ------------------ | ----------------- |
+  | `@ngrok/mantle/combobox`     | 293            | 135           | 211 ms             | 87 ms             |
+  | `@ngrok/mantle/multi-select` | 312            | 157           | 218 ms             | 96 ms             |
+  | `@ngrok/mantle/dialog`       | 87             | 87            | 32 ms              | 32 ms             |
+  | `@ngrok/mantle/select`       | 97             | 97            | 37 ms              | 37 ms             |
+  | `@ngrok/mantle/toast`        | 34             | 34            | 16 ms              | 16 ms             |
+  | `@ngrok/mantle/button`       | 28             | 28            | 17 ms              | 16 ms             |
+
+  The Radix and sonner rows do not move, because each of those packages already ships one component per package. Those imports change for consistency only.
+
+## 0.86.2
+
+### Patch Changes
+
+- [#1511](https://github.com/ngrok/mantle/pull/1511) [`e26dc3b`](https://github.com/ngrok/mantle/commit/e26dc3bf8d7fdbf66120cdde02841a7fac6249aa) Thanks [@randseay](https://github.com/randseay)! - `Table.Header` changes from `px-4` to `px-3`, so the column label aligns with the `p-3` body text in `Table.Cell`. Body cells do not move and the row height does not change. A header that sets its own horizontal padding keeps it, because a consumer `className` wins through tailwind-merge.
+
+## 0.86.1
+
+### Patch Changes
+
+- [#1512](https://github.com/ngrok/mantle/pull/1512) [`0ca0fbd`](https://github.com/ngrok/mantle/commit/0ca0fbd22f05fff9c2181c5f63f24ede6756d8bc) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Command.DialogRoot` and `Sidebar.Root` no longer throw on a `keydown` that carries no `key`.
+
+  Both bind a `window` listener for their chord. The listener reads `event.key.toLowerCase()`. The DOM type promises a string, so the read looked safe. A browser extension or a password manager can dispatch a bare `Event("keydown")` instead of a real `KeyboardEvent`. The listener then threw `Cannot read properties of undefined (reading 'toLowerCase')` on the page. Both listeners now read the key optionally. They ignore an event that names no key.
+
+## 0.86.0
+
+### Minor Changes
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Select.Content` no longer accepts `asChild`. The prop is omitted from its props type.
+
+  The content renders the scroll buttons and the viewport around your items, so there is no single child for a slot to clone. `asChild` hands `Slot` every child, and `Slot` takes exactly one, so the prop threw `Primitive.div failed to slot onto its children` at render. The docs page has carried that warning since the part shipped. The type error now names the problem at compile time instead.
+
+  **Migration.** A call site that passes `asChild` to `Select.Content` crashes today, so nothing working breaks. Style the part with `className` instead.
+
+  `Select.Trigger`, `Select.Item`, `Select.Group`, `Select.Label`, and `Select.Separator` keep `asChild`.
+
+### Patch Changes
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `AlertCenter.Item` no longer crashes on a page a browser translation engine has translated. The item portals its `children` into a per-id host element, and a portal owns no node of its own, so React removed each of those children from the host one at a time. When a child was a bare string, Google Translate had already reparented that text node into a `<font>` wrapper, and the `removeChild` raised `NotFoundError`. React re-threw the raw `DOMException`, which tore down the React root and blanked the page. Dismissing the alert and navigating away from the route both took that path, and both are the documented way to remove an item.
+
+  `children` now render inside a `<div data-slot="alert-center-item-label">`, which is the only node the portal puts in the host. React removes that element instead of a text node, and an element removal cannot throw. A lone string child also moves onto React's `textContent` path, which wipes the translation wrapper, so a swap between text and an element inside the item is safe too.
+
+  The wrapper is `display: contents`, so it adds no box: `Alert.Icon` and `Alert.Content` stay direct flex items of the banner chrome and keep its `gap`. The bar's exit ghost now reads the wrapper's children rather than the host's, so an item whose children render nothing still captures no ghost. `alert-center-item-label` is public API, and the docs page lists it beside `alert-center-item-host`.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `routeBreadcrumb.content` now documents what a content crumb must render: a host element at its root, never bare text. `Breadcrumb.List` renders an `<ol>`, so the crumb's outermost node is a direct child of a list. A bare string there is a text node React removes by itself, and a browser translation engine has reparented it first, so the removal throws and the page goes blank. No wrapper can fix it from mantle's side, because a `Breadcrumb.Item` wrapper would nest an `<li>` in an `<li>`.
+
+  The JSDoc on the `content` factory and on the `Crumb` union both carry the contract, and the breadcrumbs recipe states it above every content-crumb example. The type still takes `ReactNode`; narrowing it to `ReactElement` is a breaking change and waits for the next `minor`.
+
+- [#1508](https://github.com/ngrok/mantle/pull/1508) [`fc71cca`](https://github.com/ngrok/mantle/commit/fc71cca330e3aae43efb3773a568a59e3025ef62) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Bump runtime dependencies: `@ariakit/react` to 0.4.40 and `@tanstack/react-virtual` to 3.14.13.
+
+  The `@ariakit/react` bump reaches `Combobox` and `MultiSelect`, whose items build on ariakit's `Command`. Version 0.4.40 fixes `Command` keyboard activation with Enter and Space in Vitest's default jsdom environment, so a consumer test that runs in jsdom and presses Enter or Space on an item now selects it. The fix only reaches jsdom.
+
+  The `@tanstack/react-virtual` bump reaches `List.VirtualRoot` and `SelectableList.VirtualViewport`, which compose the virtualizer's `measureElement` onto each row as a ref callback. The virtualizer no longer calls `flushSync` from that callback, so React's development build no longer logs the `flushSync` warning when a row measures. The bump also keeps a row's key in the measurement cache, so a `getItemKey` callback that reads mutable data cannot change the identity of a measured row, and the debounced scroll-end fallback now reads the current scroll offset instead of overwriting a measurement adjustment with stale state.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `AreaChart`, `BarChart`, `LineChart`, and `ScatterPlot` no longer crash their `Tooltip` and `Legend` render props on a page a browser translation engine has translated. Both host elements stay mounted for the life of the chart, so React removed a render prop's text nodes one at a time whenever the content went away: the pointer left the plot, the chart lost focus, `Escape` dismissed the readout, or keyboard stepping cleared the point cursor. Google Translate reparents each of those text nodes into a `<font>` first, and the `removeChild` threw `NotFoundError`, which tore down the React root and blanked the page. A readout that returned a fragment of bare text, such as `<>{hover.xValue}: {value}</>`, hit it on the first mouse-out.
+
+  A `children` readout now renders inside a `<div data-slot="area-chart-tooltip-label">`, and a `children` legend inside `<div data-slot="area-chart-legend-label">`. The other three charts spell them `bar-chart-`, `line-chart-`, and `scatter-plot-`. React removes that element instead of the text nodes, and an element removal cannot throw. Each div is `display: contents`, so it adds no box: your content stays a direct layout child of the tooltip or the legend, and a `className` you pass to either part keeps laying it out. The default readout and the default legend are unchanged and render no such div.
+
+  The eight slots are public API. The JSDoc and the docs-page API reference for each part list them.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - The `@example` on `useCommandDialog` no longer teaches a shape that crashes a translated page. It rendered `Search everything for “{query}”` as three children of a `Command.Item`, and `Command.DialogRoot` resets the query on every open, so React removed the middle text node between two literal siblings. A browser translation engine reparents that node first, so the removal threw `NotFoundError` and blanked the page. The example is one template literal now, which makes the interpolation a lone child React writes through `textContent`.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `DataTable.ActionCell` and `DataTable.ActionHeader` now render `children` inside a label span: `data-table-action-cell-label` and `data-table-action-header-label`. Both cells hold a sticky-column indicator beside `children`, so a bare text child was never a lone child. On a page a browser translation engine had translated, the removal React runs when the content changes shape or goes away raised `NotFoundError` and blanked the page. A placeholder cell that gains an action button, and an `ActionHeader` whose `children` fall back to the built-in `sr-only` label, both took that path.
+
+  Moving the indicator after `children` cured its own mount and nothing else, so the 2026-08-04 guarantee for `ActionHeader` was narrower than the docs stated. The label span covers the removal and the type swap the move never reached.
+
+  Both spans are `display: contents`, so no layout moves. The two slots are public API, and the docs page lists each beside its cell.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `DropdownMenu.SubTrigger`, `DropdownMenu.CheckboxItem`, and `DropdownMenu.RadioItem` now render `children` inside a label span: `dropdown-menu-sub-trigger-label`, `dropdown-menu-checkbox-item-label`, and `dropdown-menu-radio-item-label`. Each part renders a caret or a check indicator that never unmounts, so a bare text label was never a lone child. On a page a browser translation engine had translated, the removal React runs when the label changes shape or goes away raised `NotFoundError` and blanked the page. Each span stays mounted, so a lone string label takes React's `textContent` path, which wipes the translation wrapper instead of removing a node the item no longer owns. Each span is `display: contents`, so an icon and its label stay flex items of the item and keep its `gap`.
+
+  **Migration.** An icon you pass as a child of one of these three parts is now a grandchild, so a `[&>svg]` class on the item no longer reaches it. Each part's own default moved with it, to `[&>[data-slot=<part>-label]>svg]:size-5`. Change a `[&>svg]:…` override of your own to the matching `[&>[data-slot=<part>-label]>svg]:…`. That form shares the default's variant prefix, so tailwind-merge drops the default instead of shipping both. A `[&_svg]:…` class, or a class on the icon itself, is not enough: it also loses on specificity to the item's extra attribute selector. `DropdownMenu.Item` renders no sibling and no wrapper, so its `[&>svg]` default is unchanged.
+
+  The three slots are public API, and the docs page lists each beside its part.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `MultiSelect.Item` now renders `children` inside a `<div data-slot="multi-select-item-label">`. The selected-state check is a permanent element sibling, so a bare text label was never a lone child: on a page a browser translation engine had translated, the removal React runs when the label changes shape or goes away raised `NotFoundError` and blanked the page. The wrapper stays mounted, so a lone string label takes React's `textContent` path, which wipes the translation wrapper instead of removing a node the option no longer owns.
+
+  The wrapper is a `<div>` because a custom option layout is often a `MediaObject`, whose root is a `<div>` that a `<span>` may not contain. It is `display: contents`, so a child of your own stays a flex item of the option and any `flex-1` on it still resolves.
+
+  `multi-select-item-label` is public API, and the docs page lists it beside `multi-select-item`.
+
+- [#1509](https://github.com/ngrok/mantle/pull/1509) [`171c72d`](https://github.com/ngrok/mantle/commit/171c72d278d0327ffb11172fa163e07ca175a183) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `asChild` now works on `DropdownMenu.SubTrigger`, `DropdownMenu.CheckboxItem`, `DropdownMenu.RadioItem`, `Select.Trigger`, `Select.Item`, and `MultiSelect.Item`.
+
+  Each of the six renders a second element beside your children: a submenu caret, or a check indicator. The prop threw at render on every one of them, because the slot received two children and takes exactly one. Each part now clones your single child as its element and moves the label span and that second element inside it. Your child keeps its own props, and the part's class names, data attributes, and `ref` merge onto it.
+
+  ```tsx
+  <DropdownMenu.RadioItem value="small" asChild>
+  	<Link to="?size=small">Small</Link>
+  </DropdownMenu.RadioItem>
+  ```
+
+  The label wrapper each part carries for translated pages rides along, so a bare string inside your child stays safe on both paths.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Select.Trigger` now renders `children` inside a `<span data-slot="select-trigger-label">`. The caret is a permanent element sibling, so a bare text child was never a lone child: on a page a browser translation engine had translated, the removal React runs when that child changes shape or goes away raised `NotFoundError` and blanked the page. A trigger that renders `selected ? <span>{selected.label}</span> : "Select"` took that path on the first pick. The span stays mounted, so a lone string child takes React's `textContent` path, which wipes the translation wrapper instead of removing a node the trigger no longer owns.
+
+  The span is `display: contents`, so `Select.Value` stays a flex item of the trigger and keeps its `gap`.
+
+  **Migration.** `Select.Value` is now a grandchild of the trigger, so a `[&>span]` class on the trigger reaches the wrapper instead. The part's own defaults moved with it, from `[&>span]:line-clamp-1 [&>span]:text-left` to `[&>[data-slot=select-trigger-label]>span]:line-clamp-1` and `[&>[data-slot=select-trigger-label]>span]:text-left`. Change a `[&>span]:…` override of your own to the matching `[&>[data-slot=select-trigger-label]>span]:…`. That form shares the default's variant prefix, so tailwind-merge drops the default instead of shipping both. An unchanged `[&>span]:line-clamp-none` now lands on the wrapper: `line-clamp` sets `display`, which gives the wrapper a box and takes `Select.Value` out of the trigger's flex row.
+
+  `select-trigger-label` is public API, and the docs page lists it beside `select-trigger`.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `SelectableList.Empty` no longer crashes on a page a browser translation engine has translated. The part is a `role="status"` live region that stays mounted, so React removes the message from inside it when the filter matches options again. A message built from more than one node, such as `No results for <strong>{query}</strong>.`, puts real text nodes there. Google Translate reparents each one first, and the `removeChild` threw `NotFoundError`, which tore down the React root and blanked the page. One keystroke in each direction was enough to hit it.
+
+  The message now renders inside a `<span data-slot="selectable-list-empty-label">`. React removes that element instead of the text nodes, and an element removal cannot throw. The span is `display: contents`, so it adds no box: the message stays a direct child of the centered region, and the layout is unchanged. A message that is a lone string also takes React's `textContent` path now, which wipes the translation wrapper instead of fighting it.
+
+  The new slot is public API. The JSDoc and the docs-page API reference list it beside `selectable-list-empty`.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `SelectableList.SelectAll` now renders `children` inside a `<span data-slot="selectable-list-select-all-label">`. The checkbox is a permanent element sibling, so a bare text label was never a lone child: on a page a browser translation engine had translated, the removal React runs when a count-aware label swaps to an element raised `NotFoundError` and blanked the page.
+
+  The span is `display: contents`, so the checkbox and the label stay flex items of the header and keep its `gap`.
+
+  `selectable-list-select-all-label` is public API, and the docs page lists it beside `selectable-list-select-all`.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Sidebar.Trigger`, `Sidebar.Tooltip`, and `Sidebar.SearchTrigger` no longer crash on a page a browser translation engine has translated. Both defects were the same shape: a `shortcut` crossing `null` changed the rendered node type, so React deleted the whole child list instead of appending. The translated label was reparented by then, and that removal raised `NotFoundError`, which tore down the React root and blanked the page.
+
+  The shared tooltip body always renders its `<span data-slot="sidebar-tooltip-row">` now, and only the chord chips are conditional, so a `shortcut` that resolves after the first paint appends beside an element. `Sidebar.SearchTrigger` branches on `asChild` rather than on `shortcut`, and its `<span data-slot="sidebar-search-trigger-shortcut">` is always mounted on the default `button` path. That span is `display: none` while it is empty, so a row with no chord keeps its layout and its flex `gap` exactly as before. Under `asChild` the span is absent, which keeps `Slot` at exactly one child.
+
+  Each part also wraps the content a consumer passes, because a mounted chord span leaves a bare text label with a sibling and crashes the consumer's own label swap. The tooltip body wraps `label` in a `<span data-slot="sidebar-tooltip-label">`, and `Sidebar.SearchTrigger` wraps `children` in a `<span data-slot="sidebar-search-trigger-label">` on the default `button` path. Both are `display: contents`, so neither adds a box. The chord chips carry `sidebar-tooltip-shortcut` and `sidebar-search-trigger-shortcut`. All five slots are public API, and the docs page lists each beside its part.
+
+  **Migration.** The leading icon in a `Sidebar.SearchTrigger` is now a grandchild on the default `button` path, so the part's own `[&>svg:first-child]` utilities gained a `[&>[data-slot=sidebar-search-trigger-label]>svg:first-child]` twin. Both forms ship, so a direct leading icon on the `asChild` path keeps its size and its colors exactly as before. Add the matching slot-scoped form to a `[&>svg]:…` override of your own, or it stops reaching the icon on the `button` path.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Tabs.Trigger` now renders `children` inside a `<span data-slot="tabs-trigger-label">`, on the plain path and the `asChild` path alike. The active-tab decoration is a permanent element sibling, so a bare text label was never a lone child: on a page a browser translation engine had translated, the removal React runs when the label changes shape or goes away raised `NotFoundError` and blanked the page. The span stays mounted, so a lone string label takes React's `textContent` path, which wipes the translation wrapper instead of removing a node the trigger no longer owns. The span is `display: contents`, so the icon, the label, and `Tabs.Badge` stay flex items of the trigger and keep its `gap`.
+
+  **Migration.** An icon you pass as a child of a trigger is now a grandchild, so a `[&>svg]` class on the trigger no longer reaches it. The part's own default moved with it, from `[&>svg]:size-5` to `[&>[data-slot=tabs-trigger-label]>svg]:size-5`. Change a `[&>svg]:…` override of your own to the matching `[&>[data-slot=tabs-trigger-label]>svg]:…`. That form shares the default's variant prefix, so tailwind-merge drops the default instead of shipping both. A `[&_svg]:…` class, or a class on the icon itself, is not enough: it also loses on specificity to the trigger's extra attribute selector. An unchanged `[&>svg]:…` override now matches nothing, and the default survives beside it.
+
+  `tabs-trigger-label` is public API, and the docs page lists it beside `tabs-trigger`.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Toast.Root` now renders `children` inside a `<div data-slot="toast-label">`. The intent accent bar is a permanent element sibling, so a bare text child was never a lone child: on a page a browser translation engine had translated, the removal React runs when the content changes shape or goes away raised `NotFoundError` and blanked the page. A toast that `makeToast` updates in place under a repeated id took that path.
+
+  The wrapper is a `<div>` because `Toast.Message` renders a `<p>`, which a `<span>` may not contain. It is `display: contents`, so the icon, the message, and an action stay flex items of the root and `Toast.Message`'s `flex-1` still resolves.
+
+  `toast-label` is public API, and the docs page lists it beside `toast`. It wraps everything you pass the root, not only the message text.
+
+- [#1505](https://github.com/ngrok/mantle/pull/1505) [`748773c`](https://github.com/ngrok/mantle/commit/748773c0269f26c893d9e6b54aeac8e434c4306e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Tooltip.Content` now renders `children` inside a `<div data-slot="tooltip-label">`. The arrow is a permanent element sibling, so a bare text body was never a lone child of the surface: React held a real text node for it, and on a page a browser translation engine had translated, the removal React runs when the body changes shape or goes away raised `NotFoundError` and blanked the page. The wrapper stays mounted, so a lone string body takes React's `textContent` path, which wipes the translation wrapper instead of removing a node the surface no longer owns.
+
+  The wrapper is a `<div>` because a tooltip body is often a `<p>`, which a `<span>` may not contain. It is `display: contents`, so it adds no box and every child of your body stays a layout child of the surface.
+
+  `tooltip-label` is public API, and the docs page lists it beside `tooltip-content`. `TooltipProvider` no longer stamps `data-slot="tooltip-provider"`: the Radix provider renders no DOM, so that attribute named an element that never existed.
+
+## 0.85.2
+
+### Patch Changes
+
+- [#1501](https://github.com/ngrok/mantle/pull/1501) [`b4f2d00`](https://github.com/ngrok/mantle/commit/b4f2d006e871a6e5f190b62f45e90a5d32e2a7ad) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Every `Select` part now joins a `data-slot` you pass ahead of its own slot instead of replacing it, so `<Select.Trigger data-slot="app-trigger">` renders `data-slot="app-trigger select-trigger"` and both hooks keep working.
+
+  The docs page and the JSDoc now list the data attributes each part stamps: `data-state`, `data-placeholder`, `data-disabled`, and `data-validation` on `Select.Trigger`; `data-state`, `data-side`, and `data-align` on `Select.Content`; and `data-state`, `data-highlighted`, and `data-disabled` on `Select.Item`. Every `Select.Root` prop carries a description.
+
+  `Select.Content` no longer animates when the user prefers reduced motion.
+
+- [#1501](https://github.com/ngrok/mantle/pull/1501) [`b4f2d00`](https://github.com/ngrok/mantle/commit/b4f2d006e871a6e5f190b62f45e90a5d32e2a7ad) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Select` no longer crashes on a page a browser translation engine has translated. Radix portals the selected item's text into `Select.Value` and keys the placeholder, so React removed a bare text node from the trigger whenever the value changed, the placeholder gave way to a first value, or the select unmounted on navigation. Google Translate reparents that text node first, and the `removeChild` threw `NotFoundError`, which tore down the React root and blanked the page.
+
+  `Select.Item` now renders `children` inside a `<span data-slot="select-item-label">`. `Select.Value` renders `placeholder` inside a `<span data-slot="select-placeholder">` and your own `children` inside a `<span data-slot="select-value-label">`. React removes those elements instead of a text node, and an element removal cannot throw. Each span is `display: contents`, so it adds no box: your own item or value content stays the direct layout child of the value node, and a trigger override such as `[&>span]:flex-1` keeps working. A lone string child on `Select.Value` also takes React's `textContent` path now, which wipes the translation wrapper, so a swap between text and an element there is safe too.
+
+  `Select.Value` also carries `data-slot="select-value"`. All four slots are public API, and the data-attribute tables on the docs page list them. You no longer need to wrap item labels in your own `<span>`.
+
+  `translate="no"` on a `Select.Item` now also rides on the label span, so the copy the trigger shows stays untranslated. Set it on an item whose label is an ID, a path, a filename, or a key.
+
+## 0.85.1
+
+### Patch Changes
+
+- [#1447](https://github.com/ngrok/mantle/pull/1447) [`886cb87`](https://github.com/ngrok/mantle/commit/886cb8798820827ee53cfa94842cb92cc4d1eb17) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Ship React Compiler output in the published package. Components and hooks come precompiled with automatic memoization, so consumers get the render-performance win without running the compiler themselves. React 19, which the package already requires, carries the `react/compiler-runtime` import the compiled code uses. The build runs the compiler through `oxc-transform-react`, the Rust port of the React Compiler.
+
+  `DataTable` compiles too. TanStack Table v9 keeps its `row`, `column`, and `header` objects stable, so the parts that read state through them (`Header`, `Row`, `HeaderSortButton`, `RowExpandButton`, `ExpandedRow`) now read it inside a TanStack `Subscribe` boundary, as TanStack's React Compiler guide describes. Each boundary also re-runs when `useTable` receives new options. `DataTable.Row` subscribes to the whole table state, so a column's `cell` renderer can keep reading `row.getIsSelected()` and similar methods, and can keep closing over your component's values. `List.VirtualRoot` reads `useVirtualizer` through an opted-out hook and compiles otherwise.
+
+  Treat props as immutable. A compiled component memoizes on prop identity, so an object or array mutated in place after you passed it does not re-render the component. This was already the React contract; the compiler now relies on it.
+
+  Measured in headless Chromium against a tree of 12 cards with an 8-row table each (288 leaf elements), median time per update, production React:
+
+  | Scenario                                                 | Uncompiled mantle | Compiled mantle |
+  | -------------------------------------------------------- | ----------------: | --------------: |
+  | Parent re-render, mantle props unchanged, app uncompiled |            1.0 ms |          0.8 ms |
+  | Parent re-render, mantle props unchanged, app compiled   |            1.0 ms |         <0.1 ms |
+  | One leaf label changes                                   |            1.0 ms |          0.8 ms |
+  | Mount, app uncompiled                                    |            2.9 ms |          3.2 ms |
+  | Mount, app compiled                                      |            2.1 ms |          2.1 ms |
+
+## 0.85.0
+
+### Minor Changes
+
+- [#1492](https://github.com/ngrok/mantle/pull/1492) [`82d2c3b`](https://github.com/ngrok/mantle/commit/82d2c3ba4a0e6d1f719ab561e666f3765df9b07f) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Move `DataTable` to TanStack Table v9 (`@tanstack/react-table` 9.2.4). v9 stores table state in TanStack
+  Store atoms, registers features per table so unused ones tree-shake away, and works with the React Compiler.
+  `@ngrok/mantle/data-table` still re-exports everything from `@tanstack/react-table`, so no app needs a direct
+  dependency on it. Follow the migration guide:
+  https://mantle.ngrok.com/migrations/data-table-tanstack-v9-migration
+
+  **Breaking: the table instance you build changes.** Every `DataTable` part keeps its name and props, but the
+  TanStack calls around it move to the v9 API:
+
+  ```tsx
+  // before
+  import {
+  	DataTable,
+  	createColumnHelper,
+  	getCoreRowModel,
+  	getSortedRowModel,
+  	useReactTable,
+  } from "@ngrok/mantle/data-table";
+
+  const columnHelper = createColumnHelper<Payment>();
+  const columns = [columnHelper.accessor("email", {/* … */})];
+  const table = useReactTable({
+  	data,
+  	columns,
+  	getCoreRowModel: getCoreRowModel(),
+  	getSortedRowModel: getSortedRowModel(),
+  });
+  const sorting = table.getState().sorting;
+
+  // after
+  import {
+  	DataTable,
+  	createColumnHelper,
+  	createSortedRowModel,
+  	rowSortingFeature,
+  	sortFn_alphanumeric,
+  	sortFn_datetime,
+  	sortFn_text,
+  	tableFeatures,
+  	useTable,
+  } from "@ngrok/mantle/data-table";
+
+  const features = tableFeatures({
+  	rowSortingFeature,
+  	sortedRowModel: createSortedRowModel(),
+  	sortFns: {
+  		alphanumeric: sortFn_alphanumeric,
+  		datetime: sortFn_datetime,
+  		text: sortFn_text,
+  	},
+  });
+  const columnHelper = createColumnHelper<typeof features, Payment>();
+  const columns = columnHelper.columns([columnHelper.accessor("email", {/* … */})]);
+  const table = useTable({ features, data, columns });
+  const sorting = table.state.sorting;
+  ```
+
+  - `useReactTable` is now `useTable`, and its options require `features` from `tableFeatures({ … })`.
+  - The `get*RowModel()` options are gone. The core row model is automatic. Register the rest as feature and
+    slot pairs: `rowSortingFeature` + `sortedRowModel: createSortedRowModel()`, `columnFilteringFeature` (+
+    `globalFilteringFeature`) + `filteredRowModel: createFilteredRowModel()`, `rowPaginationFeature` +
+    `paginatedRowModel: createPaginatedRowModel()`, `rowExpandingFeature` + `expandedRowModel:
+createExpandedRowModel()`, `columnGroupingFeature` + `groupedRowModel: createGroupedRowModel()`,
+    `rowSelectionFeature`, `columnVisibilityFeature`.
+  - `createColumnHelper<TData>()` is now `createColumnHelper<typeof features, TData>()`, and the column array
+    must go through `columnHelper.columns([ … ])`. A bare array no longer typechecks against the `columns`
+    option.
+  - `table.getState()` is now the `table.state` property.
+  - `sortingFn` is now `sortFn`, and a string name resolves only against the `sortFns` slot. Register
+    `sortFn_alphanumeric`, `sortFn_datetime`, and `sortFn_text` there to keep v8 auto-sort behavior; without a
+    slot, auto-sort falls back to `sortFn_basic`. The exported `sortFns` and `filterFns` registries are deprecated in
+    v9, so import the functions you use.
+  - A column's `filterFn: "auto"` default and every string name resolve only against the `filterFns` slot. A grouped
+    total with `aggregationFn: "auto"` or a string name resolves only against `aggregationFns`, and it needs
+    `rowAggregationFeature` registered. A function value bypasses both slots. Register
+    `includesString: filterFn_includesString` to keep v8 column filtering on string columns, and `sum: aggregationFn_sum`
+    to keep v8 totals on group rows. Without them, a column filter returns every row and a group row's `getValue()` is
+    `undefined`; only a development build warns.
+  - The instance types gain a leading `TFeatures` parameter: `Column<typeof features, TData, TValue>`,
+    `Row<typeof features, TData>`, `Table<typeof features, TData>`, `ColumnDef`, `HeaderContext`, `CellContext`, and
+    `TableOptions`. State types such as `SortingState` and `ExpandedState` are unchanged.
+
+  **What the mantle parts now require.** `DataTable.HeaderSortButton` accepts a `column` only from a table that
+  registers `rowSortingFeature`, and `DataTable.RowExpandButton` accepts a `row` only from a table that registers
+  `rowExpandingFeature`. Both are compile-time errors on that prop. `DataTable.Row`,
+  `DataTable.EmptyRow`, and `DataTable.ExpandedRow` work with or without `columnVisibilityFeature`: with it they
+  respect hidden columns, without it they render every column. `DataTable.Header` sets `aria-sort` only when the
+  table can sort.
+
+  **Not supported.** mantle does not re-export the deprecated `@tanstack/react-table/legacy` shim
+  (`useLegacyTable`, `legacyCreateColumnHelper`, the `get*RowModel` stubs). Move each table to `useTable`
+  instead.
+
+  **Performance.** Measured against `main` (v8) with a 6-column sortable table built from the `DataTable` parts, in
+  headless Chromium on production React 19.2.8, medians of 3 rounds:
+
+  | Rows   | Mount                  | Parent re-render, same props | Sort toggle            | New `data` array, same length | Retained heap after mount |
+  | ------ | ---------------------- | ---------------------------- | ---------------------- | ----------------------------- | ------------------------- |
+  | 1,000  | 33.6 → 31.1 ms (−7%)   | 8.2 → 7.4 ms (−10%)          | 14.5 → 11.7 ms (−19%)  | 14.3 → 11.9 ms (−17%)         | 9.8 → 7.4 MiB (−24%)      |
+  | 10,000 | 378.6 → 344.1 ms (−9%) | 78.4 → 73.6 ms (−6%)         | 263.5 → 238.9 ms (−9%) | 143.3 → 121.4 ms (−15%)       | 105.8 → 82.0 MiB (−23%)   |
+
+  A consumer bundle that registers only `rowSortingFeature` is 0.8 kB gzip smaller than its v8 equivalent
+  (35.4 → 34.6 kB). A bundle that registers every stock feature is 5.5 kB larger (36.8 → 42.3 kB), because v9
+  features carry code that v8 shipped inside core. Register only the features a table uses.
+
+### Patch Changes
+
+- [#1493](https://github.com/ngrok/mantle/pull/1493) [`4ae38d3`](https://github.com/ngrok/mantle/commit/4ae38d342e4e0a2088e5ce6a6f49ad70a9f8a4fd) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Table.Root` no longer forces a layout inside React's commit. Its overflow observer used to read `scrollWidth`
+  in a layout effect on mount, which laid out the whole table before React could finish the commit. The first
+  read now runs in the `ResizeObserver` callback, after the browser's own layout, and a `flushSync` there keeps
+  `data-x-overflow`, `data-x-scroll-end`, and `data-sticky-active` on the first painted frame. On a 1,000-row
+  `DataTable` the mount commit drops from about 31 ms to 14 ms, and from about 344 ms to 142 ms at 10,000 rows.
+  Time to first paint is unchanged, because the browser lays out the table either way.
+
+## 0.84.3
+
+### Patch Changes
+
+- [#1489](https://github.com/ngrok/mantle/pull/1489) [`af79e2e`](https://github.com/ngrok/mantle/commit/af79e2e7259100bc46e3c4b2ab824b49dd242518) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `PasswordInput` now animates its eye icon on every visibility change, including a change to `showValue` from another control. Before this change, only a click on the built-in toggle animated the icon, so a page that reveals several fields from one control swapped the icons with no motion. The icon no longer animates when a controlled consumer ignores the toggle, because the icon did not change. Reduced motion still turns the animation off. The docs page shows a controlled example under [Visibility state](https://mantle.ngrok.com/components/forms/password-input#visibility-state).
+
+- [#1489](https://github.com/ngrok/mantle/pull/1489) [`af79e2e`](https://github.com/ngrok/mantle/commit/af79e2e7259100bc46e3c4b2ab824b49dd242518) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `PasswordInput` now documents every data attribute it stamps, in its JSDoc and on its docs page: `data-slot="input-capture"` on the `<input>`, and `data-disabled` and `data-validation` on the chrome, beside the two `data-slot` values it already listed. `PasswordInputProps` gained a JSDoc summary. See the [PasswordInput API](https://mantle.ngrok.com/components/forms/password-input#passwordinput).
+
+## 0.84.2
+
+### Patch Changes
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Accordion` collapsed content now leaves the accessibility tree and the tab order in every browser, as the docs state. In browsers that support `hidden="until-found"`, nothing changes: the content carries that attribute and find-in-page can still reveal it. In other browsers, and in the server HTML, the collapsed `Accordion.Content` now carries `inert`. Before this change those browsers kept the collapsed content, and any buttons or links inside it, focusable and readable while it was clipped to zero height.
+
+  `Accordion.Trigger` now carries `aria-controls`, and `Accordion.Content` carries the matching `id`, as the WAI-ARIA disclosure pattern requires. `Accordion.Item` generates the id so the pair matches in the server HTML, and `id` is no longer a prop on `Accordion.Content`.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `AlertDialog.Content` now carries `role="alertdialog"`, and a pointer interaction outside the content no longer closes the dialog. The docs already promised that the user must acknowledge an alert dialog; before this change the content had `role="dialog"` and a click on the backdrop dismissed it. Escape, `AlertDialog.Cancel`, and `AlertDialog.Close` still close it. Your `onInteractOutside` handler still runs; the content calls `event.preventDefault()` after it.
+
+  The `AlertDialog.Icon` JSDoc and docs now describe its real props (`svg` on an `<svg>` element, no `asChild`), and every namespace member's JSDoc summary matches its part.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Anchor` renders `rel="noopener noreferrer"` when `target="_blank"` and `rel` is omitted. The JSDoc and docs page promised this default; the code never set it. A `rel` you pass is used as-is. The `icon` prop is now decorative by default (`aria-hidden` unless the SVG carries a name, a role, or an explicit `aria-hidden`), as the docs already said, and the docs API table gains the `rel` row.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Make a disabled or loading `Button` and `IconButton` inert under `asChild`. The native `disabled` attribute does nothing on an `<a>`, so before this change a disabled `asChild` link announced `aria-disabled="true"` but stayed in the tab order and still navigated on click. The child now gets no `disabled` attribute; it gets `aria-disabled="true"`, `tabIndex={-1}`, and a click on it is cancelled before its own handler or a router runs. The cancel replaces the child's own `onClickCapture` while disabled, because Radix runs a child handler before a slot handler. The dimmed styling applies through `aria-disabled` as well as `disabled`. Pointer events stay on, so a `Tooltip` that explains why the button is disabled still opens on hover.
+
+  `disabled` and `isLoading` now always win: `aria-disabled={false}` can no longer re-enable a button the caller disabled.
+
+  The JSDoc and the docs pages now list every data attribute both buttons emit (`data-appearance`, `data-intent`, `data-size`, `data-loading`, `data-disabled`, and `data-icon-button`), name `isLoading` where they once named a `state` prop that never existed, and document `ButtonGroup`.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Calendar` now merges `className` with `classNames.root` instead of letting a `classNames.root` replace it. Its JSDoc documents the `data-slot="calendar"` hook and states that it is a month grid with no text entry.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Align the `Card` namespace JSDoc with each part's declaration, so `Card.Root`, `Card.Body`, `Card.Header`, and `Card.Title` show one summary in every editor surface.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Close accessibility and documentation gaps shared by `BarChart`, `LineChart`, `AreaChart`, and `ScatterPlot`.
+
+  - The sr-only keyboard instructions now name every key the chart handles: Left and Right, Page Up and Page Down, Home and End, Enter or Space, and Escape. They named only Left, Right, Home, End, and Enter before.
+  - A `decorative` chart is now `inert`, so a composed `CopyButton` inside the hidden backdrop is no longer a tab stop.
+  - `CopyButton` announces "Copied" through an always-mounted `role="status"` element after a copy. The icon swap was the only feedback before. A second copy inside the two-second reset window is announced again.
+  - The sr-only data table caption now reads the text of the `aria-labelledby` element, so a chart named by a heading gets a distinct caption instead of "Chart data".
+  - `BarChart.Grid`, `BarChart.XAxis`, `BarChart.YAxis`, and `BarChart.ReferenceLine` JSDoc now state the horizontal-orientation behavior, and the `Grid` default reads "perpendicular to the bars".
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Checkbox` sets `aria-readonly="true"` when `readOnly` is set. The native `readonly` attribute is inert on a checkbox, so mantle blocks the toggle with a click guard; assistive technology now hears the state instead of a toggle that fails in silence.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Choice.Description` no longer takes `id`. `Choice.Root` owns that id and points the control's `aria-describedby` at it; a consumer `id` replaced it and left the reference dangling. The id is now stamped after the props spread, so a wider props object cannot override it either.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Close accessibility gaps in `CodeBlock`.
+
+  - The `<pre>` no longer carries `aria-expanded`, which is not valid on a `<pre>`. It now carries `data-state="collapsed" | "expanded"` while a `CodeBlock.ExpanderButton` is composed, and the collapsed max height reads that attribute. `CodeBlock.ExpanderButton` keeps its own `aria-expanded` and `aria-controls`. If you styled the collapsed state with the `aria-collapsed:` variant on the `<pre>`, use `data-[state=collapsed]:` instead.
+  - Line numbers are `aria-hidden`, so a screen reader reads the code, not "1 const x".
+  - `CodeBlock.CopyButton` announces "Copied" through an always-mounted `role="status"` element after a copy. A second copy inside the two-second reset window is announced again.
+  - `CodeBlock.ExpanderButton` no longer types `asChild`. The prop threw at runtime, because the button renders its own label and caret.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - The `Combobox.Group`, `Combobox.GroupLabel`, and `Combobox.ItemValue` summaries in the built types now carry the same wrapping and `aria-labelledby` guidance as the docs page.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Command.Shortcut` now locks `translate="no"`, like `Kbd`, so a browser translator never renames a shortcut key. `MetaKey` hides its glyph from assistive technology, so a screen reader reads its label ("Command" or "Control") once. The `translate` prop is removed from its type. The search icon in `Command.Input` is hidden from assistive technology, and the `Command.SearchTrigger`, `Command.DialogRoot`, and `Command.DialogContent` summaries in the built types now match their docs: `SearchTrigger` renders no DOM of its own.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix the `DataTable` header accessibility contract.
+
+  - `DataTable.Header` takes an optional `column`. When the column is sorted, the cell carries `aria-sort="ascending"` or `"descending"`. Pass the same `column` you pass `DataTable.HeaderSortButton`.
+  - `DataTable.HeaderSortButton` keeps the column label as its accessible name. It no longer prepends a screen-reader-only "Column sorted in … order" sentence, so the name does not change on every click and a label query matches the column name alone. The sort state lives in `aria-sort` on the header cell and `data-sort-direction` on the button.
+  - A column that cannot sort (`disableSorting`, or `enableSorting: false` on the column) renders its label as plain text. It was a focusable button whose click did nothing.
+  - `DataTable.ActionHeader` renders a screen-reader-only "Actions" label when you pass no children, so the action column has a name.
+  - `DataTable.EmptyRow` spans the visible leaf columns, not every registered column, so a hidden column no longer stretches the empty state past the table.
+  - `data-expanded` on `DataTable.Row` is now documented.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `DescriptionList` exports `DescriptionListItemProps`, `DescriptionListLabelProps`, and `DescriptionListValueProps` alongside `DescriptionListProps`. A `data-slot` passed to `DescriptionList.Root` now joins in front of `"description-list"` instead of replacing it, and every part documents its `data-slot`. The part summaries in the built types now match their declarations.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Dialog.Description` JSDoc: the namespace copy now states that the part renders a `div` and takes `asChild`, the same as the part declaration.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `DropdownMenu.Shortcut` locks `translate="no"`, so a browser translation engine cannot rename a shortcut key; the prop is omitted from its type. The `DropdownMenu.SubTrigger` JSDoc and docs now say it opens on hover, ArrowRight, or Enter, not on focus.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Empty.Title` is typed as `ComponentProps<"h3">`, so it accepts `ref` as the docs state. The docs now give `Empty.Icon`'s real size (`size-10`) and say the icon is decorative by default.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `HoverCard` JSDoc: the `Content` and `Portal` namespace summaries now match their parts, including that content mounts into the nearest layer container when `container` is omitted.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Icon` and `SvgOnly` are decorative by default. They now render `aria-hidden="true"` unless the props or the svg element carry a name (`aria-label`, `aria-labelledby`, a `<title>` child, or Phosphor's `alt`), a `role`, or an explicit `aria-hidden`. A bare Phosphor icon sets none of these, so before this change every icon that sat next to a text label inside an `<a>`, a `<span>`, or a `<div>` was an unnamed graphic to a screen reader. Every mantle part that renders a decorative icon through these primitives (`Anchor`, `Badge`, `Button` with `asChild`, `Alert.Icon`, `AlertDialog.Icon`, `Empty.Icon`, `Toast.Icon`, and the menu carets and checks) inherits the fix.
+
+  When an icon is the only thing that conveys its meaning, pass `role="img"` and `aria-label` and it stays exposed.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Remove the unused `color` mode from `InlineIconProps`. No icon implemented the `"auto"` branded fill it described, and every consumer omitted the prop; the ngrok marks fill with `currentColor`, so the `color` CSS property sets the fill. `Omit<InlineIconProps, "color">` still compiles.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Input` no longer stamps `data-disabled="false"` when it receives `aria-disabled="false"`. The `data-disabled:` variant matches attribute presence, so the stray value dimmed an enabled control.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - The `Kbd` docs and JSDoc no longer recommend `aria-label` on the `<Kbd>`. The `<kbd>` element has the `generic` role, which prohibits naming, so a screen reader does not read that label reliably and audit tools flag it. Every example now names a symbol key with a visually hidden label inside the `<Kbd>` and marks the glyph `aria-hidden`.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Label` stamps `data-disabled` instead of `aria-disabled` for its disabled style. A `<label>` has no role that supports `aria-disabled`, so the attribute conveyed nothing to assistive technology. Style the disabled state with `data-disabled:`; the old `aria-disabled:` hook no longer matches.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - The `List.Root`, `List.VirtualRoot`, and `List.Item` summaries in the built types now match their declarations, and the props docs name `isItemDisabled` among the grid-only knobs that `List` omits.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Main` no longer accepts `id` or `tabIndex`. It always stamps `id="main"` and `tabIndex={-1}`, because `SkipToMainLink` targets `#main` and focuses it, and a value passed through props was silently discarded before this change.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `MediaObject.Root`, `MediaObject.Media`, and `MediaObject.Content` now forward every `<div>` prop. Before this change they kept only `className`, `style`, `children`, and `ref`, so an `id`, an `aria-*` attribute, a `data-*` attribute, or an `onClick` was dropped in silence while the docs said "All props from div". A `data-slot` chain from an `asChild` ancestor joins ahead of each part's own slot name instead of replacing it.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `MultiSelect` tags now use a valid ARIA structure. `MultiSelect.TagValues` renders the tags inside a `role="list"` named "Selected values" (set `aria-label` to change it), and each `MultiSelect.Tag` is a `role="listitem"` that marks itself `data-active` while it has focus. Before this change every tag was a `role="option"` with no listbox around it, and the option role's presentational children flattened the "Remove …" button out of the accessibility tree. `MultiSelect.Trigger` is now `role="presentation"` instead of an unnamed `role="group"`; the input's label names the control.
+
+  If you render custom tags through the `MultiSelect.TagValues` render function, give them `role="listitem"`, and query them by that role or by `data-slot="multi-select-tag"` in tests.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `OtpInput.Root` documents its accessible-name contract. The hidden input needs a name: inside a `Field.Item`, `Field.Label` supplies it; on its own, pass `aria-label`. The docs examples that render the control on its own now do so.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `CursorPagination.PageSizeSelect` names its combobox "Items per page" by default. Its visible text is only the current value, so a screen reader had no stable name for it. Pass `aria-label` to override the name. The dead `value` attribute on the trigger button is gone.
+
+  `useOffsetPagination`'s `goToLastPage` stays on page 1 for an empty list. It set the 1-indexed `currentPage` to 0 and the `offset` to a negative number.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Popover` JSDoc: each namespace member's summary now matches its part. `Popover.Trigger` opens on click; the namespace copy claimed it also opened on focus.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Document the accessible name contract for `ProgressBar` and `ProgressDonut`. Both render `role="progressbar"`, so they need a name: pass `aria-label`, or `aria-labelledby` that points at a visible label. Every docs and JSDoc example now does. The JSDoc and docs also state that a `value` outside `0..max` renders as indeterminate, list the emitted data attributes, drop a stale `viewBox` rationale from `strokeWidth`, and correct the `ProgressDonut.Indicator` examples to set the color with `className`, not the SVG `color` attribute.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `QrCode.Frame` is now an image to assistive technology. It always carries `role="img"` and takes `aria-label` or `aria-labelledby` for its name; when neither is set, the name falls back to "QR code". Pass a label that says what the code encodes, such as "QR code for ngrok.com". Before this change, a screen reader met an unnamed graphic. `role` is no longer a `Frame` prop.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `RadioGroup` accessibility and documentation fixes.
+
+  - `RadioGroup.Item` shows a focus ring when it renders a custom `RadioGroup.Indicator` or none. Before, only the default indicator's circle drew a ring, so an item with custom children had no visible focus.
+  - The items no longer forward `aria-describedby` from `Field.Control`. Headless UI strips the value, so the prop was dead; the JSDoc already said the attribute does not propagate.
+  - `RadioGroup.Indicator` drops a `name` that `Choice.Indicator` injects for a control, so the presentational `<div>` no longer carries an invalid attribute.
+  - The `RadioGroup.InputSandbox` JSDoc now states what the sandbox does: a click inside it still selects the radio and focus returns to the input, and keys other than Enter and Tab stop there.
+  - The docs no longer claim that each item renders a real `<input type="radio">`. Each item is a `div[role="radio"]`; the group renders one hidden input for form submission when it has a `name`. The examples drop `<label htmlFor>` pairs, which cannot bind to a `div[role="radio"]`, and every standalone group carries an accessible name.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `SandboxedOnClick` with `asChild` no longer stamps `role="presentation"` on the child. A presentational role on a link or a button is an ARIA conflict that user agents ignore and audit tools flag. The default `<div>` keeps the role, and the child keeps its own.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Select.Root`'s `onBlur` now fires when the trigger button blurs. Before this change the prop was stored and never called, so a form library's `field.handleBlur` never ran for a `Select`. It runs after any `onBlur` you pass on `Select.Trigger`.
+
+  The docs now list `Select.Item`'s `icon` prop and `Select.Content`'s `position` prop with its `"popper"` default, and the `Select.Root` and `Select.Trigger` summaries in the built types carry the same validation and `Field.Control` guidance as the docs page.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - The search icon in `SelectableList.Filter` is hidden from assistive technology. Every `SelectableList` part summary in the built types now matches its declaration, so hover documentation and the docs page say the same thing.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `HorizontalSeparatorGroup` accepts `ref`, as the docs said it did. Its props are now `ComponentProps<"div">` instead of `HTMLAttributes<HTMLDivElement>`. The data attributes both parts emit (`data-orientation`, `data-separator`, `data-horizontal-separator-group`, and each `data-slot`) are now documented in the JSDoc and on the docs page.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Sheet` JSDoc and docs now say the sheet slides in from the left or right edge. `side` accepts `"left" | "right"` only; the docs listed `"top"` and `"bottom"`, which the type never accepted.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Skeleton` renders `aria-hidden="true"` by default, as its docs already described. Pass `aria-hidden={false}` to opt out, which `Breadcrumb.Skeleton` does because its `role="status"` announcer lives inside the bar. The props type now uses `Omit` to drop `children`; the earlier `Exclude` was a no-op on an object type.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `SkipToMainLink` joins a `data-slot` you pass with its own `"skip-to-main-link"` instead of replacing it, like the layout parts do. The focus call no longer passes `preventScroll`, so a target below the fold scrolls into view when the link is activated and a sighted keyboard user sees where focus went.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Slider` documentation matches the code. The `color` default is `"bg-accent-600"`, not `"bg-accent-500"`; `minStepsBetweenThumbs` defaults to `1`, not `0`; `showTicks` spreads one tick per `step` evenly across the track, so the ticks do not land on the step values when the range is not a multiple of `step`; and `aria-labelledby` names every thumb with the same text, so a range slider should prefer `aria-label`, which derives a name per thumb.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Document the `data-slot="split-button"` and `data-size` attributes that `SplitButton.Root` emits, in the JSDoc and the docs API reference.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - A click on a read-only `Switch` now reaches ancestor click handlers. The guard still calls `preventDefault`, which Radix reads to skip the toggle, but no longer calls `stopPropagation`, so a clickable row around a read-only switch gets its click.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Table.Header` defaults `scope` to `"col"`. Pass `scope="row"` for a header cell inside a body row. The docs now say that `Table.Root` attaches `ref` to its inner scroll container and that `Table.Caption` is the table's accessible name.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Tabs.Trigger` with `asChild` no longer forces `tabIndex={0}` onto its child. Radix rotates `tabIndex` so only the active tab is a Tab stop, and the forced value put every tab, for example every router link in a list, into the Tab order.
+
+  `Tabs.List` no longer scrolls a trigger into view when a pointer press focuses it. It scrolled the pressed tab to the center before the click fired, so an off-center `asChild` link moved out from under the pointer and never navigated. Keyboard focus still scrolls the focused tab to the center.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `ThemeDropdownMenuRadioGroup` now names its `role="group"`: "Theme" by default, `aria-label` to rename it, or `aria-labelledby` to point at a visible heading. Before this change the group had no name. The pre-hydration `Skeleton` inside `ThemeSwitcher.Trigger` renders as a `<span>`, so the server HTML no longer puts a `<div>` inside a `<button>`. The `ThemeSwitcher.Trigger` and `ThemeSwitcher.Content` summaries in the built types now match their declarations.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `useTheme` throws outside a `ThemeProvider`, as its JSDoc always claimed. Before this change the context was seeded with a `["system", () => null]` tuple, so a call outside the provider returned a setter that did nothing.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - - `Toast.Icon` renders a custom `svg` for `intent="info"`. Before this change the info branch ignored `svg` and always drew the default icon.
+  - `Toaster` converts a `duration_ms` of `0` or less to `Number.POSITIVE_INFINITY`, as the docs describe and as `makeToast` already did. Before this change `0` fell back to sonner's 4000ms default and a negative value dismissed at once.
+  - `Toast.Root` no longer advertises `asChild` in its props type. The root renders the intent accent bar next to `children`, so a slot always threw at runtime.
+
+- [#1478](https://github.com/ngrok/mantle/pull/1478) [`36aceb1`](https://github.com/ngrok/mantle/commit/36aceb1196407fb0155c4fbe21a944ffe89722ff) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Tooltip.Content` no longer advertises `asChild` in its props type. The content renders its own arrow next to `children`, so a slot always threw at runtime. `Tooltip.Root` no longer stamps a `data-slot`, because the Radix root renders no DOM for it to land on.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - When `type`, `value`, and the set of open sections are unchanged, `Accordion.Root` now keeps its context identity across parent renders. Before this change, every parent render rebuilt the context, so:
+
+  - every `Accordion.Item` recomputed its state,
+  - every `Accordion.Content` removed and re-added its `beforematch` listener, and
+  - a `memo()` wrapper around an item never skipped a render.
+
+  The accordion still calls the latest `onValueChange` you pass.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `AlertCenter.Bar` now compiles under the React Compiler. It keeps the most recent top alert in React state instead of a ref it read during render; that ref read made the compiler skip the whole component. Nothing changes at runtime: when the alerts empty, the chrome keeps that alert's intent and `data-alert-id` until the exit slide completes.
+
+- [#1486](https://github.com/ngrok/mantle/pull/1486) [`2824f38`](https://github.com/ngrok/mantle/commit/2824f388345a558b11cf5b02a1e5f33d24cfdc29) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `AlertCenter.Item` takes an optional `order`, so you can decide which of two same-intent alerts the bar shows.
+
+  The center ranks alerts by `intent`, then by `order`, then by arrival. Lower comes first. Items that share an order keep arrival order, and an item with no order follows every item that declares one, so ordering your own alerts never lets another author's items cut in. `intent` still decides the tier: a `warning` with `order={0}` never outranks a `danger`.
+
+  Set it when two same-intent alerts come from independent sources. Two queries answer in either order, so before this change the bar showed whichever alert registered first, and nothing later repaired it, because arrival order is sticky for the store's lifetime. Every current consumer keeps its current order: an item with no `order` ties with every other undeclared item, so the comparator falls through to arrival. See the [AlertCenter.Item API](https://mantle.ngrok.com/components/feedback/alert-center#alertcenteritem).
+
+- [#1485](https://github.com/ngrok/mantle/pull/1485) [`1d64033`](https://github.com/ngrok/mantle/commit/1d6403317f1b821b3759b7ca03de7fec6e4d6148) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Alert.DismissIconButton` now moves keyboard focus to a neighbor when its dismissal unmounts the alert. Before, the unmount removed the focused button and focus fell to `<body>`. The next Tab restarted at the top of the page, and a screen reader user got no confirmation that the alert left. Now, when the alert unmounts while the dismiss button holds focus, focus moves to the nearest tabbable element outside the alert: the next one in document order, or the previous one when nothing follows. If your `onClick` handler or a layout effect places focus first, that choice stands. `AlertCenter.DismissIconButton` is unchanged: the center still lands focus on the next alert's control, or on the main landmark when no alert is left. The docs page shows the pattern under [Dismissal](https://mantle.ngrok.com/components/feedback/alert#dismissal).
+
+- [#1477](https://github.com/ngrok/mantle/pull/1477) [`26161ca`](https://github.com/ngrok/mantle/commit/26161ca64319c686e9b8e7a21df4ea757a38e874) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Document how to announce a dynamic `Alert`. `Alert.Root` has no ARIA role of its own, so an alert that your code inserts after an action is silent to a screen reader. Pass `role="alert"` so a screen reader announces it. Assistive tech can miss a live region that mounts already populated, so for an error the user must act on, also move focus to the alert with `tabIndex={-1}`. For a less urgent message, pass `role="status"` on a region that is already mounted and write the message into it. The role passes through to the rendered `<div>` as before; the JSDoc and the docs page now show the pattern with a live example.
+
+- [#1482](https://github.com/ngrok/mantle/pull/1482) [`9dba9ea`](https://github.com/ngrok/mantle/commit/9dba9ea6fa0996a269a335fab9dd97dd4d98b3ad) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Bump runtime dependencies: `@ariakit/react` to 0.4.39 and `@tanstack/react-virtual` to 3.14.11.
+
+  The `@ariakit/react` bump changes the DOM of `MultiSelect.Content`, which renders a modal popover by default. A modal popover with no dismiss button renders a visually hidden fallback button so assistive technology users who cannot press Escape or click outside are not trapped. That button used to be the first child of the `listbox` element, where a `listbox` may not own a `button`. It now renders next to the `listbox`, still inside the modal context. The button is still hidden and still not reachable with Tab, so only a CSS selector on the popover's first child or a test that queries for a button inside the `listbox` sees the change.
+
+  The `@ariakit/react` bump also fixes a one-frame stale highlight in `Combobox` and `MultiSelect`: with `autoSelect` on, the previously active option no longer stays highlighted for one frame after the filtered list changes.
+
+  The `@tanstack/react-virtual` bump reaches `List.VirtualRoot` and `SelectableList.VirtualViewport`. When a row grows while the list is pinned to the end, the virtualizer re-issues the scroll compensation the browser clamped, so the viewport no longer lands short of the last row.
+
+- [#1473](https://github.com/ngrok/mantle/pull/1473) [`fc58b80`](https://github.com/ngrok/mantle/commit/fc58b802e2960994c8836b9140d003a0bbf5e5f9) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump build and runtime dependencies: `tsdown` and `@tsdown/css` to 0.23.0, and `oxc-parser` to 0.149.0.
+
+  `tsdown` builds all three packages, so every published bundle and `.d.ts` file now comes from the new bundler. The public API does not change.
+
+  `oxc-parser` is a runtime dependency of `@ngrok/mantle-vite-plugins` and `@ngrok/mantle-server-syntax-highlighter`, so an install of either package resolves the new version.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - The `Calendar` JSDoc and docs page now state the server-rendering contract. If you omit `today`, `DayPicker` reads the clock during render, once on the server and again in the browser. If the two clocks or time zones disagree on the date, the `today` highlight and its `Today, …` label land on different days. React then reports a hydration mismatch. Under SSR, pass `today` and `defaultMonth` (or `month`) from one request-scoped date. Nothing changes at runtime.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Calendar` now passes `DayPicker` one stable `components` object, and a `classNames` object that changes only when your `className`, `classNames`, or `mode` changes. Before this change, every `Calendar` render handed `DayPicker` two new objects, so `DayPicker` rebuilt its date model and month grid on each render and remounted both navigation carets. A controlled picker re-renders on every day click, so that rebuild ran on each click. Selection, navigation, and your `classNames` and `components` overrides behave as before.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `LineChart`, `AreaChart`, and `ScatterPlot` read data faster on continuous x scales. On a `"time"` scale the chart used to keep one `Date` object per row for the life of the data, so a streaming chart with 100,000 rows carried 100,000 `Date` objects across every append. The chart now builds the `Date` (or the number on a `"linear"` scale) when it publishes a hover snapshot or an `onDatumActivate` event, so each data update is faster and no per-row `Date` stays resident. The `xValue` you receive is unchanged in type and value; it is now a fresh `Date` per snapshot, so a `Date` you mutate in a handler never changes what the tooltip shows next. Band and point scales keep the raw category values as before.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Cut per-frame work in the chart paint loop. A stacked chart above 2,500 rows, or one dense enough to decimate, re-sorted its series list twice per series on every animated frame and again on every hover sync to find each series' stack boundary; the paint loop now reads the boundary by the series' paint index. The hover overlay and the hover snapshot now read a cached series list instead of re-sorting the series on every sync. The chart now creates the reduced-motion media query once instead of once per animated frame. It still reads the live preference, so a mid-session toggle snaps the next frame as before. Nothing visible changes.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - A chart no longer keeps an enter transition for every series `dataKey` it ever rendered. A long-lived chart whose series set churns, such as a top-N chart that swaps keys as traffic shifts, used to accumulate one transition per key for the life of the chart and tick each of them on every animated frame. When a series part unmounts, the chart now drops its enter transition. One behavior follows from this: a series part that unmounts and later mounts again plays its enter transition again, the same as a new series. A prop change on a mounted series still keeps its transition state.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - A `yDomain` change on a chart no longer re-reads the data. Changing `yDomain` on `LineChart`, `AreaChart`, `BarChart`, or `ScatterPlot` used to re-ingest every row of every series, rebuild the stack, and drop the decimation cache, although none of those depend on the y domain. The chart now re-aims the value axis directly, so a slider or a toggle that drives `yDomain` from state stays smooth on large data. With `animate` on, the axis still glides to the new domain. With `animate` off, or under reduced motion, it snaps.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - The chart `Root`, the tooltip surface, and `CopyButton` no longer use three patterns the React Compiler rejects: a ref written through the context state object, a consumer ref written directly inside an effect, and optional calls inside a `try` block. Behavior does not change. A consumer `ref` on a `Tooltip` part still receives the tooltip element, honors a callback ref's cleanup, and resets an object ref to `null` on unmount.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Hovering or keyboard-stepping a chart no longer re-renders the sr-only data table or the legend. Both parts read only the registered series, which a hover publish carries unchanged, so they now subscribe to the series alone. Before this change a dense line chart reconciled up to 150 table rows on every index change under the pointer, which competed with the canvas overlay for the frame. The tooltip and the live region still update on every hover.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - The chart engine now reads each series' point glyph from the published series metadata instead of resolving the slot assignment again on every painted frame. Line markers, scatter points, and the 3D scatter allocate less per frame during tweens and rotation drags. The glyph a series wears does not change.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - A chart re-render with unchanged `Tooltip` props no longer re-registers the tooltip. Before this change, every render of a parent that composed `BarChart.Tooltip`, `LineChart.Tooltip`, `AreaChart.Tooltip`, or `ScatterPlot.Tooltip` tore down and re-created the registration. Each registration republished to the legend, the tooltip, the live region, and the sr-only data table. It also repainted the canvas with nothing changed. A dashboard that re-renders once a second for an unrelated reason paid a full repaint per chart per second. The part now re-registers only when one of its props changes by identity. An inline function or object still counts as a change on every render: a `labelFormat`, `valueFormat`, `footer`, or `children` function, a `footer` element, or an `onClick` handler or `style` object among the div props. Pass stable values to skip the republish.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Checkbox` now sets the native `indeterminate` property in a layout effect, before the browser paints. Before this change, a `Checkbox` with `checked="indeterminate"` or `defaultChecked="indeterminate"` could paint one frame as a plain unchecked box on mount, after hydration, or after an async update, and then switch to the indeterminate visual.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - A callback `ref` on `CodeBlock.Code` is now called once, when the `<pre>` mounts, as long as you pass the same function on each render. When the `<pre>` unmounts, React runs the cleanup your callback returned, or calls the callback once with `null`. Before this change every re-render of the block, including each `CodeBlock.ExpanderButton` click, called the ref with `null` and then with the node again, so a ref that measures or observes the `<pre>` did its setup work several times per block.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - A collapsible `CodeBlock` that mounts on the client now paints collapsed on its first frame. `CodeBlock.ExpanderButton` registers with `CodeBlock.Root` in a layout effect, so the `<pre>` carries `data-state="collapsed"` before the browser paints the mount. Before this change the block painted at full height for one frame and then snapped to the collapsed height, which shifted the content below it on every client-side navigation. Server HTML still renders the `<pre>` without `data-state`, so a server-rendered block collapses at hydration as before.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `CodeBlock.CopyButton` now compiles under the React Compiler. Its click handler no longer calls `onClick` and `onCopy` with `?.()` inside the `try` block. The compiler cannot lower that shape, so it left the whole component uncompiled. `CopyButton` now gets the same compiler memoization as its siblings. Nothing changes at runtime: `onClick`, `onCopy`, and `onCopyError` fire as before.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `CodeBlock.ExpanderButton` now carries `aria-controls` in the server HTML. `CodeBlock.Root` generates the `<pre>` id, so the button and the `<pre>` agree before hydration. Before this change the id reached the button through a mount effect, so the server HTML and the first client render had a button with `aria-expanded` but no `aria-controls`. The `<pre>` id is still a generated value with no stable format.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Combobox.Item` no longer wraps each item in a context provider that nothing read. `Combobox.ItemValue` takes the item value from ariakit's own item context, as before, so the rendered DOM, the data attributes, and the match highlighting are unchanged. A long list mounts one React node less per item.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Command.DialogRoot` now reads `onOpenChange` through a ref, so the value `useCommandDialog()` returns keeps its identity across parent renders. Before this change, an inline `onOpenChange` arrow gave that value a new identity on every parent render. Every consumer of the hook, `Command.SearchTrigger` and `Command.Input` included, re-rendered with it. The callback you pass still runs on every open and close, and the latest one always wins.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Command.Empty` renders nothing in the server HTML and in the hydration pass. cmdk counts matching items in a layout effect, which never runs on the server. Before this change, a server-rendered inline `Command.Root` palette painted "No results found." above its full list until hydration. The message now appears only on the client, and only when no item matches the query. A palette with no items shows its empty state one render after hydration instead of in the server HTML.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - A callback `ref` on `Checkbox`, `Select.Root`, `Select.Trigger`, `Table.Root`, `Tabs.List`, or `TextArea` now fires once when the element mounts, as long as you pass the same function on each render. When the element unmounts, React runs the cleanup your callback returned, or calls the callback once with `null`. Before this change, every re-render of the component detached and re-attached the ref, so your callback ran with `null` and then with the element again on each render. A `ref` that measures the element, registers it, or starts an observer now does that work once. A `Select.Trigger` re-render also no longer round-trips two state updates through the Radix `Select` root. `Dialog.Content`, `Sheet.Content`, and `AlertDialog.Content` no longer pay an extra render pass on each re-render.
+
+  If you pass a different `ref` on a later render, React detaches the old ref and attaches the new one at once, as it does on a plain element. `Accordion`, `Alert`, `AlertCenter`, `Breadcrumb`, `Chart`, `Choice`, `List`, and `Sandbar` already fired your `ref` once per mount, but they attached a swapped `ref` only when the element next mounted. They now attach it at once too.
+
+- [#1483](https://github.com/ngrok/mantle/pull/1483) [`636934f`](https://github.com/ngrok/mantle/commit/636934f0454a3d699974a1c55e9e2a251c01053c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `CursorPagination.Root` accepts a controlled `pageSize`. Pass it with `onChangePageSize` to own the page size yourself, for example in a URL search param, and `CursorPagination.PageSizeSelect` shows the value you pass. Before this change the select was uncontrolled and seeded once from `defaultPageSize`, so a page size that changed outside the component, such as a browser history move that rewrote the URL, never reached the select. `defaultPageSize` still works for the uncontrolled case; pass exactly one of the two. `onChangePageSize` on `Root` also runs in the uncontrolled case, so you can read the change without a callback on `PageSizeSelect`.
+
+  `CursorPagination.PageSizeSelect` now renders its trigger text, such as "50 per page", in the server HTML. Before this change Radix filled the trigger on the client after hydration, so the first paint showed an empty trigger.
+
+  The `DataTable` pagination recipe, in its JSDoc and on both docs pages, now passes the table's live page size as `pageSize`, so the select follows a `table.setPageSize()` call from anywhere.
+
+- [#1486](https://github.com/ngrok/mantle/pull/1486) [`2824f38`](https://github.com/ngrok/mantle/commit/2824f388345a558b11cf5b02a1e5f33d24cfdc29) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `DataTable.Row` and `DataTable.ActionCell` now guard a clickable row the way the docs always said a consumer should.
+
+  - `DataTable.ActionCell` stops a click inside it from reaching the row's `onClick`, and keeps the click's default action, so an action menu opens without the row navigating. Before, the cell only documented that guard, and a forgotten `onClick={(event) => event.stopPropagation()}` navigated the user away when they opened the menu. Your own `onClick` on the cell still runs, and the `<td>` keeps its `role="cell"`. The `stopPropagation` handler in your code is now redundant and can go.
+  - `DataTable.Row` runs `onClick` only for a plain primary click. A modified click (`⌘`, `Ctrl`, `Shift`, `Alt`), a non-primary button, and a click that ends a text selection inside the row all skip it. The link inside the row answers a modified click with a new tab, and a drag-select copies text, so neither is a request to navigate.
+  - `DataTable.Row` stamps `data-clickable` when `onClick` is set, so a test or a stylesheet has a stable hook instead of the `cursor-pointer` class.
+  - A `Table.Body` row now highlights when a link or button inside it has visible focus, the same way it highlights under the pointer, so a keyboard user sees the row-scale target too.
+  - The docs now say why the link in the primary cell is the keyboard path, why the row keeps `role="row"`, and how to wrap that link in `SandboxedOnClick` with `asChild` and `allowClickEventDefault`. See [Navigating on row click](https://mantle.ngrok.com/components/data-display/data-table#navigating-on-row-click).
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Dialog.Content`, `Sheet.Content`, and `AlertDialog.Content` now let Radix own `aria-describedby`. When you render a `Description` part, the content's `aria-describedby` points at that description as soon as the content opens. When you render none, the content carries no `aria-describedby`. Before this change, a mantle wrapper tracked the same presence in its own state and effect, so every root and every open paid for that work twice. An explicit `aria-describedby` on the content still wins.
+
+- [#1477](https://github.com/ngrok/mantle/pull/1477) [`26161ca`](https://github.com/ngrok/mantle/commit/26161ca64319c686e9b8e7a21df4ea757a38e874) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Field.Item` now takes an `id` for the focusable control. `Field.Control` splats it onto the control and `Field.Label` uses it as the default `htmlFor`, so a Playwright locator or an anchor link can find the control by a stable id. When omitted, `Field.Item` generates a stable id as before. An `id` on the control element itself is still overwritten: `Field.Item` owns the control's `id`, `name`, `aria-*`, and `validation`.
+
+  Before this change, an `id` on `Field.Item` landed on its wrapping `<div>`. It now names the control, and the wrapper carries no id. This matches `Choice.Root`, whose `id` also names the control. The migration guide is at [mantle.ngrok.com/migrations/field-item-owns-control-id-migration](https://mantle.ngrok.com/migrations/field-item-owns-control-id-migration).
+
+  ```tsx
+  <Field.Item name="password" id="login-password">
+  	<Field.Label>Password</Field.Label>
+  	<Field.Control>
+  		<PasswordInput autoComplete="current-password" />
+  	</Field.Control>
+  </Field.Item>
+  ```
+
+- [#1477](https://github.com/ngrok/mantle/pull/1477) [`26161ca`](https://github.com/ngrok/mantle/commit/26161ca64319c686e9b8e7a21df4ea757a38e874) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Field.Label` no longer takes `htmlFor`, and `Field.Control` no longer takes `id`. `Field.Item` owns the control id: its `id` prop names the control, `Field.Control` splats it onto the focusable child, and `Field.Label` always points its `htmlFor` at it. A label and its control can no longer drift apart. Outside a `Field.Item`, `Field.Label` renders a `<label>` with no `for` attribute; use `Label` from `@ngrok/mantle/label` there.
+
+  Migration: delete every `htmlFor` on `Field.Label` and every `id` on `Field.Control`. Move a literal id that must stay stable to `id` on the surrounding `Field.Item`. The full guide, with before and after examples, is at [mantle.ngrok.com/migrations/field-item-owns-control-id-migration](https://mantle.ngrok.com/migrations/field-item-owns-control-id-migration).
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Field.Item`, `Field.Errors`, and `Field.ErrorList` now document when the inferred `"error"` state applies. The inference runs on the client, so it applies after hydration. The server HTML carries the error list. Until the page hydrates, the control is not marked invalid (`aria-invalid="true"`) and has no `aria-errormessage`, and the item has no `data-validation="error"`. For an error that renders on the server, set `validation={messages.length > 0 && "error"}` on `Field.Item`; the explicit state is in the server HTML from the first paint. The docs page gains a "Server-rendered errors" section with that idiom.
+
+  `Field.Item` also keeps its context identity stable when `validation` is explicit. Before this change, the first message a `Field.Errors` or `Field.ErrorList` mounted or unmounted rebuilt the context, so `Field.Label`, `Field.Control`, and `Field.Description` re-rendered on that transition. The rendered DOM and ARIA output are unchanged.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `isCountryCode` now checks a `Set` built once at module load instead of scanning the 751-entry `countryCodes` array on every call, so narrowing one code per table row no longer costs a linear scan per row. The results are unchanged: a string in `countryCodes` returns `true`; a lowercase code, a number, an array, `null`, or `undefined` returns `false`.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `MetaKey`, `Command.SearchTrigger`, and `Sidebar.Trigger` now resolve the host platform in the first render of a client mount. Before this change they rendered the non-Apple answer (`⌃`, `Control+K`, `Control+B`), committed, and then corrected themselves in an effect, so a palette that opened on macOS committed twice and could show `⌃` before `⌘`. The server HTML and the hydration render still carry the non-Apple answer, and React still corrects them once after hydration, so nothing changes for a server-rendered page's first paint.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `useBreakpoint` now returns the real breakpoint in the first render of a client mount. Before this change, the first client render of any consumer returned `"default"`. React then forced a second render with the real value, so a layout keyed on the breakpoint could paint its mobile variant for one frame on a desktop viewport. The same happened on every mount after the last consumer unmounted and the viewport changed in between. The server render and the hydration render still return `"default"`.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `useMatchesMediaQuery` now constructs one `MediaQueryList` per hook instance and reuses it across renders and change notifications. Before this change every render called `window.matchMedia` again, which parsed the query and allocated a new list each time. The returned value and the change subscription behave as before.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `usePrefersReducedMotion` now returns the real preference in the first render of a client mount. Before this change every mount rendered `true` (reduce motion), committed, and then re-rendered with the real value from an effect. A dialog or carousel that mounted after hydration and picked its duration from the hook started with no animation, then flipped to the animated variant after paint. Its entrance animation skipped or restarted. The server render and the hydration render still return `true`, so nothing animates before hydration.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `useUndoRedo` now derives `canUndo` and `canRedo` from state instead of reading its history refs during render. The history itself still lives in refs, so two `undo` or `redo` calls inside one event handler still return successive snapshots. The returned object and the re-render timing are unchanged; the hook now follows the Rules of React.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - A callback `ref` passed to `Input` or `InputCapture` now fires once when the `<input>` mounts, as long as you pass the same function on each render. When the `<input>` unmounts, React runs the cleanup your callback returned, or calls the callback once with `null`. Before this change, every re-render of the component detached and re-attached the ref, so the callback saw `null` and then the element again on each re-render. A callback ref that measures the element or sets state no longer pays a layout read or an extra render per re-render.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `isInput` from `@ngrok/mantle/input` now returns `false` on the server. Before this change, a call with a non-null value in a loader, an action, or a render helper threw `ReferenceError: HTMLInputElement is not defined`, because Node declares no `HTMLInputElement`. In the browser nothing changes.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `MultiSelect.Content` now decides whether to turn off Ariakit's body scroll lock from the enclosing overlay's layer container alone, instead of also probing the DOM for a `data-mantle-modal-content` ancestor after mount. Inside `Dialog`, `Sheet`, and `AlertDialog` the result is the same, because each renders its content inside its layer container. If your own overlay carries `data-mantle-modal-content` outside a mantle overlay, Ariakit's lock now stays on there; pass `preventBodyScroll={false}` to turn it off. As before, `preventBodyScroll` overrides the default in either direction.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `MultiSelect.Item` now reads the `lockedValues` of `MultiSelect.TagValues` from React state that `MultiSelect.Root` owns, instead of a ref that `TagValues` wrote during render. A value you lock or unlock while the popover is open now takes effect on the next click, even when your items keep the same element identity across renders (a memoized item list, or a consumer compiled with the React Compiler). Before, such an `Item` kept the lock state from its first render: a click in the popover could still deselect a newly locked value, and a newly unlocked one stayed stuck. The lock also no longer depends on `MultiSelect.Trigger` rendering before `MultiSelect.Content`. `TagValues` and `Item` now compile under the React Compiler; the render-time ref writes and reads made the compiler skip both parts before.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - When `MultiSelect.TagValues` unmounts, it now drops its keyboard handler and its locks. Before, `MultiSelect.Input` kept calling the handler from the last render of `TagValues`, so Backspace on an empty input removed the value that was last at that time. `MultiSelect.Item` also kept honoring locks for a tag list that no longer existed.
+
+- [#1483](https://github.com/ngrok/mantle/pull/1483) [`636934f`](https://github.com/ngrok/mantle/commit/636934f0454a3d699974a1c55e9e2a251c01053c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `useOffsetPagination` accepts `defaultPage`, a controlled `page` with `onPageChange`, and `resetPageOnListSizeChange`. Pass `page` and `onPageChange` to keep the page outside the hook, for example in the URL; the hook calls `onPageChange` with the next page and reads the page back from the prop. Set `resetPageOnListSizeChange: false` to stay on the current page when `listSize` changes: `currentPage` clamps to the new `totalPages` instead of returning to page 1, so a background refetch that changes the list length no longer moves the user. The default stays `true`. `currentPage` normalizes a `page` or `defaultPage`: a value past the last page clamps to it, a fraction rounds down, and `NaN` reads as 1, so a malformed URL param cannot produce a `NaN` offset.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `PasswordInput` now treats `showValue` as a controlled prop, as its docs state. When you pass `showValue`, the toggle button no longer flips the visibility on its own: it calls `onValueVisibilityChange` with the next value, and the input follows the prop. Before this change, a click revealed the value even while `showValue` stayed `false`, so the input drifted from the prop until the prop changed. A `showValue` change now also applies in one render, with no intermediate frame that shows the old `type`, `aria-pressed`, or icon.
+
+  If you pass a static `showValue` and rely on the built-in toggle to flip the visibility, pass `onValueVisibilityChange` and write the next value back into `showValue`, or omit `showValue` to keep the toggle uncontrolled.
+
+- [#1477](https://github.com/ngrok/mantle/pull/1477) [`26161ca`](https://github.com/ngrok/mantle/commit/26161ca64319c686e9b8e7a21df4ea757a38e874) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Make the `PasswordInput` visibility toggle a keyboard-reachable toggle button, and give the input a stable `id`.
+
+  - The toggle is now in the tab order. Enter and Space toggle visibility and keep focus on the button. It was `tabIndex={-1}` before, so a keyboard user could not reach it.
+  - The toggle carries `aria-pressed` for its state and `aria-controls` that points at the input.
+  - When `disabled` is set, the toggle is disabled too. Tab skips the component, and Enter or Space cannot reveal the value.
+  - The accessible name is now the fixed string "Show value". It no longer changes with state, and it no longer contains "password", so a substring label query for the input (`getByLabel("Password")` in Playwright) matches one element. The previous names were "Turn password visibility on" and "Turn password visibility off".
+  - The input uses the `id` you pass, or a generated one when you pass none. Inside a `Field.Item`, the id comes from `Field.Item`'s `id` prop.
+  - The toggle stamps `data-slot="password-input-toggle"`.
+
+  `Input` no longer moves focus into the input when a keyboard user activates a focusable adornment inside it. A pointer click on an adornment still focuses the input.
+
+  Update tests that select the toggle by its old name. The migration guide is at [mantle.ngrok.com/migrations/field-item-owns-control-id-migration](https://mantle.ngrok.com/migrations/field-item-owns-control-id-migration).
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `ProgressDonut.Root` now compiles under the React Compiler. It builds the track circle's `style` object before the context `useMemo`, so the compiler can preserve that memo instead of skipping the component. Nothing changes at runtime: the rendered `<svg>`, its ARIA attributes, its data attributes, and the `--radius` variable are the same.
+
+- [#1486](https://github.com/ngrok/mantle/pull/1486) [`2824f38`](https://github.com/ngrok/mantle/commit/2824f388345a558b11cf5b02a1e5f33d24cfdc29) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - A `Choice.Description` inside a `RadioGroup` item is now the radio's `aria-describedby`, and the `Choice.Title` alone is its accessible name.
+
+  `role="radio"` flattens its children, so before this change a `Choice.Title` and `Choice.Description` inside a radio merged into one name, such as "Free Up to 3 projects and 1 member." Now `Choice.Title` and `Choice.Description` register their ids with the radio item, which points `aria-labelledby` at the title and `aria-describedby` at the description. This works in every item variant: `RadioGroup.Item`, `RadioGroup.ListItem`, `RadioGroup.Card`, and `RadioGroup.Button`. A `Choice` next to a checkbox or a switch is unchanged, and `Choice.Title` now carries an `id`, which defaults to a generated one.
+
+  The same change lets a radio item inside `Field.Control` pick up the field's `aria-describedby`, so `Field.Description` and `Field.Errors` now describe each radio in that composition. Before, Headless UI's `Radio` wrote its own empty `aria-describedby` over the value, and the docs said the attribute did not propagate. Each item variant now renders its own element through Headless UI's `as` prop and stamps the ids after that spread. See [Rich option layout with Choice](https://mantle.ngrok.com/components/forms/radio-group#rich-option-layout-with-choice).
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `SelectableList.Root` no longer re-renders every mounted row when a parent render passes a new inline `onValueChange` or `onQueryChange`. Before this change, an inline callback (`onValueChange={(values) => form.setValue("keys", values)}`) rebuilt the list context on every parent render, so every row re-rendered even when `value`, `options`, and `query` were unchanged. `Root` still calls the latest `onValueChange` and `onQueryChange` you pass.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Sidebar.ItemButton` and `Sidebar.SearchTrigger` now merge their shared row classes through the `cx` argument cache. Before this change, each row render rebuilt and re-hashed a long class string. A navigation that re-renders every row of a large sidebar paid that cost once per row. The rendered `className` is unchanged.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - The `Table` and `Tabs` source files now start with the `"use client"` directive. The published build strips the directive, so nothing changes for you today. A host that reads the source in a React Server Components tree now sees `Table` and `Tabs` as client components.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `ThemeProvider` now compiles under the React Compiler. Its effect cleanup held optional chaining inside a `try` block. The compiler cannot lower that shape, so it skipped the whole component. The cleanup now calls a module function that owns the `try`. Behavior is unchanged: the cross-tab `BroadcastChannel` still closes on unmount, and a `close()` that throws is still swallowed.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `ThemeProvider` now takes an optional `ssrCookie` prop: the theme cookie pair from `extractThemeCookie` that `MantleStyleSheets` and `useInitialHtmlThemeProps` already accept. On the server, the provider seeds `useTheme` and `useAppliedTheme` from it, so the hydrated client renders the same markup as the server. Before this change the server always rendered `system`. A user with a stored theme then hit a hydration mismatch in every component that rendered from the theme on the server. On a dark-theme page, `AutoThemeIcon` kept the server's sun glyph after hydration. The client still reads `document.cookie`, so an omitted `ssrCookie` behaves as before. Pass the value from your root loader: `<ThemeProvider ssrCookie={loaderData?.ssrCookie}>`.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `useCallbackRef` from `@ngrok/mantle/hooks` now accepts a callback with typed parameters, such as `(values: string[]) => void`. Before this change, its generic constraint rejected any callback whose parameters were narrower than `unknown`, so only a callback with no parameters, or with parameters typed `unknown`, compiled. The returned function keeps the exact signature of the callback you pass.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `List.VirtualRoot` and `SelectableList.VirtualViewport` now render the first slice of rows in the server HTML. Before this change, the server emitted the collection chrome with its full height and `aria-rowcount` but zero rows, so a server-rendered long list showed a tall empty box until hydration and no rows at all without JavaScript. `estimateItemHeight` and `overscan` size the slice; the rest of the rows mount after hydration measures the real viewport. The first client render matches the server, so this adds no hydration mismatch.
+
+- [#1487](https://github.com/ngrok/mantle/pull/1487) [`467350f`](https://github.com/ngrok/mantle/commit/467350f5c2606b2ff411360b98b800786f1ef149) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `List.VirtualRoot` and `SelectableList.VirtualViewport` no longer re-render every mounted row each time the visible window moves. The row key function handed to the virtualizer now keeps its identity across renders, so the virtualizer keeps its measurements and a scroll over measured rows re-renders only the rows that enter or leave the window. A row whose measured height differs from `estimateItemHeight` still re-renders the mounted rows once on the frame that measures it. Row keys still follow your `key` props across a reorder or filter.
+
+## 0.84.1
+
+### Patch Changes
+
+- [#1470](https://github.com/ngrok/mantle/pull/1470) [`b5f83e8`](https://github.com/ngrok/mantle/commit/b5f83e888cd564da4d319dda6dee10d383bf38c9) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Choice.Description` now forwards its click to the sibling `Choice.Label`, so the whole content column toggles the control. The accessible name stays the label alone, and the description stays wired through `aria-describedby`.
+
+  The forward skips a click on a link, a button, a form control, a nested label, a `<details>`, or an ARIA widget inside the description: the same rule a `List` row applies to its own click-to-activate. It runs after a consumer `onClick`, so `event.preventDefault()` cancels it. After it forwards, it marks the click handled, so a click on a `SelectableList` row's description toggles the row once. When the choice uses `Choice.Title`, the description forwards nothing, because an ancestor already owns that click. The description also shows the pointer cursor when a `Choice.Label` precedes it.
+
+  `List` and `SelectableList` rows now also defer a bare row click that lands inside a `<details>`, so a `<summary>` toggle no longer activates the row.
+
+- [#1471](https://github.com/ngrok/mantle/pull/1471) [`b5dd7a6`](https://github.com/ngrok/mantle/commit/b5dd7a6c0c6fdbf589327c36e645d3ad74dcbe54) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `useLocalStorage` and `useSessionStorage` now guard every storage access. Before, a `setItem` that threw (a full origin, Safari private browsing, blocked site data) skipped the sync event, so the hook's value never advanced and the caller got no signal: a dismissible banner that gates its visibility on the stored value never closed. A storage read that threw during render took down the subtree.
+
+  If a write fails, the hook now keeps the value in memory, so every same-key instance still advances until the page reloads. A later write that succeeds, or a `storage` event from another document, restores storage as the source of truth. If the browser denies storage access, the read resolves to the default instead of throwing.
+
+- [#1470](https://github.com/ngrok/mantle/pull/1470) [`b5f83e8`](https://github.com/ngrok/mantle/commit/b5f83e888cd564da4d319dda6dee10d383bf38c9) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Slot` no longer erases a component child's own `data-slot`. It passed `data-slot: undefined` to the child when neither side set one, and a part that spreads its props after its own `data-slot` lost the attribute. `Field.Control` wraps its child in `Slot`, so a `Checkbox` or `Choice.Root` inside one rendered without `data-slot="checkbox"` or `data-slot="choice"`.
+
+## 0.84.0
+
+### Minor Changes
+
+- [#1463](https://github.com/ngrok/mantle/pull/1463) [`178b4d3`](https://github.com/ngrok/mantle/commit/178b4d30ff50c8515c017d949dadd62930f216c5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `LiveRegion`, a persistent, visually hidden live region that announces its text to screen readers when the text changes. The `politeness` prop picks the urgency: `"polite"` (the default) renders `role="status"` and `aria-live="polite"`, and `"assertive"` renders `role="alert"` alone, because a redundant `aria-live` makes VoiceOver on iOS announce the message twice. The region stamps `aria-atomic="true"` and `data-slot="live-region"`, takes `asChild`, and treats the derived `role` and `aria-live` as defaults a consumer prop can override. Keep the region mounted from first paint and swap only its children: a region created after the fact announces unreliably.
+
+  Docs: https://mantle.ngrok.com/components/primitives/live-region
+
+- [#1463](https://github.com/ngrok/mantle/pull/1463) [`178b4d3`](https://github.com/ngrok/mantle/commit/178b4d30ff50c8515c017d949dadd62930f216c5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `VisuallyHidden`, a primitive that renders content for screen readers without showing it. It renders a `<span>` clipped to a one-pixel box (never `display: none`), stamps `data-slot="visually-hidden"`, and takes `asChild` to hide a more semantic element (a `<caption>`, a `<legend>`, a heading). Do not use it to name an icon-only control: voice-control software skips a control whose only label is hidden DOM text, so use `aria-label` there instead.
+
+  Docs: https://mantle.ngrok.com/components/primitives/visually-hidden
+
+### Patch Changes
+
+- [#1459](https://github.com/ngrok/mantle/pull/1459) [`edbca2c`](https://github.com/ngrok/mantle/commit/edbca2c9e91edf0f1232f59670a63494e8bdd89c) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump runtime dependencies: `@ariakit/react` to 0.4.38.
+
+  The ariakit bump changes keyboard activation in mantle's ariakit-backed parts (`Combobox`, `MultiSelect`): the click that `Enter` or `Space` synthesizes on an item is now a `PointerEvent` with `pointerId: -1` and an empty `pointerType`, the same shape browsers dispatch for a click no pointer caused, so an `onClick` handler that reads `event.pointerType` or checks `instanceof PointerEvent` now sees the native shape.
+
+  It also fixes hover handling while the popup is closed: an item's hover no longer activates it or clears the active item, so a collapsed list no longer changes value or moves focus on a stray hover.
+
+- [#1459](https://github.com/ngrok/mantle/pull/1459) [`edbca2c`](https://github.com/ngrok/mantle/commit/edbca2c9e91edf0f1232f59670a63494e8bdd89c) Thanks [@dependabot](https://github.com/apps/dependabot)! - `Sandbar` now attaches a rejection handler to the shake animation's `finished` promise. Canceling a shake (a rapid second blocked attempt, or unmount mid-wiggle) rejects that promise with an `AbortError`, which surfaced as an unhandled rejection in test environments such as happy-dom 20.12.0.
+
+- [#1464](https://github.com/ngrok/mantle/pull/1464) [`86758b4`](https://github.com/ngrok/mantle/commit/86758b433d0870c7f06f6c10441a655f1a146aee) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update the `source-all.css` header comment: it no longer recommends the retired `mantleTwSourcePlugin` for apps that use a subset of mantle. Import `source-all.css` alongside `mantle.css` to register mantle's Tailwind sources.
+
+## 0.83.9
+
+### Patch Changes
+
+- [#1450](https://github.com/ngrok/mantle/pull/1450) [`32a7532`](https://github.com/ngrok/mantle/commit/32a7532695c7e8b05d26a93defdb4a31b283d2c3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `IconButton` and `PasswordInput`'s visibility toggle now carry their accessible name as `aria-label` instead of a visually hidden `<span>`. Voice-control tools (Rango, Voice Control, Voice Access) treat DOM text as a visible label, so they skipped these icon-only buttons. Screen readers announce `aria-label` the same way, so nothing changes for them.
+
+  `IconButtonProps` now rejects `aria-label` (typed `never`): the `label` prop is the single way to name the button. Components built on `IconButton` (`ThemeSwitcher.Trigger`, `Sidebar.Trigger`, `DataTable.RowExpandButton`, `CodeBlock.CopyButton`, and the chart copy buttons) inherit the fix.
+
+- [#1427](https://github.com/ngrok/mantle/pull/1427) [`00c346c`](https://github.com/ngrok/mantle/commit/00c346c0425be34b5aa01795a64faf09cec0a354) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump runtime dependencies: `@ariakit/react` to 0.4.37, `@tanstack/react-virtual` to 3.14.10, `input-otp` to 1.5.0, and `sonner` to 2.0.8.
+
+  The ariakit bump changes two behaviors in mantle's ariakit-backed parts (`Combobox`, `MultiSelect`): a select-style popup now takes focus every time it opens, not only when the trigger itself had focus, and a prop set to an explicit `undefined` now behaves like an omitted prop, so the component keeps its computed default.
+
+  The `input-otp` bump hardens `OTPInput`: the browser no longer spellchecks the code, a 16px font-size fallback prevents the iOS focus zoom, and the library's own container now carries `translate="no"`, which backs up the lock mantle already puts on each slot.
+
+## 0.83.8
+
+### Patch Changes
+
+- [#1443](https://github.com/ngrok/mantle/pull/1443) [`d17713d`](https://github.com/ngrok/mantle/commit/d17713d61db4be1906729b192fec195e88b2f954) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `CodeBlock.Code` no longer bounces at the ends of its horizontal scroll range — `overscroll-behavior-x: none` also keeps the scroll from chaining to the page.
+
+- [#1443](https://github.com/ngrok/mantle/pull/1443) [`d17713d`](https://github.com/ngrok/mantle/commit/d17713d61db4be1906729b192fec195e88b2f954) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `CodeBlock.Code` pins the line-number gutter while the code scrolls horizontally.
+
+  The gutter — line numbers and fold toggles — now sticks to the left edge of the scrollport, and an opaque backdrop masks the code sliding under it. Blocks without line numbers scroll as one unit, unchanged.
+
+- [#1443](https://github.com/ngrok/mantle/pull/1443) [`d17713d`](https://github.com/ngrok/mantle/commit/d17713d61db4be1906729b192fec195e88b2f954) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `CodeBlock.Code` no longer shows a horizontal scrollbar when every line fits the container.
+
+  Every rendered line reserved `3.5rem` of right padding to clear the copy button. That reserve widened the code's intrinsic width, so a block whose longest line fit the container still scrolled sideways. Now the full clearance sits on the first two lines only — the only lines the copy button overlaps — and only when a `CodeBlock.CopyButton` is rendered. Every line keeps a `1rem` reserve, so a line at the end of the scroll range stays clear of the container's edge.
+
+- [#1444](https://github.com/ngrok/mantle/pull/1444) [`408092f`](https://github.com/ngrok/mantle/commit/408092fea1372275fd20b35c272a5c78190b09db) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Stack floating UI in two tiers so a background popover can never paint over an open dialog.
+
+  Overlays — `Dialog`, `AlertDialog`, `Sheet`, and `Command.DialogRoot` — now render at `z-60`, above the float tier. Floats — `Popover`, `Tooltip`, `Select`, `DropdownMenu`, and `HoverCard` — stay at `z-50` and portal into the nearest overlay's positioner instead of `document.body`. A float composed inside an overlay now always paints above the overlay that owns it. A float outside every overlay always paints below the overlay tier. Before this change every layer shared `z-50` and the most recently mounted one won, so a popover that opened late — an onboarding popover after hydration, for example — painted on top of an open full-bleed dialog.
+
+  The positioner is a new styling hook on each overlay: `data-slot="dialog-positioner"`, `data-slot="alert-dialog-positioner"`, and `data-slot="sheet-positioner"`.
+
+  An explicit `container` on `Dialog.Portal` or `HoverCard.Portal` now also carries into the parts that portal internally, so the content lands in that container — before, the inner portal ignored it.
+
+  Notes, for the rare consumer that depended on the old stacking:
+
+  - Custom fixed chrome at `z-50` that must paint above an open mantle overlay needs `z-60` or higher.
+  - CSS that selects a float's portal as a direct `body` child (for example `body > [data-radix-popper-content-wrapper]`) no longer matches when the float is composed inside an overlay. Select the float's `data-slot` instead.
+
+  `Combobox.Content` (renders in place), `MultiSelect.Content` (portals into the overlay's `data-mantle-modal-content`), and `Toast` (sonner's own viewport, far above both tiers) keep their placement.
+
+## 0.83.7
+
+### Patch Changes
+
+- [#1441](https://github.com/ngrok/mantle/pull/1441) [`d9829f3`](https://github.com/ngrok/mantle/commit/d9829f348b016b1207b4db1a037f8e379f4ef283) Thanks [@forzalupo](https://github.com/forzalupo)! - `Sidebar` ships a narrower default expanded panel: `--sidebar-width` is now `13rem` (208px), down from `16rem` (256px). `--sidebar-row-width` follows to `12rem` (192px), so menus floored at that token stay flush with a row.
+
+  Override `--sidebar-width` (on `Sidebar.Nav` or at `:root`) if you want the previous width back. See https://mantle.ngrok.com/components/navigation/sidebar#width.
+
+## 0.83.6
+
+### Patch Changes
+
+- [#1432](https://github.com/ngrok/mantle/pull/1432) [`391093a`](https://github.com/ngrok/mantle/commit/391093afd7216dab1ccbd1ae554eccf1b4a6c8df) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add three Breadcrumb pieces for the crumbs that are not plain links, all documented on the [Breadcrumb page](https://mantle.ngrok.com/components/navigation/breadcrumb):
+
+  - `Breadcrumb.Label` — the crumb that is not a link: a level with no page of its own, such as a section whose index URL only redirects (`Settings` in `Settings > General`). It renders a muted `<span>` with `data-slot="breadcrumb-label"`, no `href`, and no `aria-current`, and supports `asChild` like every other part.
+  - `Breadcrumb.Skeleton` — the placeholder crumb for a label that is still loading: one `<li>` rendered as a crumb-sized pulsing bar (`data-slot="skeleton breadcrumb-skeleton"`), plus a screen-reader-only `role="status"` announcement (`label` defaults to "Loading breadcrumbs…"). The bar is `w-24` by default; pass a `w-*` utility for a best-guess width, so the row keeps its shape when the real crumbs arrive.
+  - The route-trail model, exported from `@ngrok/mantle/breadcrumb` and router-agnostic: the `routeBreadcrumb` factory creates link, label, and content crumbs as a discriminated `Crumb` union; `buildCrumbs` derives a `ResolvedCrumb` trail from any matches carrying `id`, `pathname`, and `handle` (react-router's `UIMatch` satisfies this structurally); `hasBreadcrumb` is the type guard; `BreadcrumbHandle<TMatch>` types a route's `handle` export.
+
+  The [breadcrumbs-from-routes recipe](https://mantle.ngrok.com/recipes/breadcrumbs-from-routes) now builds on these exports, so the only file an app copies is the renderer. It covers the prefix crumb (`routeBreadcrumb.label`) and the query-backed crumb: a content crumb shares the page's query and falls back to `Breadcrumb.Skeleton` while the query is pending.
+
+## 0.83.5
+
+### Patch Changes
+
+- [#1412](https://github.com/ngrok/mantle/pull/1412) [`3d5b964`](https://github.com/ngrok/mantle/commit/3d5b964b306d5cc8ac44014be167cbd09e504a00) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `IconButton` gains the `filled` appearance, and narrows `intent` to `"neutral"`.
+
+  Before this, `IconButton` stopped at `ghost` and `outlined`. A primary action that happened to be icon-only had
+  no way to carry the weight its text-labelled sibling carried, so call sites either dropped to `outlined` or
+  hand-rolled the fill. `filled` closes that: `appearance="filled" intent="neutral"` is the same solid box on both
+  components.
+
+  `intent` now takes `"neutral"` alone. An icon carries no text to name the action a tone colors, so an accent or
+  danger icon button reads as decoration rather than as a warning. `intent="accent"` and `intent="danger"` are a
+  type error on `IconButton` and on the wrappers that forward the prop — `Dialog.CloseIconButton`,
+  `Sheet.CloseIconButton`, `Field.HelpTrigger`, `DataTable.ExpandButton`, and `Sidebar.Trigger`. Reach for `Button`
+  where the tone carries meaning. The prop stays required, so a call site reads the same on both components, and a
+  later widening costs no second break. `data-intent` is still stamped, always `"neutral"`.
+
+  `link` stays off the appearance union. An icon-only link has no text to read as a link.
+
+  One shared pair also drifted between the two components. `Button`'s `outlined` + `neutral` kept its accent border
+  while focused and hovered, but dropped back to the resting border the moment the button was pressed;
+  `IconButton` held the accent border through the press. `Button` now holds it too, so a focused button and a
+  focused icon button draw the same border for the whole click.
+
+  ```tsx
+  <IconButton appearance="filled" intent="neutral" icon={<PlusIcon />} label="Create endpoint" />
+  <IconButton appearance="ghost" intent="neutral" icon={<TrashIcon />} label="Delete endpoint" />
+  ```
+
+- [#1425](https://github.com/ngrok/mantle/pull/1425) [`25ed46c`](https://github.com/ngrok/mantle/commit/25ed46c5c85807967f26df8f3e0cfbed626991df) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `terraform` and `tf` join the supported code block languages. `mantleCode("terraform")`, Markdown fences, and the server highlighter render HCL with Shiki's Terraform grammar, which ships in the existing `shiki` dependency.
+
+  Terraform blocks fold as bracket pairs — `resource "type" "name" { … }`, object values, and multi-line lists all get gutter toggles. Indentation normalizes to spaces, which matches `terraform fmt`.
+
+- [#1419](https://github.com/ngrok/mantle/pull/1419) [`5ee7365`](https://github.com/ngrok/mantle/commit/5ee736595b0106d2fb873e93e3501610cafbd2d8) Thanks [@forzalupo](https://github.com/forzalupo)! - `TextArea` now renders its default appearance at the same font size as `Input` and `Select`, and its
+  `monospaced` appearance a step smaller.
+
+  The default (non-monospaced) `TextArea` only set `pointer-coarse:text-base`, so on a fine pointer (desktop) it
+  had no font-size class and fell back to the 16px UA/root default — 2px larger than the `text-sm` (14px) that
+  `Input` and `Select` use. Adding the missing `text-sm` base brings it in line: 14px on desktop, 16px on touch,
+  matching the other form controls.
+
+  The `monospaced` appearance drops from the arbitrary `0.8125rem`/`0.9375rem` sizes to `text-xs/5` on desktop
+  (12px font with the `text-sm` `1.25rem` line-height, so its rows and baseline stay aligned with the default
+  appearance) and `pointer-coarse:text-base` (16px) on touch. The 16px touch size matches the other form
+  controls and, crucially, stays at or above the 16px threshold that iOS Safari uses to decide whether to
+  auto-zoom into a focused field — so tapping the monospaced textarea on iOS no longer triggers a zoom.
+
+## 0.83.4
+
+### Patch Changes
+
+- [#1409](https://github.com/ngrok/mantle/pull/1409) [`272814d`](https://github.com/ngrok/mantle/commit/272814d08655ece08f0c8ece1d1d6caf2b4116aa) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Alert.ExpandButton` renders its caret through `Button`'s `icon` slot, rather than as a third child beside the
+  count and the word.
+
+  The slot is what the caret wanted all along. It sizes the glyph, holds it at `shrink-0`, tightens the padding on
+  its side, and hands its place to the spinner when a button loads. `iconPlacement="end"` keeps the caret where it
+  has always drawn, after the label.
+
+  The control renders `+3 more ⌄` as it did before, and the count keeps the `min-width` that stops a two-digit
+  count from shifting the label. Its own padding moves to `ps-1.5 pe-1`, which keeps the caret side `0.125rem`
+  tighter than the text side.
+
+  That last part is worth knowing at any call site. A button with an icon tightens the icon side through a `ps-*`
+  or `pe-*` longhand, and a `px-*` override cannot beat a longhand — both survive the class merge, and Tailwind
+  emits the longhand last. Override the padding of a button with an icon in longhands too.
+
+- [#1409](https://github.com/ngrok/mantle/pull/1409) [`272814d`](https://github.com/ngrok/mantle/commit/272814d08655ece08f0c8ece1d1d6caf2b4116aa) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Button` and `Badge` render their label slot with `display: contents`, so the wrapper 0.83.3 added changes no
+  layout.
+
+  That release wrapped `children` in a `<span data-slot="button-label">` to keep a browser translation engine
+  from crashing the page. The span was also a box, which made every child one flex item: a call site that passed
+  more than one child lost the container's `gap` between them, and a `min-width` on a child lost the formatting
+  context that held it. `Alert.ExpandButton` rendered `+3more` instead of `+3 more ⌄`.
+
+  The span now generates no box. Every child is a flex item of the button or the badge again, the `gap` falls
+  between them, and a child's own width applies — the layout matches the release before the wrapper. The span
+  stays in the DOM, so the crash fix stands: an icon's `insertBefore` still names an element, never a text node
+  the engine reparented.
+
+  This restores the shape a chip or a picker trigger needs, where the label absorbs the slack between two icons:
+
+  ```tsx
+  <Button
+  	appearance="outlined"
+  	intent="neutral"
+  	className="max-w-48 min-w-0 justify-start"
+  	icon={<KeyIcon />}
+  >
+  	<span className="min-w-0 flex-1 truncate text-left">{selectedLabel}</span>
+  	<CaretDownIcon />
+  </Button>
+  ```
+
+  `flex-1` and `min-w-0` reach that span only while it is a flex item of the button, so the wrapper's box dropped
+  both and the label pushed past `max-w-48` instead of clamping.
+
+  `Anchor` is unchanged. Its label span never changed layout, because an anchor lays its children out in inline
+  flow.
+
+- [#1409](https://github.com/ngrok/mantle/pull/1409) [`272814d`](https://github.com/ngrok/mantle/commit/272814d08655ece08f0c8ece1d1d6caf2b4116aa) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `OtpInput.Slot` now renders `translate="no"`, so a browser translation engine skips the passcode character
+  inside it.
+
+  A one-time passcode is never translatable. An engine that treats the character as prose shows the reader a
+  character the code does not contain, and the reader types it back.
+
+  The attribute also protects the render. Google Translate wraps each text node in a `<font>`, which detaches
+  the node React holds. The next keystroke then makes React remove a node its parent no longer owns, and the
+  DOM raises `NotFoundError` — which tears down the root when no error boundary sits above it. Backspacing a
+  digit on a translated page hit this. `translate="no"` prevents it, because the engine never enters the slot.
+
+  The slot omits `translate` from its props type, so passing it is a compile error, and it stamps the attribute
+  after the props spread, so a wider props object cannot carry a value past the type either. `Kbd` and
+  `CodeBlock.Code` already lock the attribute the same way.
+
+  ```tsx
+  import { OtpInput } from "@ngrok/mantle/otp-input";
+
+  // <div data-slot="otp-input-slot" … translate="no">4</div>
+  <OtpInput.Root maxLength={6}>
+  	<OtpInput.Group>
+  		<OtpInput.Slot index={0} />
+  	</OtpInput.Group>
+  </OtpInput.Root>;
+  ```
+
+## 0.83.3
+
+### Patch Changes
+
+- [#1405](https://github.com/ngrok/mantle/pull/1405) [`aebf20c`](https://github.com/ngrok/mantle/commit/aebf20cad8f821fe0c06bd0f687430c49e8c7b2f) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Popover` and `HoverCard` now export an `Arrow` part — a tip that points from the content at what it is anchored
+  to. Render it as a child of the content:
+
+  ```tsx
+  import { Button } from "@ngrok/mantle/button";
+  import { Popover } from "@ngrok/mantle/popover";
+
+  <Popover.Root>
+  	<Popover.Anchor asChild>
+  		<button type="button">Anchor</button>
+  	</Popover.Anchor>
+  	<Popover.Trigger asChild>
+  		<Button type="button" appearance="outlined" intent="neutral">
+  			What moved?
+  		</Button>
+  	</Popover.Trigger>
+  	<Popover.Content side="right">
+  		<Popover.Arrow />
+  		<p>Products moved up here.</p>
+  	</Popover.Content>
+  </Popover.Root>;
+  ```
+
+  Radix positions the part with floating-ui's arrow middleware, so the tip stays centered on the anchor when
+  collision detection shifts or flips the content. A hand-rolled tip is a fixed offset, so it drifts off the anchor as soon as the
+  content moves, and it needs a pinned `align` per anchor to land on the right row at all.
+
+  Mantle styles the tip to read as a continuation of the content's edge. `Popover.Content` and
+  `HoverCard.Content` both paint a `bg-popover` fill behind a `border-popover` edge, and Radix renders the arrow
+  as an `svg`, where `bg-*` paints nothing. Each arrow is therefore two layers: a polygon filled with the popover
+  surface, and a polyline that strokes the two slanted edges only. The base carries no stroke and sits 1px inside
+  the content, so the fill covers the content's own border across the base and the two border lines read as one.
+
+  The tip carries its own shadow, built from the same `--shadow-color` and `--shadow-first-opacity` tokens the
+  content's `shadow-md` uses. `box-shadow` stops at the content's border, so a tip without one reads as pasted on.
+  A `clip-path` trims that shadow at the base, because the arrow paints above the content and the shadow would
+  otherwise darken the content's interior. It is one wide, faint layer, matching what the content's shadow leaves
+  along the edge the tip grows out of — a tighter layer muddies a shape this small. The offsets are symmetric,
+  since Radix rotates the arrow's wrapper per side and an offset shadow would swing with it.
+
+  `Popover.Content` and `HoverCard.Content` now set `position: relative`. The arrow's wrapper is absolutely
+  positioned, and the open animation's `scale` made the content that wrapper's containing block for the length of
+  the animation and no longer — which moved the arrow 1px the moment the animation ended. Positioning the content
+  keeps the containing block the same before, during, and after. Two side effects a consumer can observe: an
+  absolutely-positioned child of the content now anchors to the content, and the content's `z-50` now applies to
+  the content itself rather than only being read off it, so the content is a stacking context.
+
+  The border stroke is 1.5px against the content's 1px border. Antialiasing spreads a diagonal hairline across
+  two device rows at partial coverage, so a geometric 1px reads thinner than the content's axis-aligned edge.
+  Measured against that edge at both 1x and 2x, 1.5 is the width that matches it.
+
+  `data-slot` is `popover-arrow` and `hover-card-arrow`. `width` defaults to `14` and `height` to `7`; Radix adds
+  the measured height to `sideOffset`, so the tip lands `sideOffset` pixels from the anchor. Neither part takes
+  `asChild`, because a swapped element loses the two-layer shape — restyle with `className` (`fill-*` for the
+  surface, and target the `polyline` child for the edge), remembering that the part already sets `filter` and
+  `clip-path`.
+
+  `Tooltip` needs no new part: `Tooltip.Content` already renders its own arrow.
+
+- [#1405](https://github.com/ngrok/mantle/pull/1405) [`aebf20c`](https://github.com/ngrok/mantle/commit/aebf20cad8f821fe0c06bd0f687430c49e8c7b2f) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Code`, `Kbd`, `CodeBlock.Code`, and `CodeBlock.Title` now render `translate="no"`, so a browser translation
+  engine skips the text inside them.
+
+  A translation engine translates the text inside `<code>` and `<kbd>` like any other prose. A translated CLI
+  flag, YAML key, env var, or shortcut key is wrong, and the reader copies it anyway. `translate` is the standard
+  way to mark a subtree an engine must skip, and code content is the clearest place to set it, because code must
+  never be translated.
+
+  The attribute also protects the render. Google Translate replaces each text node with a `<font>` wrapper, which
+  detaches the text nodes React holds. React then either writes an update into a node the DOM no longer shows —
+  stale text, no error — or calls `removeChild` on a node that moved and throws `NotFoundError`, which tears down
+  the root when no error boundary sits above it. `translate="no"` on the element, or on any ancestor, prevents
+  both, because the engine never enters the subtree.
+
+  Two of the four lock the attribute, and two leave it overridable, on whether the part can ever hold prose.
+
+  `Kbd` and `CodeBlock.Code` lock it. A key and a block of code are never translatable, so both omit `translate`
+  from their props type — passing it is a compile error — and both stamp the attribute after the props spread, so
+  a wider props object cannot carry a value past the type either.
+
+  `Code` and `CodeBlock.Title` keep the prop. `Code` also styles terms that are not code, and `CodeBlock.Title`
+  takes arbitrary children, so `translate="no"` is a default rather than a rule: pass `translate="yes"` when the
+  content is prose.
+
+  ```tsx
+  import { Code } from "@ngrok/mantle/code";
+  import { Kbd } from "@ngrok/mantle/kbd";
+
+  // <code data-slot="code" … translate="no">npm install</code>
+  <Code>npm install</Code>;
+
+  // <kbd data-slot="kbd" … translate="no">K</kbd>
+  <Kbd>K</Kbd>;
+
+  // <code data-slot="code" … translate="yes">dashboard</code>
+  <Code translate="yes">dashboard</Code>;
+  ```
+
+  `CodeBlock.Title` is included because the title usually names a file — `example.ts` — and a translated filename
+  names a file that does not exist.
+
+- [#1408](https://github.com/ngrok/mantle/pull/1408) [`0f50685`](https://github.com/ngrok/mantle/commit/0f5068570c3e105a800f0b32e140f761f8c59871) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix a crash on browser-translated pages. `Button` threw `DOMException: Failed to execute 'insertBefore' on 'Node'` the moment `isLoading` turned on, which tore down the React root and blanked the page. `Badge`, `Anchor`, `DataTable.HeaderSortButton`, and `DataTable.ActionHeader` shared the same failure.
+
+  Google Translate wraps each text node in a `<font>` element, which reparents the original node: React's reference to it stays alive, but its parent is now the `<font>`. An `insertBefore` aimed at that node then names a child its parent no longer owns, and the DOM raises `NotFoundError`. Every affected component rendered a conditional element immediately before bare `children`, so the first click of any submit button threw before the loading spinner could render.
+
+  `Button`, `Badge`, and `Anchor` now render `children` inside a span carrying a new `data-slot` — `button-label`, `badge-label`, and `anchor-label`. Each one is public API: target it to style the label, for example with `min-w-0 truncate` to clamp a long one. `DataTable.HeaderSortButton` keeps its screen-reader sort announcer mounted at all times, and `DataTable.ActionHeader` renders its sticky-column indicator after `children`.
+
+  One layout note. The label is a single flex item, so `Button`'s and `Badge`'s `gap` falls between the icon slot and the label, never between two `children`. A call site that passed an icon as a child instead of through `icon` loses that gap, and `<Button icon={<PlusIcon />}>Create endpoint</Button>` is the intended shape. A call site that keeps a trailing hint as a child owns its own spacing.
+
+## 0.83.2
+
+### Patch Changes
+
+- [#1398](https://github.com/ngrok/mantle/pull/1398) [`60057c6`](https://github.com/ngrok/mantle/commit/60057c6721ff4b47f1dc6b86e2cd9aacd26c2f8a) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `BarChart` bars now grow with the category spacing instead of stopping at 24px, so a chart with few categories
+  no longer reads gap-toothed.
+
+  Seven days across a wide card used to paint 24px bars inside a 93px step, which left 69px of air beside every
+  bar. A bar now fills its slot up to a cap of 60% of one step, floored at the old 24px and ceilinged at 64px:
+  those seven bars paint about 56px.
+
+  - **A dense chart is untouched.** The floor and the fill rule meet at a step of exactly 40px, so every chart
+    whose categories sit closer than that paints the pixels it painted before.
+  - **The ceiling stops the other extreme.** Two categories across a 650px plot would fill 195px each unclamped,
+    and a bar that wide reads as a panel rather than a mark.
+  - **Grouped series split the band as before,** and each bar fills its own slot up to the same cap, so a group
+    tightens rather than outgrowing its category.
+  - **Horizontal bars follow the same rule** on their own band axis.
+
+  The thickness reads the step alone, so the same data at the same width always paints the same pixels, and the
+  curve rises with no jump at either clamp — a row arriving or a container resize can never pop the bars to
+  another width. `chart/bar-geometry.test.ts` pins the rule and
+  `chart/bar-thickness.browser.test.tsx` measures the painted bars.
+
+  There is no `barSize` prop, and this adds none: bar thickness stays a property of the layout.
+
+  Docs: https://mantle.ngrok.com/components/charts/bar-chart#barchartbar
+
+- [#1398](https://github.com/ngrok/mantle/pull/1398) [`60057c6`](https://github.com/ngrok/mantle/commit/60057c6721ff4b47f1dc6b86e2cd9aacd26c2f8a) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `BarChart.Root`, `LineChart.Root`, `AreaChart.Root`, and `ScatterPlot.Root` now paint a `decorative` chart
+  neutral: every series wears the new `--color-chart-decorative` fill instead of its categorical slot.
+
+  A decorative chart is the backdrop behind an empty-state message. Its values are not information, so nothing
+  about a mark may read as a series — the fill outranks both `seriesSlot` and a series' own `color`, and it
+  reaches the canvas, the legend swatches, and the tooltip strokes from one place. Slots keep resolving
+  underneath it, so a chart that leaves `decorative` gets its palette back unshuffled.
+
+  **The fill is also what keeps an overlaid message readable, with no help from the call site.**
+  `Empty.Description` sits on `text-muted`, which measures 4.88:1 on a bare light card — 0.38 over the 4.5:1
+  floor for 14px text, so any tint under that copy spends the headroom. `--color-chart-decorative` is the
+  darkest neutral step that still clears the floor in all four themes: 4.56:1 in light, 4.93:1 in dark, 9.08:1
+  in light-high-contrast, and 8.14:1 in dark-high-contrast. `chart/decorative-contrast.test.tsx` measures every
+  theme, and `chart/decorative-paint.browser.test.tsx` samples the painted canvas.
+
+  - **`--color-chart-decorative` is a new token, one per theme, aliased to that theme's `neutral-200`.**
+    Redeclare it on a Root to retune one chart —
+    `className="[--color-chart-decorative:var(--color-neutral-100)]"` — and re-measure the copy against the
+    value you pick.
+  - **No scrim, no dimming, and no blur.** A blur leaves the color under the middle of a mark where it was, and
+    dimming a categorical slot far enough to rescue `text-muted` erases the chart.
+
+  Every `decorative` chart picks the fill up with no call-site change. Drop an `opacity-*` you added to a
+  decorative chart to tame its colors — the fill replaces it, and dimming on top only washes the marks out.
+
+  An interactive chart is unchanged. It carries real data, so it is never a backdrop.
+
+  Docs: https://mantle.ngrok.com/components/charts/bar-chart#decorative-charts
+
+- [#1401](https://github.com/ngrok/mantle/pull/1401) [`b53e6fb`](https://github.com/ngrok/mantle/commit/b53e6fbe91a6062008fa2feffe397f62d0650ba1) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Sidebar.Header` now stacks rows below its alignment band, so a pinned search row can sit under the product
+  switcher without resizing the `AppLayout.Header` toolbar.
+
+  `--sidebar-header-height` did two jobs at once: it fixed the header's height, and it named the band an
+  `AppLayout.Header` toolbar matches. Stacking a switcher row and a `Sidebar.SearchTrigger` in the header
+  therefore meant raising the token, which grew the toolbar from 54px to 78px and left neither row on the
+  toolbar's center.
+
+  The header is now a grid whose first track is that token. Its first child centers on the band, every later
+  child takes its own row below, and the header grows to fit. The toolbar keeps matching the switcher row alone:
+
+  ```tsx
+  <Sidebar.Header>
+  	{/* the first child keeps the band, so the toolbar keeps its 54px */}
+  	<Sidebar.SwitcherTrigger>…</Sidebar.SwitcherTrigger>
+  	{/* its own row below, pinned above the scrolling body */}
+  	<Sidebar.SearchTrigger>…</Sidebar.SearchTrigger>
+  </Sidebar.Header>
+  ```
+
+  Rows after the first stack flush, the way rows stack in `Sidebar.Footer` — the band's own lower half is the
+  space between them. The second row also inherits the header's gutter, so it lines up with the navigation rows
+  without a copy of `Sidebar.Body`'s padding. The header reserves no scrollbar gutter, so on a platform whose
+  scrollbars take space the row runs wider than the rows inside `Sidebar.Body`.
+
+  A single-row header with no layout overrides on it renders exactly as before, pixel for pixel. If you already
+  stack two rows in `Sidebar.Header`, check three things:
+
+  - **Delete the `--sidebar-header-height` override you raised for the taller header.** The token is now the
+    first row's band, so a raised value moves the switcher row and the toolbar down together while the header
+    keeps growing for the second row — and everything below the header moves down with it.
+  - Keep the aligned row as the header's **first direct child**. A wrapper around both rows takes the band
+    itself, and a first row taller than the band overflows it — raise the token instead.
+  - The header is a grid now, so `items-*` is what centers the first row on the band (under the old flex column
+    it only moved rows horizontally), a flex property on a direct child (`flex-1`) no longer sizes it, and a
+    `className` that replaces the header's `display` drops the band with it.
+
+## 0.83.1
+
+### Patch Changes
+
+- [#1395](https://github.com/ngrok/mantle/pull/1395) [`f5a47f4`](https://github.com/ngrok/mantle/commit/f5a47f4cb2059b8a3dd6e8e22c57a2f203b2b754) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump the `@ariakit/react` runtime dependency from 0.4.35 to 0.4.36.
+
+  `Combobox.Root` and `MultiSelect.Root` pass their props to Ariakit's `ComboboxProvider`, and their prop
+  types are Ariakit's `ComboboxProviderProps`, so 0.4.36's store changes reach both:
+
+  - **The combobox store now separates the input text from the selection.** `inputValue`,
+    `defaultInputValue`, and `setInputValue` control the query text. Ariakit marks the older `value`,
+    `defaultValue`, and `setValue` names deprecated — they still work, and code that controls a
+    `Combobox.Root` query through `value` / `setValue` should move to `inputValue` / `setInputValue`.
+  - **The store gained `selectOnMove`**, which selects the active item as the user moves through the list
+    with the popover open. It defaults to `false`, so no existing call site changes.
+  - **`Combobox.Content` and `MultiSelect.Content` are Ariakit `ComboboxPopover`s**, so three of its fixes
+    reach them:
+    - A click on the popover's empty space no longer pulls focus into the popover, which used to leave the
+      arrow keys unable to move through the items.
+    - A non-modal popover now honors a consumer's `getPersistentElements` callback, so interacting with the
+      elements it returns no longer dismisses the popover.
+    - An item no longer renders as a tab stop for a frame while the list mounts.
+  - **A combobox popover now closes across a same-origin iframe boundary** — when focus moves from an
+    embedded popup to the ancestor document, or when a pointer interaction happens in an existing sibling
+    frame. Ariakit still ignores a real browser or application window blur.
+
+  Mantle's own API does not change.
+
+- [#1392](https://github.com/ngrok/mantle/pull/1392) [`ed5b1e6`](https://github.com/ngrok/mantle/commit/ed5b1e6f786fdf3947081028a03db8562ba15846) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `appearance` to `Dialog.Content`, so a full-page or edge-to-edge dialog is one prop instead of a
+  class recipe.
+
+  ```tsx
+  // a card, capped — the default, unchanged
+  <Dialog.Content preferredWidth="max-w-2xl">
+
+  // fills the 16px-inset box, still a rounded card
+  <Dialog.Content appearance="full-page">
+
+  // fills the whole viewport, square and unbordered
+  <Dialog.Content appearance="full-bleed">
+  ```
+
+  | `appearance`   | Width                      | Viewport inset | Corners and border   |
+  | -------------- | -------------------------- | -------------- | -------------------- |
+  | `"centered"`   | capped at `preferredWidth` | 16px           | rounded and bordered |
+  | `"full-page"`  | fills the box              | 16px           | rounded and bordered |
+  | `"full-bleed"` | fills the box              | none           | square, no border    |
+  - **Every dialog already sat 16px from each viewport edge.** `Dialog.Content` positions itself inside a
+    `fixed inset-4` wrapper, which nothing documented, so filling that box meant discovering
+    `preferredWidth="max-w-none"` and adding `h-full` by hand. Going edge to edge meant more: the wrapper takes
+    no props, so the only way out was `fixed inset-0` on the content, which escapes the wrapper only because the
+    wrapper happens not to be a containing block for fixed elements. `appearance="full-bleed"` sets the
+    wrapper's inset directly instead.
+  - **The three values move together as one decision**, because a dialog that fills the viewport has no width
+    left to cap and no corner left to round. `preferredWidth` therefore belongs to `"centered"` only —
+    `<Dialog.Content appearance="full-bleed" preferredWidth="max-w-lg" />` is a type error rather than a prop
+    that silently does nothing. A computed `appearance` still typechecks, so a consumer can toggle between
+    appearances from state.
+  - **`"full-bleed"` keeps its backdrop.** The content opens at `zoom-in-95`, so a sliver of viewport edge stays
+    uncovered for the length of the animation, and the overlay is what fills it.
+  - **`Dialog.Content` now stamps `data-appearance`** with the resolved value, so consumer CSS can target a
+    full-bleed dialog without threading a class through.
+  - `appearance` defaults to `"centered"`, which paints exactly what `Dialog.Content` painted before, so no
+    existing call site changes.
+
+  `Dialog` also ships its first test file, covering the three appearances, the width cap, dismissal, and the
+  type-level contract.
+
+  Docs: https://mantle.ngrok.com/components/overlays/dialog#full-page-dialog
+
+## 0.83.0
+
+### Minor Changes
+
+- [#1380](https://github.com/ngrok/mantle/pull/1380) [`c2f1cb0`](https://github.com/ngrok/mantle/commit/c2f1cb0c681d674b60cf0ec978cdf95bfb9db7dc) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add **`Avatar`** — a small image representing a person or an account, with a text or icon fallback for when
+  there is no picture, or before one loads. Import from `@ngrok/mantle/avatar`.
+
+  ```tsx
+  import { Avatar } from "@ngrok/mantle/avatar";
+
+  // an account: a rounded square whose color is derived from its id
+  <Avatar.Root appearance="square" colorSeed={account.id}>
+  	<Avatar.Fallback name={account.name} />
+  </Avatar.Root>
+
+  // a person: a circle, with the fallback covering the load and any failure
+  <Avatar.Root>
+  	<Avatar.Image src={user.avatarUrl} alt="Jane Doe" />
+  	<Avatar.Fallback name="Jane Doe" />
+  </Avatar.Root>
+  ```
+
+  - **`Avatar.Root`** owns the shape, size and surface. `appearance="circle"` (default) is a person;
+    `appearance="square"` is a rounded square for the things people belong to — an account, workspace, or team.
+    Keeping the two shapes distinct is what lets a row showing both stay legible without labels. It is `size-7`
+    and `shrink-0`, so the flex rows an avatar usually sits in cannot squeeze it; `className` merges last, so
+    `className="size-10"` wins.
+  - **`colorSeed`** hashes a stable id into one of 17 swatches and switches the foreground to
+    `text-static-white`, so a subject keeps its color across renders, sessions, devices and the server with
+    nothing stored. Seed it with an **id, not a display name** — a rename would otherwise recolor the avatar.
+    Omit it for a neutral surface.
+  - **`Avatar.Image`** is a plain `<img>` layered over the fallback — no wrapper library, no loading state. The
+    server renders it, the browser fetches while it parses HTML, and a cached image is on screen in the first
+    frame; a loading one shows initials through it, and a failed one unmounts itself and reveals them again.
+    `onError` runs first and can `preventDefault()` to keep the image mounted, and changing `src` is always a
+    fresh attempt. Its **`alt` is required** — stricter than the `<img>` element, because an avatar is the one
+    image everyone forgets and an `<img>` with no `alt` announces its URL. Pass `alt=""` when adjacent text
+    already names the subject, which is the common case.
+  - **`Avatar.Fallback`** takes either `children` (an icon, a monogram) or `name`, which renders at most two
+    uppercase initials — punctuation stripped, code points kept whole so an emoji-leading name survives, casing
+    locale-invariant so SSR and the client agree. The two are mutually exclusive in the type. Derived initials
+    are `aria-hidden`, because they abbreviate a name the page already carries beside the avatar; announcing them
+    would read it twice ("A C Acme Corp"). Name the root (`role="img"` + `aria-label`) when the avatar is the only
+    thing identifying its subject.
+  - Every part takes `asChild` and stamps `data-slot` (`avatar`, `avatar-image`, `avatar-fallback`), joining an
+    ancestor-forwarded chain rather than replacing it. `Avatar.Root` renders a `<span>`, so it stays valid inside
+    the `<button>` of a switcher row.
+
+  **`Sidebar.AccountAvatar` and `Sidebar.UserAvatar` are removed.** They were the same component twice, scoped to
+  a place an avatar has no reason to be scoped to — the sidebar — which is why the ngrok dashboard already
+  hand-rolled its own copy of the initials and swatch logic beside them. Migration:
+
+  ```tsx
+  // before
+  <Sidebar.AccountAvatar accountId={account.id} accountName={account.name} />
+  // after
+  <Avatar.Root appearance="square" colorSeed={account.id}>
+  	<Avatar.Fallback name={account.name} />
+  </Avatar.Root>
+
+  // before
+  <Sidebar.UserAvatar alt="Jane Doe" />
+  // after
+  <Avatar.Root aria-label="Jane Doe" className="text-muted" role="img">
+  	<Avatar.Fallback>
+  		<UserIcon className="size-4" />
+  	</Avatar.Fallback>
+  </Avatar.Root>
+
+  // before — with a photo
+  <Sidebar.UserAvatar src={user.avatarUrl} alt="Jane Doe" />
+  // after
+  <Avatar.Root>
+  	<Avatar.Image src={user.avatarUrl} alt="Jane Doe" />
+  	<Avatar.Fallback name="Jane Doe" />
+  </Avatar.Root>
+  ```
+
+  The swatch palette and its hash are unchanged, so accounts keep the colors they already have. Two behavior
+  notes: the person silhouette is gone in favor of any icon you compose (the docs use Phosphor's `UserIcon`), and
+  `data-slot="sidebar-account-avatar"` / `"sidebar-user-avatar"` become `"avatar"` — update any selector or test
+  matching them.
+
+  Docs: https://mantle.ngrok.com/components/data-display/avatar
+
+- [#1382](https://github.com/ngrok/mantle/pull/1382) [`2f1d03c`](https://github.com/ngrok/mantle/commit/2f1d03c4da2e7d059b1535c8e862de738ae00bd7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Command: a search trigger, a stateful `DialogRoot`, and the `⌘K` shortcut.**
+
+  **`Command.SearchTrigger`** is a new part that makes any control behave like a search field that opens the palette. It renders no DOM of its own — it clones its single child — so presentation belongs entirely to that child and the part never has an opinion about how the trigger looks or how it behaves in a collapsed sidebar rail. The child stays a `<button>`, not a text field: it opens a modal palette, so it announces "has popup dialog" while looking like a field. Because a search-shaped control invites typing, typing works — a printable keystroke or a paste opens the palette with that text already in `Command.Input`, so no character is lost.
+
+  It ships the accessibility rather than leaving it to the call site: `aria-haspopup="dialog"`, `aria-expanded`, `aria-controls`, `data-state`, and focus restoration come from the dialog trigger it composes; `aria-keyshortcuts` announces the `⌘K` binding that is usually drawn but never spoken; and it adds no accessible name, so the child's visible label is the name and the two cannot drift apart. Its `data-slot="command-search-trigger"` joins ahead of the child's own.
+
+  `Command.DialogRoot` is now a real state owner instead of an alias for `Dialog.Root`. It owns:
+
+  - **The open state**, controlled (`open` / `onOpenChange`) or uncontrolled (`defaultOpen`) — unchanged for existing consumers.
+  - **The query text**, which is what makes seeding work: the seed and the open state land in one state update, so `Command.Input` mounts with the character already in it rather than racing the dialog's mount. Every open starts from a known query — the seed, or empty — so dismissing and reopening never resurrects the previous search. Read it with `useCommandDialog().query` when your palette does its own matching; `Command.Input` still accepts `value` to take the query over completely.
+  - **The `⌘K` / `Ctrl+K` shortcut**, new and on by default (`keyboardShortcut`). It claims the event (Firefox binds `⌘K` to its own search bar), keeps the two platform modifiers distinct so macOS's native `Ctrl+K` still works, has exactly one owner per window so two palettes never open on one keypress, and yields inside `contenteditable` hosts and `<textarea>`s where `⌘K` is already bound.
+
+  **If you already bind `⌘K` yourself, pass `keyboardShortcut={false}`** — otherwise the chord has two owners after this upgrade. `Command.SearchTrigger` then adds no `aria-keyshortcuts`, and `useCommandDialog().keyboardShortcut` reports the same flag so your row can drop its visible `⌘K` hint too — the UI never advertises a binding mantle does not own.
+
+  Also new, for triggers that cannot use `Command.SearchTrigger` at all: `useCommandDialog()` (`open`, `setOpen`, `openWithQuery`, `toggle`, `query`, `setQuery`, `keyboardShortcut`), and the pure helpers `searchActionFromKeyDown` / `searchActionFromPaste`, which classify a keystroke or paste into a `SearchAction` — `seed`, `open`, or `ignore`. They handle the cases a hand-rolled `event.key.length === 1` check gets wrong: `Space` seeding a stray space, astral characters counted as two and dropped, composition in an input method editor silently doing nothing, and paste doing nothing at all.
+
+  `Command.DialogContent` now takes over the dialog's initial focus so the caret lands at the end of a seeded query — Radix's own open-autofocus selects the focused field's whole value, which would make the first keystroke after a seeded open replace the seed instead of extending it.
+
+  In a sidebar, the control it wraps is [`Sidebar.SearchTrigger`](https://mantle.ngrok.com/components/navigation/sidebar#sidebarsearchtrigger) — see that component's own release note.
+
+  Docs: https://mantle.ngrok.com/components/navigation/command
+
+- [#1341](https://github.com/ngrok/mantle/pull/1341) [`6793a7c`](https://github.com/ngrok/mantle/commit/6793a7c5f5d52b8b0192ccdab1edcf2551f8ea10) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add **`invert-theme`** — a first-class class that renders a DOM subtree in the opposite theme.
+
+  Add the `invert-theme` class to any element and its subtree renders in the opposite theme of the page: light ⇄ dark and light-high-contrast ⇄ dark-high-contrast. The island is styled by the opposite theme's own definitions (each theme block's selector list also targets `.invert-theme` subtrees on its pair partner's pages), so every mantle component and color token inside works there — no conditional rendering, no per-component overrides.
+
+  **Action required if you pass `forceTheme` anything other than `"dark"`.** `forceTheme` now belongs on four components, not one. Applying the pair partner means a forced page has the opposite theme's stylesheet live, so the theme class on `<html>` is what decides which one wins. `ThemeProvider`, `PreventWrongThemeFlashScript`, `preventWrongThemeFlashScriptContent()`, and `useInitialHtmlThemeProps` all accept `forceTheme` and pin the class, `data-applied-theme`, and the pre-paint write to it. **If you use `forceTheme` on `MantleStyleSheets`, pass the same value to those too** — otherwise a user whose stored preference resolves to dark gets `<html class="dark">` on a `forceTheme="light"` page and it paints dark. Before this release `forceTheme="light"` rendered no link tags at all, so the same page painted light. `forceTheme="dark"` renders and applies exactly what it did before, so it needs no change. The stored preference is still read and `setTheme` still writes it, so `data-theme` and theme switchers are unaffected. See [Locking a page to one theme](https://mantle.ngrok.com/components/primitives/theme#locking-a-page-to-one-theme).
+
+  - `MantleStyleSheets` now applies theme _pairs_ together: the active theme's pair partner also gets `media="all"`, so inverted islands always have their opposite theme's CSS applied. `forceTheme` renders the forced theme's pair of link tags (`forceTheme="light"` now renders the dark link).
+  - **An applied theme now outranks the stored preference in the CSS.** Every theme block guards its `data-theme` selector with `:not([data-applied-theme])`, so `[data-theme="dark"]` no longer selects the dark block on a page whose `data-applied-theme` says otherwise. This is what makes a forced page hold its theme while `data-theme` keeps the preference for the theme switcher. `data-theme` on its own still selects a theme, so a consumer who sets it without a provider is unaffected. If you set both attributes yourself to disagreeing values, the applied one now wins.
+  - **Payload note.** Applying the pair partner makes it render-blocking, so a light page now blocks first paint on `mantle-dark.css` (~16 KB raw / ~4.5 KB gzip) and a high-contrast page on both high-contrast sheets (~30 KB raw / ~8.4 KB gzip combined), whether or not it renders an island. There is no opt-out. `mantle.css` itself grows only by what islands need — from ~34 KB to ~53 KB raw, and from ~8 KB to ~13 KB gzip: Tailwind's default light palette is materialized in a rule scoped to the island selector, so it never reaches `:root` and cannot override a consumer's own `@theme { --color-<ramp>-<stop>: … }`. The flip side is that an island restores mantle's pinned defaults, so a ramp you rebrand applies to the page but not inside an island.
+  - `Sandbar`'s floating panel is now an `invert-theme` island: the bar, its buttons, and any custom composed children all render inverted from the page theme in all four themes — matching the origin design.
+  - Documented on the Theme page, including the limitations: portaled floating content escapes the island (pass `invert-theme` to the floating part's `className`), theme-variant utilities (`dark:*`, …) keep page-theme semantics, nesting is idempotent, and shadows flip with the island (shadow tokens resolve at the consuming element, keeping the island's interior coherent).
+
+- [#1341](https://github.com/ngrok/mantle/pull/1341) [`6793a7c`](https://github.com/ngrok/mantle/commit/6793a7c5f5d52b8b0192ccdab1edcf2551f8ea10) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add **`Sandbar`** — a floating save bar for unsaved changes.
+
+  `Sandbar` is a persistent, decision-bearing bar that floats near the bottom edge of the viewport. It surfaces pending state — primarily a form's unsaved ("dirty") changes — and stays until the user resolves it: save or discard. Unlike Toast, which announces something that already happened and leaves on its own, a Sandbar waits for the user's decision. (The name: a sandbar is a bar that blocks navigation.)
+
+  - Compound parts: `Sandbar.Root` (always-mounted, controlled `open` prop), `Sandbar.Message`, `Sandbar.Actions`, `Sandbar.SaveButton`, `Sandbar.DiscardButton`. There is deliberately no error part — a failed save is reported contextually in the form (field message, or a form-level `Alert` that takes focus), because the bar carries the _pending decision_, not the outcome of the request
+  - Accessible by default: persistent polite + assertive live regions announce opening, pending saves, and blocked navigation; the panel is a `role="group"` named by the visible message; focus is parked and restored around loading/close transitions; Escape is intentionally inert
+  - `handleRef` receives a `SandbarHandle` — `shake(options?: { announcement?: string })` wiggles the panel (skipped under `prefers-reduced-motion`) and always announces assertively; wire it to your router's navigation guard
+  - Sonner-style interruptible motion: state-driven CSS transitions (a reopen mid-exit retargets smoothly from the panel's current position); the panel slides fully off the viewport edge with a motion-led, late fade — 400ms enter, 200ms exit — degrading to fade-only under reduced motion
+  - Data attributes: every part stamps a `data-slot` (`sandbar`, `sandbar-message`, `sandbar-actions`, `sandbar-save-button`, `sandbar-discard-button`) and joins any incoming chain ahead of its own name, so `asChild` composition accumulates the whole chain instead of clobbering it. The panel also stamps `data-state="open" | "closed"`, which drives the enter/exit transition. No public CSS variables.
+
+  Import it: `import { Sandbar } from "@ngrok/mantle/sandbar"`.
+
+  Docs: https://mantle.ngrok.com/components/feedback/sandbar
+
+- [#1382](https://github.com/ngrok/mantle/pull/1382) [`2f1d03c`](https://github.com/ngrok/mantle/commit/2f1d03c4da2e7d059b1535c8e862de738ae00bd7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **`Sidebar.SearchTrigger`: the sidebar's search row.**
+
+  A new part for the top of `Sidebar.Body` (or `Sidebar.Header`, under the switcher) — the row that opens a search or command palette.
+
+  It is deliberately a navigation row and not a text field. The chrome is a `Sidebar.ItemButton`'s, down to the 28px chip it becomes in the collapsed icon rail, because a search entry point in a sidebar is one of the rows rather than a form control wedged among them. `Sidebar.ItemButton` and `Sidebar.SearchTrigger` now share one row-chrome constant instead of repeating it, because "these are the same row" is the contract: a search row whose geometry drifts from the navigation rows below it reads as a foreign control.
+
+  Its `shortcut` prop takes the keyboard hint — usually `<><MetaKey /><Kbd>K</Kbd></>` — and reveals it only on hover or keyboard focus, so the resting panel stays quiet. The hint is `aria-hidden` (the `aria-keyshortcuts` that `Command.SearchTrigger` adds announces the chord) and dropped outright in the rail, where the row's label is clipped rather than removed so the button keeps its accessible name as a chip. `shortcut` and `asChild` are mutually exclusive in the type: the hint is a sibling this part renders, and a slotted child is cloned rather than wrapped, so there is nowhere to put one.
+
+  The row is styling only — it is not wired to any state. Compose it with [`Command.SearchTrigger`](https://mantle.ngrok.com/components/navigation/command#commandsearchtrigger) for the dialog wiring and the typing behavior, and with `Sidebar.Tooltip` so the row keeps a visible label in the rail.
+
+  `Sidebar.Tooltip` also gained a `shortcut` prop, which renders the chord after the label. The rail hides a row's own hint along with its text, so the tooltip is where a pointer user can still learn it.
+
+  `Sidebar.Header` is a fixed height so it can align with an `AppLayout.Header` toolbar, and that height is sized for one row. If you stack the switcher and the search row there, raise `--sidebar-header-height` on a **common ancestor of both rows** — `<AppLayout.Root className="[--sidebar-header-height:6rem]">`. Setting it on `Sidebar.Nav` only looks right: custom properties inherit downward, so `AppLayout.Header` would keep the `4.5rem` default and the two rows would stop being center-aligned.
+
+  Docs: https://mantle.ngrok.com/components/navigation/sidebar#sidebarsearchtrigger
+
+- [#1382](https://github.com/ngrok/mantle/pull/1382) [`2f1d03c`](https://github.com/ngrok/mantle/commit/2f1d03c4da2e7d059b1535c8e862de738ae00bd7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **`Sidebar.Trigger` gets a tooltip and announces the shortcut it binds.**
+
+  `Sidebar.Root` has bound `⌘B` / `Ctrl+B` since the sidebar shipped, but the trigger told nobody: assistive technology got no `aria-keyshortcuts`, and pointer users got no label at all — the button is icon-only at every breakpoint, and its name was `sr-only`.
+
+  Both are fixed. The trigger now stamps `aria-keyshortcuts` (`"Meta+B"` on Apple platforms, `"Control+B"` elsewhere), resolved after hydration like every platform-modifier read: the server renders the non-Apple answer because it cannot know the host, and an effect corrects it. And it renders a tooltip showing `label` — plus the new `shortcut` prop, for the visible `⌘B` chips (`shortcut={<><MetaKey /><Kbd>B</Kbd></>}`). Unlike `Sidebar.Tooltip`, that tooltip is not gated on the rail state, because the trigger has nothing else to read at any width.
+
+  Under `Sidebar.Root keyboardShortcut={false}`, the trigger omits both the attribute and the chips, so it can never advertise a binding that is not bound. `useSidebar()` exposes the same `keyboardShortcut` flag so a custom trigger can be equally honest.
+
+  **`Sidebar.Trigger` now requires a `TooltipProvider` ancestor**, like any `Tooltip.Root` — and like `Sidebar.Tooltip` already did. Rendering one without a provider throws. Mount a single provider at your app root, decoupled from the sidebar and the app layout, so the app-wide tooltip delay stays app-wide:
+
+  ```tsx
+  import { TooltipProvider } from "@ngrok/mantle/tooltip";
+
+  <TooltipProvider>
+  	<App />
+  </TooltipProvider>;
+  ```
+
+### Patch Changes
+
+- [#1389](https://github.com/ngrok/mantle/pull/1389) [`793d82a`](https://github.com/ngrok/mantle/commit/793d82ad822886aaffbc53193a84486ceca2f980) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Keep a long `Breadcrumb` trail on one row: it now scrolls sideways with a faded edge instead of wrapping.
+
+  An app header is one row tall, so the trail wrapping onto a second row pushed the page down and left the
+  current page in the wrong place. `Breadcrumb.List` is now the scroll container, and its edges carry the same
+  `scroll-fade-x` mask as `Tabs.List` — the edge with crumbs beyond it fades out, and the edge with nothing
+  beyond it stays flush.
+
+  The trail starts at its end, because the end is the current page. It scrolls itself there whenever that end
+  moves — on mount, when a navigation swaps the crumbs, and when the row around it resizes — and leaves the
+  reader's own scroll position alone the rest of the time, including while a crumb holds focus. Tabbing to a
+  crumb the trail has scrolled past stays the browser's own job; the list carries `scroll-padding` the width of
+  the fade zone, so that crumb lands clear of the fade rather than under it.
+
+  Two supporting changes make that work in a real header:
+
+  - `Breadcrumb.Root` carries `min-w-0`, so inside a flex row such as `AppLayout.Header` the landmark gives up
+    width to the row instead of pushing its siblings out of it.
+  - `Breadcrumb.Item` and `Breadcrumb.Separator` no longer shrink, so a crumb keeps its label on one line and
+    the trail scrolls instead of breaking a label in two.
+
+  No prop, part, or export changed. Two things follow from the mask, both covered on the
+  [scroll fade](https://mantle.ngrok.com/base/scroll-fade) page: it fades everything `Breadcrumb.List` paints,
+  its own background and border included, so keep that styling on a wrapper; and it owns the element's
+  `mask-image`, so a second mask on the same element replaces it.
+
+  To keep the old wrapping behavior, hand the scrollport back:
+
+  ```tsx
+  <Breadcrumb.List className="flex-wrap overflow-x-visible">
+  ```
+
+  Without a scroll container the mask has nothing to animate against, so it stays fully opaque and the row wraps
+  as before. See https://mantle.ngrok.com/components/navigation/breadcrumb#overflow.
+
+- [#1390](https://github.com/ngrok/mantle/pull/1390) [`c117f9e`](https://github.com/ngrok/mantle/commit/c117f9ec67f22ce63475effed0af135d657fad3c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Every chart repaints: all eight series colors change, in all four themes.** `BarChart`, `LineChart`,
+  `AreaChart`, and `ScatterPlot` all paint from the same eight `--color-chart-*` slots. Every slot gets a new
+  value here. The slot count stays at eight. The token names stay the same, so only the values move.
+
+  **What was wrong.** The palette gates measured adjacent pairs only — `chart-1` against `chart-2`, `chart-2`
+  against `chart-3`, and so on down the order. A chart puts pairs on screen that those gates never looked at:
+
+  - a legend lists all eight slots in one column;
+  - a scatter mark can neighbor any other mark;
+  - fixed series slots can leave the painted slots non-consecutive.
+
+  Over all 28 pairs the shipped palette fell to ΔE 1.90 under simulated color vision deficiency (CVD) in
+  `light` and in `dark`, 1.55 in `light-high-contrast`, and 1.71 in `dark-high-contrast`. At 1.90, `chart-1`
+  and `chart-7` are one color to a deuteranope. A two-series chart on those slots reads as a single series.
+
+  **What it is now.** Each theme declares its own eight colors. All 28 pairs clear the ΔE 15 floor for
+  full-color vision and the ΔE 8 target under simulated CVD. The worst pair in any theme measures 9.55. The
+  gate suite runs the all-pairs comparison in every theme from here on. It also holds each theme to the
+  contrast that theme measures today, rather than to the flat 3:1 minimum.
+
+  | Theme                 | All-pairs ΔE, full color | All-pairs ΔE, simulated CVD | Lowest contrast   |
+  | --------------------- | ------------------------ | --------------------------- | ----------------- |
+  | `light`               | 7.53 → 15.475            | 1.90 → 9.580                | 3.584:1 → 3.610:1 |
+  | `dark`                | 7.53 → 15.072            | 1.90 → 9.551                | 3.625:1 → 3.652:1 |
+  | `light-high-contrast` | 6.32 → 15.145            | 1.55 → 9.617                | 3.651:1 → 3.696:1 |
+  | `dark-high-contrast`  | 8.45 → 15.054            | 1.71 → 9.572                | 6.762:1 → 6.763:1 |
+
+  Contrast rose a little in three themes and held in the fourth, so no theme regressed. No lightness band moved
+  or widened to fit a new color. `light`, `dark`, and `light-high-contrast` keep every slot inside their band.
+  `dark-high-contrast` keeps the above-the-ceiling waiver it already carried, with its marks between lightness
+  0.672 and 0.898. A slot also keeps its family across the four themes: the largest hue drift for any slot is
+  11.32 degrees. Every literal sits inside the sRGB gamut, so no browser clamps a mark to a color nobody
+  measured.
+
+  **The overflow gray is the one distance that got worse.** Every series past the eighth wears
+  `--color-chart-other`. In `dark`, the closest categorical slot to that gray falls from ΔE 4.86 to 3.81 under
+  simulated CVD. The other three themes rise: `light` to 6.24, `light-high-contrast` to 8.72, and
+  `dark-high-contrast` to 3.12. No palette closes the gap. The overflow has to be achromatic so it reads as
+  "not a category", and the dichromacy simulations strip chroma, so a gray always lands near a mark of its own
+  lightness. The gate suite now records each theme's distance, so it cannot shrink further unseen. Keep folding
+  the tail into one "Other" series rather than painting a ninth.
+
+  **Slot 6 changes family, from orange to magenta.** Orange sits between slot 4 and slot 8 on the hue circle.
+  Deuteranopia pulls those three toward one another, and that span cannot carry three marks. Magenta near hue
+  334 sits away from both. That one substitution is what buys the all-pairs result. The families in slot order
+  now read: blue, green, pink, red-orange, teal, magenta, violet, amber. Slot 4 spans hue 31 in `light` to hue
+  43 in `dark-high-contrast`, so it reads as a red on a white card and as a burnt orange on a black one.
+
+  **The slots are bespoke `oklch()` literals now, not aliases of Tailwind ramp steps.** A published ramp step
+  lands where its own designer put it. The ramps cannot supply eight all-pairs-safe colors: they top out at
+  seven in `dark` and six in `dark-high-contrast`. Each theme file therefore carries its own eight literals.
+  One consequence for anyone who re-tunes mantle's ramps: a chart slot no longer follows a ramp step. A
+  consumer who redeclares `--color-blue-500` no longer moves `chart-1`. Override the chart token itself
+  instead.
+
+  **To retheme one built-in slot, redeclare the token on the chart's `Root`:**
+
+  ```tsx
+  <BarChart.Root className="[--color-chart-1:var(--color-brand)]" data={monthlySpend} xKey="month">
+  	<BarChart.Bar dataKey="endpoints" label="Endpoints" />
+  </BarChart.Root>
+  ```
+
+  The engine resolves every token through a probe inside `Root`, so the declaration wins for that chart and
+  leaves every other chart on the page alone. For one series rather than one slot, pass the `color` prop:
+
+  ```tsx
+  <BarChart.Bar dataKey="requests" color="var(--color-brand)" />
+  ```
+
+  Either way, measure your own color against the eight slots. The gates validate the palette mantle ships, not
+  the colors you put in its place.
+
+  Docs: [Chart color tokens](https://mantle.ngrok.com/components/charts/bar-chart#chart-color-tokens).
+
+- [#1390](https://github.com/ngrok/mantle/pull/1390) [`c117f9e`](https://github.com/ngrok/mantle/commit/c117f9ec67f22ce63475effed0af135d657fad3c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **A series that sets no `shape` now wears the glyph paired to its series slot.** Unless a consumer picked a glyph
+  by hand, every line, area, and scatter series used to draw a circle. Shape carried no identity of its own. Slot 1
+  now takes the circle, slot 2 the square, slot 3 the triangle, slot 4 the diamond, and four new glyphs carry slots
+  5 through 8. Every line, area, and scatter chart gains a second identity channel with no code change — a distinct
+  color and a distinct glyph, on the canvas marks, the hover dots, and the legend keys.
+
+  **`PointShape` grows from four values to eight**, one per series slot: `"circle"`, `"square"`, `"triangle"`,
+  `"diamond"`, `"triangle-down"`, `"plus"`, `"cross"`, `"star"`. The four additions:
+
+  - **`"triangle-down"`** — the triangle mirrored, apex down.
+  - **`"plus"`** — a filled Greek cross whose arms are a third of its span, not a stroked line pair.
+  - **`"cross"`** — that plus turned 45°, so a solid X.
+  - **`"star"`** — a filled five-pointed star at the classic pentagram notch.
+
+  All four paint on the canvas marks, on the DOM hover dot, and on the legend key. The key's `data-shape` attribute
+  carries the new values for consumer CSS.
+
+  **Every glyph carries the circle's fill area**, so no series reads heavier than its neighbors. Each new size
+  solves area = πr² the way the shipped three do: the mirrored triangle keeps the triangle's 1.55r circumradius, the
+  plus reaches 1.189r, the cross reaches the same 1.189r because a rotation keeps the area, and the star's outer
+  radius is 1.673r against an inner 0.639r. On a real canvas the four measure between 0.994 and 1.000 of the
+  circle's ink, inside the band the shipped four already span.
+
+  Two surfaces cannot hold that contract exactly, and both predate this change. The hover dot and the legend key
+  clip a box rather than trace a path, so a polygon there paints its own share of the box — the shipped triangle
+  already paints 64% of the circle's ink, and the star paints 39%. Line and scatter markers stroke a 2px surface
+  ring on the glyph's own outline, and that ring eats inward along the whole perimeter, so a spiky glyph keeps less
+  of its fill: at the default marker radius the plus and the cross keep about half the circle's colored ink, and the
+  star about 44%.
+
+  **The pairing reads the series slot.** Automatic series take unreserved slots in composition order. A series with
+  `seriesSlot={3}` wears the triangle from whatever position it registers in. A series with `seriesSlot="other"`
+  wears the circle. Several series may share one slot. If another channel must tell them apart, give each member its
+  own `shape` or `texture`.
+
+  **Automatic glyphs follow the current composition.** Removing an automatic series closes the gap. When a series
+  must keep one color-and-shape identity as siblings appear or disappear, set `seriesSlot`.
+
+  **An explicit `shape` still wins.** The paired glyph is a default, not a policy. A chart that already sets `shape`
+  on every series paints exactly as it did before.
+
+  **Bar series are unchanged.** A bar encodes identity by `texture` rather than by glyph, and texture stays opt-in —
+  nothing assigns one for you. `shape` serves the line, area, and scatter marks.
+
+- [#1390](https://github.com/ngrok/mantle/pull/1390) [`c117f9e`](https://github.com/ngrok/mantle/commit/c117f9ec67f22ce63475effed0af135d657fad3c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `seriesSlot` to `BarChart.Bar`, `LineChart.Line`, `AreaChart.Area`, and `ScatterPlot.Point` for charts that need a fixed visual identity.
+
+  Series receive unreserved slots in composition order. Set `seriesSlot` to give a series a fixed visual identity. Slots `1` through `8` select the built-in color-and-shape pair. `"other"` selects the neutral tail treatment. Several related series may share one slot.
+
+  Automatic assignments now derive from the currently composed series. Removing an automatic series closes the gap. Mantle reserves fixed slots before automatic series take the remaining slots.
+
+  The `color` and `shape` props now override only their own channels. They do not change slot assignment. When the intent is to select the fourth built-in identity rather than to override only the paint, replace `color="chart-4"` with `seriesSlot={4}`.
+
+- [#1390](https://github.com/ngrok/mantle/pull/1390) [`c117f9e`](https://github.com/ngrok/mantle/commit/c117f9ec67f22ce63475effed0af135d657fad3c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Bar Chart: two new fill textures, one per color slot.** `BarChart.Bar`'s `texture` prop takes eight values now —
+  `"solid"`, `"hatch"`, `"hatch-reverse"`, `"crosshatch"`, `"perpendicular"`, `"parallel"`, `"grid"`, `"dots"` — one for
+  each of the palette's eight validated color slots. Both additions paint on the bars and on the series' legend key. The
+  key's `data-texture` attribute carries the new values for consumer CSS.
+
+  **`"parallel"`** inks one rung per tile along the bar's length: vertical lines on vertical bars, horizontal lines on
+  horizontal bars. It is the exact complement of `"perpendicular"`, whose rung runs across the bar's length instead. Both
+  rung textures flip with the Root's `orientation`, in opposite senses, so a horizontal chart keeps the two apart.
+
+  **`"grid"`** inks both rung directions at once — the orthogonal lattice against `"crosshatch"`'s diagonal one. It is
+  direction-free: an `orientation` change leaves the lattice identical. Two rung directions ink twice over, so its rungs
+  are thinner than `"perpendicular"`'s lone rung; at the rung width a grid tile would read as a darker solid. Both new
+  tiles measure inside the ink-coverage band the five non-solid values before them set, so a textured series never shouts
+  over a solid one.
+
+  Texture stays a redundant identity encoding alongside color, never decoration. The ink is tone-on-tone — a darker step
+  of the series' own fill — so a chart keeps its series apart without color vision, in grayscale print, and under forced
+  colors. Keep it opt-in: leave the first series solid and texture the rest, or texture only the pair that color alone
+  cannot separate.
+
+  **Several series may share one series slot on purpose.** Set the same `seriesSlot` on every member, then give each
+  member its own `texture`. The chart reserves that slot once. Three series with `seriesSlot={1}` and three textures
+  leave seven slots for their automatic siblings, so ten series paint in categorical colors and none falls to
+  `--color-chart-other`.
+
+  Four things to know before you reach for it:
+
+  - **Every member sets the same `seriesSlot`.** Mantle reserves fixed slots before automatic series take the remaining
+    slots.
+  - **Give every member a distinct `texture`.** Nothing checks it. Two series may share one slot with the same texture,
+    paint pixel-identically, and draw no warning.
+  - **A member that drops `seriesSlot` needs a slot of its own.** It takes the next unreserved slot in composition order.
+  - **One hue across several series reads as one group.** Reach for the technique when those series really do belong
+    together, keep the legend on screen, and check the shared token against its neighbors first. Texture is a second
+    encoding on top of a legal color, and it never makes an illegal color legal: a pair under the colorblind-safe floor
+    stays illegible whatever the fill.
+
+  Eight series or fewer is still the default advice — rank by the window's total, keep the top seven, and sum the rest
+  into one `"Other"` series. A shared slot is the narrow exception, for series that really do belong together.
+
+  Docs: [Textures](https://mantle.ngrok.com/components/charts/bar-chart#textures) and
+  [Chart color tokens](https://mantle.ngrok.com/components/charts/bar-chart#chart-color-tokens).
+
+- [#1387](https://github.com/ngrok/mantle/pull/1387) [`69d6c7b`](https://github.com/ngrok/mantle/commit/69d6c7ba9b5ba94163a2b86dad93a613068327a4) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix `Choice` publishing none of its per-part documentation, so hovering `Choice.Root` in an editor showed
+  nothing.
+
+  Each `Choice` part carries a summary, a `@see` link to its docs anchor, and an `@example` in the source, and
+  none of it reached the published types. The namespace object was declared with an explicit type annotation —
+  `const Choice: { Root: typeof Root; … } = { … } as const` — and the build emits the annotation in place of
+  the documented object literal. `dist` shipped a bare member list. `Choice` was the only namespace in the
+  package written that way, so every other compound component already documented its parts here.
+
+  The annotation is gone. `as const` alone emits the same named member types and keeps the documentation, and
+  it restores the `readonly` modifiers the annotation was discarding: `readonly Root: typeof Root` instead of
+  `Root: typeof Root`. The parts, their props, and their runtime behavior are unchanged.
+
+  `COMPONENT_SPEC.md` asks for the annotation when a member's type comes from a third-party namespace, and it
+  now records this cost, because the published types are the only channel that feeds editor tooltips.
+
+- [#1371](https://github.com/ngrok/mantle/pull/1371) [`0d9bf76`](https://github.com/ngrok/mantle/commit/0d9bf76e077d6b0707db1dc1d1487d3c20a2cfec) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump the `@tanstack/react-virtual` runtime dependency to 3.14.9.
+
+- [#1378](https://github.com/ngrok/mantle/pull/1378) [`4b74f6c`](https://github.com/ngrok/mantle/commit/4b74f6cd5bec5c9774823ae798e15f564b438bcd) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix `Sidebar.Tooltip` popping a label when the panel collapses, with no pointer anywhere near the row.
+
+  The part gated its `Tooltip.Content` on the collapsed rail state but left `Tooltip.Root` to manage its own
+  open state — and Radix's pointer close path lives _inside_ the content, which tracks the pointer leaving the
+  trigger. With the content withheld, nothing could close it: the pointer crossing an expanded row on its way
+  to the collapse trigger latched that row's label open, invisibly, and collapsing the panel then mounted every
+  latched label at once. The app shell demos put the account switcher row right beside the `Sidebar.Trigger`, so
+  a tooltip appeared on nearly every collapse. The same stale open state pointed the row's `aria-describedby` at
+  an id that was not in the document and left `data-state="instant-open"` on rows in the expanded panel.
+
+  A row wrapped in a menu or dialog trigger latched the same way without any hover: closing the overlay restores
+  focus to the row, and Radix opens a tooltip on focus. In the shell demos that is the account switcher, which
+  is why collapsing right after using its menu showed the account's name in the rail.
+
+  The rail state is now a veto on a controlled open state rather than a gate on the content, and a rail toggle
+  resets it, so:
+
+  - the expanded panel and the mobile sheet keep every row at `data-state="closed"` with no `aria-describedby`;
+  - collapsing or expanding dismisses the label instead of replaying a stale one — including the reverse case,
+    where a label shown in the rail survived an expand and reappeared on the next collapse;
+  - the label closes when the pointer leaves the row. `disableHoverableContent` moves that close onto the
+    trigger, which is mounted at every rail state, and a rail label has nothing to hover into — per the
+    WAI-ARIA tooltip pattern it holds no interactive content.
+
+  Opening is unchanged otherwise: the pointer entering a row in the collapsed rail, or focus reaching it, still
+  shows the label. `Tooltip.Root` still stays mounted at every rail state, so toggling the rail never drops
+  focus off the row the user was on.
+
+- [#1386](https://github.com/ngrok/mantle/pull/1386) [`9db190a`](https://github.com/ngrok/mantle/commit/9db190a647644f2c73d2ee74164f4d343e8e1820) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix `BarChart` rendering on stacked charts whose series are zero on most columns — the shape a "usage by
+  provider" or "usage by access key" chart produces. Five defects, all of which got louder as the series count
+  grew.
+
+  **The rounded cap went to the last-registered series, not to the segment on top.** `rounded` came from
+  `seriesIndex === specs.length - 1`, computed once per series outside the per-column loop. A value of exactly
+  `0` is not a gap — it stacks with `lower === upper` — so the last series pushed a zero-extent rect carrying the
+  column's only rounded corner, and the renderer dropped it for having no height. Two columns with
+  pixel-identical silhouettes rendered one square and one capped, decided by which alphabetically-sorted series
+  happened to have data. `computeStackBoundaries` now records the data end of each column's positive and
+  negative pile, and the cap goes to every segment reaching that end within a pixel. Pixel distance settles the
+  sub-pixel case too: a series contributing a fraction of a pixel paints no ink, so it can no longer take the
+  cap away from the segment the column actually shows.
+
+  **The 2px surface gap carved against nothing.** The old gate asked only `seriesIndex > 0`, which never asked
+  whether a segment painted below. With sparse data the first painted segment routinely sits at a nonzero series
+  index with a stacked lower boundary still at `0`, so the whole column lifted 2px off the zero baseline and
+  showed the grid through the seam. The gate is now the zero pixel: a column whose stack below rounds to no ink
+  stays welded to the axis.
+
+  **The gap also erased segments shorter than 2px.** Subtracting the full gap from a 1px segment pushed its
+  baseline edge past its data edge, and the renderer drew the inverted rect on the wrong side of its own
+  boundary — or dropped it outright when the two edges met. Sub-cent contributions against a dollar-scale axis
+  land in that regime constantly. The carve now takes at most half the segment, so a taller segment always
+  paints taller.
+
+  **Diverging stacks capped the wrong end.** `computeStackBoundaries` stores a negative segment inverted, so
+  reading `lower` as the baseline side put the cap, the enter reveal, and the gap on the edge facing zero. Each
+  segment now picks its ends by pile.
+
+  **`orientation="horizontal"` had all four defects verbatim.** Both orientations now share one pure
+  `stackedSegmentEdges` helper instead of mirrored copies.
+
+  Alongside those, three fixes to how a bar chart reads under the pointer:
+
+  - **The hover band no longer washes over its neighbors.** It drew at `max(step, 24)px` while the hit region is
+    exactly one step, so above roughly 43 categories the highlight reached into the next bar — at 60 categories,
+    a third of the way — and at the last category it spilled past the plot edge. The band now covers the same
+    span the hit test inverts, and it centers itself when a dense axis drives the step below a pixel.
+  - **A stacked segment resolves by containment.** `onDatumActivate`'s `dataKey` came from the nearest cumulative
+    boundary, which is right for a stacked line or area, where the mark _is_ the boundary. For a bar the mark is
+    the filled span, so the half of every segment nearer the baseline reported the series below it.
+  - **A tooltip no longer covers the x-axis tick labels.** The vertical clamp reached the bottom of the plot
+    wrapper, which is the row the axis band reserves for its labels. The clamp now holds the readout inside the
+    plot rect and falls back to the wrapper's top edge only for a readout too tall to fit.
+
+  Finally, **an all-zero bar or area chart keeps its baseline at the axis minimum.** Nicing a flat domain pads it
+  to `[-1, 1]`, which floated the zero line through the middle of the plot on a chart whose minimum is
+  documented as fixed at `0` — visible on any "no usage yet" card.
+
+  Two additions cover all four chart families:
+
+  - **The three hover layers now carry a `data-slot`.** `<family>-crosshair`, `<family>-hover-band`, and
+    `<family>-markers` join the slots the Root already stamps, so a consumer restyles a layer through the slot
+    instead of a structural child selector. Each family's docs page gains a data-attribute table listing the
+    Root's whole slot inventory. The layers mount on every kind, and the engine writes their geometry as inline
+    styles — restyle color and border, and leave the transform alone.
+  - **The docs describe paint order precisely.** The store keys a series' paint position to its `dataKey` on first
+    registration. Series that mount together register in composition order, but a series that mounts later paints
+    last whatever its position in the JSX. A `dataKey` that returns resumes its original position, and reordering
+    the parts of a mounted chart restacks nothing. Nine sentences across the four pages and their JSDoc twins said
+    otherwise.
+
+  Nothing here changes a prop or an export. Grouped bars, single-series bars, and the line and scatter families
+  keep their geometry.
+
+- [#1385](https://github.com/ngrok/mantle/pull/1385) [`6e679f6`](https://github.com/ngrok/mantle/commit/6e679f6efcb96b843a504805dd291e69a2e08e87) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Rewrote comments and JSDoc across the library against the new `CONVENTIONS.md § Writing` standard. This is a
+  prose change: no component behavior, API, prop, type, or class name moves. The rewritten JSDoc ships in the
+  published `.d.ts`, so consumers see it in editor tooltips.
+
+  Seven JSDoc blocks were wrong before this pass, so their published text changes meaning:
+
+  - **`Select.Value`** now names the case where the styling restriction bites: under
+    `Select.Content position="item-aligned"`, Radix measures this element's box to align the open list over the
+    selected item. The old text gave the instruction with no reason.
+  - **`Table.Root`** names what it does — it draws the border and rounded corners, and scrolls wide content
+    horizontally with a fading scroll edge. The old summary called that "additional functionality".
+  - **`Select.Item`** points at `onValueChange` instead of the deprecated `onChange`.
+  - **`Combobox.ItemValue`** says that `value` and `userValue` override the defaults only when you pass them.
+  - **`TooltipProvider`** restores the one-instance rule and names what a second provider actually changes: it
+    applies its own timing props to its subtree, and it tracks `skipDelayDuration` separately, so a pointer
+    that moves between the two waits the delay again.
+  - **`useBreakpoint`** states what it returns — the largest matching Tailwind breakpoint, or `"default"` below
+    `2xs` — rather than narrating `useSyncExternalStore`.
+  - **`useIsBelowBreakpoint`** states what it returns: `true` while the viewport is narrower than the given
+    breakpoint.
+
+  Several summaries that restated their own identifier now name what the part does that a sibling does not.
+  `Card.Header`, `Card.Footer`, `Card.Title`, `Command.Root`, `Command.Input`, `Command.List`, `Command.Empty`,
+  `Command.Group`, `Command.Item`, `Combobox.Root`, `MultiSelect.Root`, `Tabs.Root`, `Tabs.Badge`,
+  `AlertDialog.Root`, `Table.Root`, and `Theme` are the visible ones, and each docs-page copy moved with them.
+
+  `Tabs.Root` and `Combobox.Root` state what they own rather than which parts read it. The earlier wording named
+  the parts that read the context, which under-reported the reach: `Tabs.Content` carries `data-orientation`
+  through Radix's own context, and `Combobox.ItemValue` and `Combobox.Group` read the ariakit store through
+  ariakit. `Tabs.Root` now names the `data-orientation` and `data-appearance` attributes it stamps, which any
+  descendant can select against.
+
+  Four summaries no longer read as a copy of a sibling's:
+
+  - **`IconButton`** leads with what makes it an icon button — one icon and nothing else, with the required
+    `label` prop carrying the accessible name. It opened with `Button`'s three sentences verbatim.
+  - **`Switch`** names its difference from `Checkbox`: no indeterminate state. The two shared one sentence.
+  - **`Icons`**, **`Pagination`**, and **`Theme`** say what their module exports. Each published only
+    "Re-exports for the … component."
+  - **`Alert.Icon`** was missing a verb, and its three copies disagreed three ways.
+
+- [#1378](https://github.com/ngrok/mantle/pull/1378) [`4b74f6c`](https://github.com/ngrok/mantle/commit/4b74f6cd5bec5c9774823ae798e15f564b438bcd) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Modernize the `Sidebar` and `AppLayout` class strings to Tailwind v4 syntax. The compiled CSS is unchanged —
+  these are the shorthands v4 added for what the bracket forms already expressed:
+
+  | Before                                      | After                                     |
+  | ------------------------------------------- | ----------------------------------------- |
+  | `w-[var(--sidebar-width,16rem)]`            | `w-(--sidebar-width,16rem)`               |
+  | `m-[var(--app-layout-card-gutter,0.5rem)]`  | `m-(--app-layout-card-gutter,0.5rem)`     |
+  | `group-data-[hydrated]/sidebar-nav:`        | `group-data-hydrated/sidebar-nav:`        |
+  | `group-has-[[data-slot~=sidebar-header]]/…` | `group-has-data-[slot~=sidebar-header]/…` |
+  | `[border-radius:0.625rem]`                  | `rounded-[0.625rem]`                      |
+  | `[&>:first-child]:size-7`                   | `*:first:size-7`                          |
+
+  The CSS variables, their fallbacks, and the selectors they compile to are identical — the variable shorthand
+  carries its fallback (`w-(--sidebar-width,16rem)` still emits `width: var(--sidebar-width,16rem)`), and both
+  `:has()` forms match the same `data-slot` token. Only the class strings on the elements changed, so update any
+  test or stylesheet that matches them literally.
+
+## 0.82.1
+
+### Patch Changes
+
+- [#1375](https://github.com/ngrok/mantle/pull/1375) [`e57524a`](https://github.com/ngrok/mantle/commit/e57524a47ad7070fc4d522a33442a68bf375ed7b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix six defects and restructure `AppLayout`, from migrating the ngrok dashboard onto the app shell
+  ([#1374](https://github.com/ngrok/mantle/issues/1374)). Every one of these failed **silently**, which is what
+  made them expensive.
+
+  **`AppLayout` is restructured, and this is breaking.** The card now reads like every other mantle surface —
+  `Content` wrapping `Header` + `Body`, the same shape as `Sidebar.Nav`, `Dialog.Content`, `Sheet.Content`, and
+  `Card.Root`:
+
+  ```
+  AppLayout.Root                        AppLayout.Root
+  ├── AppLayout.Notice                  ├── AppLayout.Notice
+  └── AppLayout.Body          ─────►    └── AppLayout.Workspace
+      └── AppLayout.Inset                   └── AppLayout.Content
+          └── AppLayout.Content                  ├── AppLayout.Header
+              └── AppLayout.Header               └── AppLayout.Body
+  ```
+
+  Migration, in order:
+
+  1. **`AppLayout.Body` → `AppLayout.Workspace`** (the row holding the rail beside the card). Same classes,
+     and `data-slot="app-layout-workspace"`.
+  2. **`AppLayout.Inset` is removed.** Its child moves up to be a direct child of `AppLayout.Workspace`; the
+     card gutter it owned is now `AppLayout.Content`'s own margin, driven by the new public
+     `--app-layout-card-gutter` (default `0.5rem`). The gutter has to belong to the card — the only other
+     element that could hold it also contains the rail, so padding there pushed the sidebar off the window
+     edge and broke the flush collapsed icon rail.
+  3. **`AppLayout.Body` is now the page region**, and the shell's only scroll container. Render your
+     `<Outlet />` here, and **compose `Main` onto it via `asChild` instead of onto `AppLayout.Content`** —
+     `SkipToMainLink` focuses `#main`, so the landmark has to _be_ the scrollport or arrows, `Space`, and
+     `PageDown` do nothing after a skip. `data-slot="app-layout-body"` now names this element.
+  4. **`AppLayout.Header` renders a `<div>`, not a `<header>`**, and is no longer `sticky`. With `Main` on
+     `AppLayout.Body`, a `<header>` here would have no sectioning ancestor and would therefore _become_ the
+     ARIA `banner` landmark. Compose your own element with `asChild` if you need one.
+
+  There is deliberately **no `Footer` part**. A bar pinned to the bottom of the card is almost always a page's
+  own — an editor's validity line, a save bar — and a route rendering through an `<Outlet />` inside
+  `AppLayout.Body` could never reach a shell-level one, because it would be a sibling of the region the route
+  renders into. The docs show how to pin one inside the page region with three flex rules instead.
+
+  **Fixes:**
+
+  - **`AppLayout.Content` is now a containing block** (`relative`). It was a scroll container but not
+    positioned, so absolutely-positioned page content resolved against `AppLayout.Root` — `fixed inset-0` in a
+    real shell — and painted across the sidebar rail.
+  - **A page can finally fill the card.** `AppLayout.Header` was `sticky` but _in flow_ inside a
+    `display: block` scroll container, so a page using `h-full` overflowed by exactly the toolbar's height
+    (measured: 54px), leaving a bottom-pinned bar below the fold on every load. The toolbar is now a
+    `shrink-0` sibling _outside_ the scrollport, so it is pinned by construction, cannot be overlapped by a
+    page's own `sticky top-0`, and steals no height. `AppLayout.Body` is a flex item that is **block inside**,
+    which is what lets `h-full` fit the card while `mx-auto max-w-7xl` still centers — as a flex _child_, auto
+    margins beat `align-items: stretch` and that container would shrink-to-fit, getting narrower as the
+    viewport got wider.
+  - **`AppLayout.Content` is `overflow-clip`, not `overflow-hidden`.** `hidden` is a scroll container that
+    paints no scrollbar: a toolbar wider than the card let <kbd>Tab</kbd> scroll it sideways, translating the
+    header and page out of view with no way back.
+  - **`Slot` composes a render-prop `className` or `style` instead of dropping it.** A function `className`
+    resolved to `""` through `cx` and a function `style` was overwritten by prop merging, so a react-router
+    `NavLink` composed through an `asChild` mantle part silently lost `className={({ isActive }) => …}` — the
+    row's highlight just never turned on. `Slot` now composes a function of the same shape, forwarding the
+    child's own arguments to the child's function and merging the resolved value at the usual child-wins
+    precedence, so `<Sidebar.ItemButton asChild><NavLink className={({ isActive }) => …} /></Sidebar.ItemButton>`
+    works and no longer needs `current` derived from `useMatch` for accessibility (`NavLink` sets
+    `aria-current="page"` itself). `Slot` never calls the function, so it needs to know nothing about the
+    argument. Parts that forward `asChild` straight to a Radix primitive (`Tooltip.Trigger`,
+    `DropdownMenu.Trigger`, `Dialog.Trigger`) still use Radix's own slot, which joins a function `className`
+    into the class string — nest a mantle-backed part inside those.
+  - **`Sidebar.ItemButton` styles its current row from `aria-current="page"` as well as `data-current`.** The
+    row's visual state and its announced state now come from the same attribute, whichever side sets it — so a
+    composed child that already resolved the match marks itself and gets mantle's own row treatment:
+    `<Sidebar.ItemButton asChild><NavLink to="/endpoints">…</NavLink></Sidebar.ItemButton>` highlights with no
+    `current`, no `useMatch`, and no `className`. Before this, a `NavLink` was announced as the current page but
+    looked like every other row unless the parent re-derived the route to pass `current`, or hand-rolled the
+    active styling in app code. `current` is unchanged and still sets both attributes; keep using it for rows
+    whose parent knows (a plain `Link`, a custom matcher).
+
+  - **`extractSidebarStateCookie` no longer throws on a malformed cookie.** Its documented contract already
+    said it answers `undefined` for an unparseable value, but the raw `decodeURIComponent` call raised
+    `URIError` on a bad percent-escape — and a `Cookie` header is client-controlled, so a single corrupt or
+    hostile value (`mantle-sidebar-state=%E0%A4%A`) failed the server render on **every** page load until the
+    user cleared it by hand. Cookie reading is now one shared internal helper used by
+    `extractSidebarStateCookie`, `extractThemeCookie`, and `getStoredTheme`, which also fixes a latent
+    truncation bug: the theme readers split on `=` and so would cut a value at its first `=`.
+  - **`AppLayout.Root` clips instead of hiding.** `overflow-hidden` is a scroll container that paints no
+    scrollbar — the same trap `AppLayout.Content` was fixed for on this branch, one level up. Anything wider
+    than the frame let <kbd>Tab</kbd> scroll the entire shell sideways, and on a frame pinned with
+    `fixed inset-0` that is the whole window, with no scrollbar and no gesture to bring it back.
+    `AppLayout.Root` is now `overflow-clip`, which is not a scroll container at all.
+  - **Two `AlertCenter.Item`s sharing an `id` now throw instead of failing silently.** The projection keys one
+    stable host per id, so two concurrently mounted items with the same id rendered both children sets into one
+    host — duplicated, interleaved content. It fails fast with a descriptive message naming the id. Unmounting
+    and remounting the same id is unaffected: a dismissed alert that returns still resumes its original
+    position.
+
+  **Additive API:**
+
+  - **`Sidebar.AccountAvatar` and `Sidebar.UserAvatar` accept `asChild`.** Both render a single `<div>`, which
+    is invalid inside a `<button>` — pass an empty element (`<span />`) to swap it. The avatar's own content
+    (the derived initials; the `src` image or silhouette) renders inside your element.
+  - **`Sidebar.Tooltip` takes `Tooltip.Content`'s props.** It was a closed `{ children, label }` object, so the
+    tooltip surface it renders was unreachable and `side="right"` was hardcoded. `className`, `style`, `ref`,
+    `data-*`, positioning props such as `align` and `sideOffset`, and `asChild` now land on the tooltip; `side`
+    is a prop defaulting to `"right"`. `children` stays a required single element.
+  - **New `data-slot` hooks:** `alert-center-bar-wrapper` (the presence wrapper that owns `data-state`),
+    `alert-center-dismiss-icon-button`, and `alert-center-announcer` (the `role="status"` live region).
+    `AlertCenter.Bar`, `AlertCenter.Content`, and `AlertCenter.DismissIconButton` now join an incoming
+    `data-slot` chain rather than replacing it — note the dismiss button's own slot value replaces the
+    inherited `alert-dismiss-icon-button`; `Alert`'s `data-alert-dismiss` attribute is unchanged.
+
+  - **`Sidebar.Separator`, `Sidebar.AccountAvatar` and `Sidebar.UserAvatar` join an incoming `data-slot`
+    instead of being clobbered by it.** All three stamped their slot name before spreading rest props, so a
+    consumer-passed or ancestor-forwarded `data-slot` replaced `sidebar-separator` /
+    `sidebar-account-avatar` / `sidebar-user-avatar` outright and any styling or test selector targeting them
+    silently stopped matching. They now merge the incoming chain ahead of their own name, like every other
+    sidebar part.
+  - **`⌘B` / `Ctrl+B` respects the platform and text fields.** The sidebar shortcut accepted _either_ modifier
+    on _every_ platform, so on macOS `Ctrl+B` — the native emacs-style "move the caret back one character" that
+    every macOS text field binds — was `preventDefault`ed and toggled the sidebar instead, including inside
+    embedded editors like Monaco. The modifier is now resolved per platform and the two never substitute for
+    each other, and the shortcut is ignored while focus is in an `<input>`, `<textarea>`, `<select>`, or any
+    `contenteditable` host.
+
+  **Additive:**
+
+  - **`Sidebar.Tooltip`** labels a row while — and only while — the desktop panel is collapsed to the icon
+    rail. The rail keeps labels in the accessibility tree but leaves a sighted pointer user with an unlabeled
+    icon column. It gates its _content_ rather than its `Tooltip.Root`, so toggling the rail never drops focus
+    off the row the user was on, and it composes with a menu trigger
+    (`DropdownMenu.Root > Sidebar.Tooltip > DropdownMenu.Trigger asChild`). Requires a `TooltipProvider`
+    ancestor, like any `Tooltip.Root` — it deliberately does not mount its own, so app-wide delay settings
+    still apply.
+  - **`extractSidebarStateCookie` / `serializeSidebarStateCookie` / `SIDEBAR_STATE_COOKIE_NAME`** from
+    `@ngrok/mantle/sidebar` — the SSR-safe pair for persisting the collapsed state, mirroring
+    `extractThemeCookie`. A cookie is the only storage the server can read, so it is the only way to render the
+    collapsed state into the initial HTML with no first-frame correction; use it with `defaultOpen`, not
+    controlled `open`. `extractSidebarStateCookie` returns `boolean | undefined` so a first-time visitor stays
+    distinguishable from someone who deliberately collapsed the rail.
+
+  Docs: https://mantle.ngrok.com/layouts/app-layout — new sections cover sizing a page to the card (with a live
+  editor-page example), scroll restoration with an inner scrollport, and the desktop-only nature of the
+  sidebar-header alignment. The Sidebar and Alert Center pages gain rail tooltips, cookie persistence, the
+  one-level-deep navigation precondition, hoisting `AlertCenter.Root` above the shell for route-authored
+  alerts, and testing guidance for the alert center's intentionally duplicated title text.
+
+## 0.82.0
+
+### Minor Changes
+
+- [#1338](https://github.com/ngrok/mantle/pull/1338) [`3bd61ef`](https://github.com/ngrok/mantle/commit/3bd61efece1e98723649ed44d763678a580bf75e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add the `AlertCenter` compound component (`@ngrok/mantle/alert-center`): a single, top-level
+  entry point for one-to-many account alerts and their upgrade CTAs, meant to replace a stack of independent
+  window banners with one severity-colored bar. Alerts are **authored as JSX**: each `AlertCenter.Item`
+  composes the normal `Alert` banner parts as children (real anchors, arbitrary content) and registers its
+  coordination facts (`id`, `intent`) with the renderless `AlertCenter.Root` — mount an item to
+  show it, unmount to dismiss. The children stay in the author's React tree and portal into a stable
+  per-id host the chrome physically adopts (`Element.moveBefore` where supported), so context providers and
+  error boundaries around an item work, the children's React events bubble to the author's tree, and content
+  keeps its state as it moves between the bar and a row. Dismissing the last alert steers keyboard focus to
+  the page's `main` landmark instead of dropping it on `<body>`. Ranking stays deterministic: a stable sort by severity (`danger` › `warning` ›
+  `important` › `info` › `success`), then arrival order within an intent (sticky per id, so a returning alert
+  resumes its position). `AlertCenter.Bar` is an always-visible, full-width strip that renders the top item's
+  children inline as authored — icon, title, `Alert.Description`, and its call-to-action, so it is a single
+  line for a title alone and a two-line banner once a description is composed (matching how the same alert
+  renders as an expansion row; `in-data-[placement=bar]:hidden` keeps any element out of the bar) — plus a
+  `+N more` trigger, collapses to nothing when
+  empty (like `AppLayout.Notice`), redirects keyboard focus to the next control when a focused top alert is
+  dismissed, and claims no ARIA `banner` landmark (arrivals and re-ranks are announced by a persistent,
+  visually-hidden `role="status"` live region that `AlertCenter.Root` mounts). `AlertCenter.Content` expands
+  the remaining items inline as ranked, full-width banner rows. `AlertCenter.DismissIconButton` is the
+  per-item dismiss affordance — its presence in an item's children is what makes that alert dismissable. The
+  chrome around each item is stamped with `data-placement="bar" | "list"` and `data-alert-id` as documented
+  styling hooks. Also exports the `AlertCenterIntent`, `AlertCenterItemProps`, and `AlertCenterRootProps`
+  types. Docs: https://mantle.ngrok.com/components/feedback/alert-center
+
+- [#1338](https://github.com/ngrok/mantle/pull/1338) [`3bd61ef`](https://github.com/ngrok/mantle/commit/3bd61efece1e98723649ed44d763678a580bf75e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add the `AppLayout` compound component (`@ngrok/mantle/app-layout`): a viewport-locked application
+  shell that never scrolls itself. `AppLayout.Root` fills its nearest sized ancestor (merge
+  `className="fixed inset-0"` to pin a real app shell to the viewport); `AppLayout.Notice` is a full-window
+  strip above everything for maintenance banners and environment warnings; `AppLayout.Body` is the flex row
+  where a `Sidebar.Nav` composes beside `AppLayout.Inset`; `AppLayout.Content` is the rounded `bg-card` card
+  that is the shell's only scroll container (`overflow-y-auto overscroll-none`) — compose the `Main` landmark
+  into it via `asChild`; and `AppLayout.Header` is the sticky toolbar `<header>` rendered as `Content`'s first
+  child (a `Sidebar.Trigger` and breadcrumbs live there; it is `h-14` standalone, and when the shell contains
+  a `Sidebar.Header` it derives its height from the sidebar's `--sidebar-header-height` token so the two rows
+  stay center-aligned by construction). The shell is otherwise deliberately unaware of any sidebar. All parts
+  support `asChild` and accept a `ref` prop.
+  Docs: https://mantle.ngrok.com/layouts/app-layout
+
+- [#1338](https://github.com/ngrok/mantle/pull/1338) [`3bd61ef`](https://github.com/ngrok/mantle/commit/3bd61efece1e98723649ed44d763678a580bf75e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add the `Sidebar` compound component (`@ngrok/mantle/sidebar`): a composable, collapsible
+  app-navigation sidebar. `Sidebar.Root` owns the state and renders no DOM (controlled/uncontrolled `open` +
+  `onOpenChange`, controlled/uncontrolled `openMobile` + `onOpenMobileChange`, and a configurable
+  `mobileBreakpoint`, default `lg`); `Sidebar.Nav` renders the panel — inline on desktop, collapsing to a
+  skinny icon rail (rows become square chips around their leading icons, group labels fade in place with
+  their rows retained so groupings and icon positions match the expanded state, switcher rows collapse to
+  their leading visual — everything stays in the tab order and the accessibility tree) — and a left-side
+  `Sheet` below the breakpoint; `Sidebar.Trigger` is an `IconButton` with `aria-expanded`/`aria-controls`
+  that toggles whichever presentation is active from anywhere under the root; `⌘B`/`Ctrl+B` also toggles it
+  (exact-modifier match; single-owner — with multiple mounted roots only the first claimant handles the
+  keypress; opt out with `keyboardShortcut={false}`).
+  Navigation composes `Sidebar.Header`/`Body`/`Footer`, `Sidebar.Group`/`GroupLabel`/`List`/`Item`/`ItemButton`
+  (with `current` → `aria-current="page"`, group labels wired to lists via `aria-labelledby`; a row sizes its
+  leading icon and leaves trailing visuals — a menu caret, a count, a status pip — to size themselves, and
+  stays highlighted while a menu opened from it is open), plus
+  `Sidebar.SwitcherTrigger`, `Sidebar.Separator`, `Sidebar.AccountAvatar` (deterministic, WCAG 4.5:1-contrast
+  swatches), and `Sidebar.UserAvatar`. `Sidebar.Body` fades its
+  overflowing edges with the `scroll-fade-y` mask (and hides its scrollbar inside the collapsed icon rail).
+  Also exports the `useSidebar` hook and the `SidebarState` and
+  `SidebarMobileBreakpoint` types. Public CSS variables: `--sidebar-width` (default `16rem`),
+  `--sidebar-width-mobile` (default `18rem`), and `--sidebar-width-icon` (default `3.25rem`) — read with those
+  defaults as fallbacks, so set them on `Sidebar.Nav` for one sidebar or on any ancestor (`:root`) to resize
+  every sidebar in an app — plus `--sidebar-header-height` (default `4.5rem`), the header row
+  height that `AppLayout.Header` also derives from so the two rows stay center-aligned — set it on a common
+  ancestor of both, and `--sidebar-row-width`, which `mantle.css` derives at `:root` as
+  `calc(var(--sidebar-width, 16rem) - 1rem)`: the width of one row in the expanded panel, for surfaces that
+  render outside the panel and so inherit nothing from it. A menu opened from a switcher or item row keeps the
+  expanded row's width in the collapsed icon rail with
+  `<DropdownMenu.Content width="trigger" className="min-w-(--sidebar-row-width)">`.
+  Docs: https://mantle.ngrok.com/components/navigation/sidebar
+
+### Patch Changes
+
+- [#1365](https://github.com/ngrok/mantle/pull/1365) [`0a17568`](https://github.com/ngrok/mantle/commit/0a17568e49aedc0e26cb7c44f1304728aac1af94) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Correct JSDoc across Calendar, Progress Bar, Progress Donut, Radio Group, and Scatter Plot (component audit sweep). No API changes.
+
+  - `ProgressBar` and `ProgressDonut`: the `@see` links on `Root`, `Indicator`, and both namespace members pointed at `#api-progress-bar*` / `#api-progress-donut*` anchors that no longer exist on their docs pages. They now resolve to the real `#progressbarroot`, `#progressbarindicator`, `#progressdonutroot`, and `#progressdonutindicator` API-reference anchors.
+  - `Calendar`: dropped the stale `#api-calendar` fragment so the `@see` link points at the component's docs page.
+  - `ScatterPlot`: the Composition tree omitted `ScatterPlot.CopyButton`, which the component has shipped as a namespace member — the tree now matches the docs page.
+  - `RadioGroup`: added the missing "Rich option layout (Choice)" tree to the Composition example so the JSDoc matches the five layouts documented on the docs page.
+
+- [#1361](https://github.com/ngrok/mantle/pull/1361) [`bf7fc75`](https://github.com/ngrok/mantle/commit/bf7fc75ab5a2cfc197ffd3841b391f2dbb7d5cb3) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump runtime Radix UI dependencies: `react-dialog` 1.1.21 → 1.1.23, `react-dropdown-menu` 2.1.22 → 2.1.24,
+  `react-hover-card` 1.1.21 → 1.1.23, `react-popover` 1.1.21 → 1.1.23, `react-progress` 1.1.14 → 1.1.16,
+  `react-select` 2.3.5 → 2.3.7, `react-slider` 1.4.5 → 1.4.7, `react-slot` 1.3.1 → 1.3.3,
+  `react-switch` 1.3.5 → 1.3.7, `react-tabs` 1.1.19 → 1.1.21, and `react-tooltip` 1.2.14 → 1.2.16.
+
+  Bump `@ariakit/react` 0.4.34 → 0.4.35, which fixes native form submission for `MultiSelect`. A `name` —
+  passed to `MultiSelect.Input` directly or flowed from `Field.Control` — is no longer set on the combobox
+  input, whose value is the typeahead filter text; it is applied to one hidden input per selected value
+  instead. A native form submit now sends the selected values rather than whatever the user typed. Code that
+  read the `name` attribute off the rendered combobox input (or queried it by name) must target the hidden
+  inputs instead; consumers reading selection through `selectedValue` / `setSelectedValue` are unaffected.
+
+- [#1338](https://github.com/ngrok/mantle/pull/1338) [`3bd61ef`](https://github.com/ngrok/mantle/commit/3bd61efece1e98723649ed44d763678a580bf75e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Main` now joins an incoming `data-slot` chain ahead of its own `"main"` slot name (previously the chain was
+  clobbered), so it composes cleanly as an `asChild` child of layout parts
+  (e.g. `<AppLayout.Content asChild><Main>…</Main></AppLayout.Content>`).
+
+- [#1368](https://github.com/ngrok/mantle/pull/1368) [`f591fd0`](https://github.com/ngrok/mantle/commit/f591fd0bd18c385a3edddccc623253722cd0067e) Thanks [@forzalupo](https://github.com/forzalupo)! - Render `Breadcrumb.Page` with the same muted foreground color as the rest of the breadcrumb trail instead of emphasizing it with strong text.
+
+## 0.81.1
+
+### Patch Changes
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Accordion JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Remove the React `displayName` assignments from Alert's sub-components; the displayName convention has been dropped.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Area Chart JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Bar Chart JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Replace a ternary used inside `cx()` for Calendar's day class names with convention-compliant class composition (no behavior change).
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Checkbox JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Code Block JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Command JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Description List JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Dropdown Menu JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Field JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Flag JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Icons JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Line Chart JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Media Object JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Pagination JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees.
+
+  Also drop the `asChild` prop from `CursorPagination.PageSizeValue`. It never worked — `PageSizeValue` hard-codes its `{pageSize} per page` text as children, which overrode the composed child and made `Slot` throw `React.Children.only`. It now always renders a `span`.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Radio Group JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Sandboxed On Click JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Sheet JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Split Button JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Table JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Export the `TextAreaProps` type from `@ngrok/mantle/text-area` (its `index.ts` barrel previously dropped the type re-export).
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Theme JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1356](https://github.com/ngrok/mantle/pull/1356) [`672479a`](https://github.com/ngrok/mantle/commit/672479a2bde29cceb1c26561c2da6294611e9482) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine Toast JSDoc and documentation (component audit): correct `@see` links, complete examples, and align Composition trees. No API changes.
+
+- [#1350](https://github.com/ngrok/mantle/pull/1350) [`635dbb3`](https://github.com/ngrok/mantle/commit/635dbb38ac7fdb3c782f4e0395613125022c66dd) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add composable trailing expand and dismiss controls to Alert.
+
+- [#1353](https://github.com/ngrok/mantle/pull/1353) [`3d92c6d`](https://github.com/ngrok/mantle/commit/3d92c6d68f7c7ab9a617752fa55b9f5cc2cb78e1) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add a `decorative` prop to every chart Root — `BarChart`, `LineChart`, `AreaChart`, and `ScatterPlot` — for placeholder and empty-state charts.
+
+  A decorative chart keeps its visual rendering and animation but drops every layer that only makes sense for real data: it is hidden from assistive technology, removed from the tab order, and inert to pointer and keyboard, with no hover band, tooltip, sr-only data table, or live region. This replaces the previous workaround of native `inert` plus CSS targeting chart internals (`[&_[role=application]]:pointer-events-none`), which leaked the chart's interaction structure into consumer code and required a misleading accessible name for fake data.
+
+  The accessible-name requirement and `decorative` are modeled as a discriminated union, so invalid combinations are unrepresentable: an interactive chart (the default) still requires exactly one of `aria-label` / `aria-labelledby` and may wire the interaction callbacks, while a decorative chart forbids the accessible-name props and the interaction props (`activeIndex`, `onActiveIndexChange`, `onDatumActivate`) — the chart won't compile with both. `decorative` communicates intent ("these values are not information") where a `disabled` flag would be ambiguous, since a chart is not a form control.
+
+  ```tsx
+  <BarChart.Root data={placeholderUsage} xKey="day" decorative className="opacity-40">
+  	<BarChart.Bar dataKey="value" />
+  </BarChart.Root>
+  ```
+
+- [#1355](https://github.com/ngrok/mantle/pull/1355) [`2684706`](https://github.com/ngrok/mantle/commit/26847066f85c3b28781bb9cc76065dc865698398) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Charts no longer render fractional axis ticks for integer-valued data (MNTL-56).
+
+  When every value backing an axis is an integer — request counts, error totals — the tick step is clamped to whole numbers, so a small domain like `[0, 3]` ticks at `0, 1, 2, 3` instead of `0, 0.5, 1, …`. The clamp follows the data, not the axis part: it covers the value axis in both bar orientations (including the value ticks painted along the bottom of horizontal bars) and linear x axes on line, area, and scatter charts. Any fractional value in the data restores sub-integer stepping, and `tickCount` remains an approximate hint.
+
+- [#1345](https://github.com/ngrok/mantle/pull/1345) [`685e5f5`](https://github.com/ngrok/mantle/commit/685e5f50770f68669bf4a39b0d883bc9e7e603fe) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump runtime dependencies: `@tanstack/react-virtual` to 3.14.8 and the Radix UI primitives to their latest patch releases (`react-dialog` 1.1.21, `react-dropdown-menu` 2.1.22, `react-hover-card` 1.1.21, `react-popover` 1.1.21, `react-progress` 1.1.14, `react-select` 2.3.5, `react-slider` 1.4.5, `react-slot` 1.3.1, `react-switch` 1.3.5, `react-tabs` 1.1.19, `react-tooltip` 1.2.14).
+
+## 0.81.0
+
+### Minor Changes
+
+- [#1340](https://github.com/ngrok/mantle/pull/1340) [`f5b991e`](https://github.com/ngrok/mantle/commit/f5b991e97aeba9489c72c4487d657a1aefec625c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add the canvas chart family: `BarChart` (`@ngrok/mantle/bar-chart`), `LineChart` (`@ngrok/mantle/line-chart`), `AreaChart` (`@ngrok/mantle/area-chart`), and `ScatterPlot` (`@ngrok/mantle/scatter-plot`).
+
+  Each is a compound component with a shadcn-style compositional shape (`Root`, `Grid`, `XAxis`, `YAxis`, series parts, `ReferenceLine`, `Tooltip`, `Legend`) rendered by a shared Canvas 2D engine built for scale: on-demand rAF commits (zero idle CPU), min/max-per-pixel-column decimation past 4 points per device pixel (O(plot-width) redraws at 100k+ points), DOM-overlay hover so pointer moves never repaint the canvas, and motion built for live data — x/y domains glide toward their targets with frame-rate-independent exponential chases (streaming appends read as continuous scrolling, never ease-stop-jump ticks), axis ticks/gridlines fade via per-label alpha instead of popping, and a liveline-style scroll mask dissolves exiting marks through a fade band at the plot's left edge while a sliding window streams (automatic; no prop). `prefers-reduced-motion` snaps everything.
+
+  `ScatterPlot` correlates two continuous measures — or three: providing `zKey` renders a rotatable 3D point cloud on the same Canvas 2D engine (drag to orbit, depth-sorted with gentle perspective, z carried through the tooltip, announcements, and the sr-only table). Hover hits the nearest point within 24px, and rendering degrades gracefully to tens of thousands of points. A `dimensions` prop (`1 | 2 | 3`) morphs the 3D cloud onto the x-axis line, the xy plane, or the full cube with the same glide — the interaction behind "watch the clusters separate" explainers. Scatter is an all-pairs chart form: the validated palette caps it at four series.
+
+  Highlights:
+
+  - New design tokens `--color-chart-1`…`--color-chart-8` and `--color-chart-other`, derived from mantle ramps and validated for colorblind-safe adjacency, normal-vision separation, and ≥ 3:1 surface contrast in all four themes (with Tailwind utilities like `bg-chart-1`). Color slots are sticky per `dataKey`, so filtering series never recolors the survivors.
+  - Interaction ships with `Root` unconditionally: snapped crosshair/hover band, an every-series tooltip, keyboard stepping (arrows, PageUp/PageDown, Home/End, Escape) with polite aria-live announcements, a bounded sr-only data-table twin, and datum activation via click or Enter/Space (`onDatumActivate`), plus controlled `activeIndex` for linked charts.
+  - The data-table twin is machine-readable: date row headers carry exact ISO timestamps in `<time dateTime>` and value cells carry raw numbers in `data-value`, so agents scrape precise series data from the DOM. A composable `CopyButton` part on every family copies the current rows to the clipboard as a machine-stable markdown table (ISO 8601 dates, un-separated numbers, em dash gaps).
+  - Configurable point glyphs: `shape` (`"circle" | "square" | "triangle" | "diamond"`) on `ScatterPlot.Point` (the marks themselves), `LineChart.Line` (canvas markers), and `AreaChart.Area` — a redundant encoding alongside color, sized for equal visual weight. Legend keys and hover dots wear each series' glyph on all three (line keys ride the glyph on a short stroke).
+  - Horizontal bars: `orientation` (`"vertical" | "horizontal"`) on `BarChart.Root` names the direction the bars point, not an axis. `"horizontal"` grows bars rightward from a left baseline with categories banded down the y axis (better for long labels or many categories); the value axis, baseline, reference lines, hover band, and `"perpendicular"` texture all flip to match, and grouping/stacking/keyboard/data-table are unchanged. Defaults to `"vertical"`.
+  - Configurable bar textures: `texture` (`"solid" | "hatch" | "hatch-reverse" | "crosshatch" | "perpendicular" | "dots"`) on `BarChart.Bar` — opt-in pattern fills (diagonal hatches, perpendicular rungs, offset dot grids), inked tone-on-tone from each series' own color at equal loudness, so grouped and stacked series stay distinguishable without color vision (grayscale print, forced colors). Legend keys wear the same pattern; tiles rasterize at the device pixel ratio so the ink stays crisp.
+  - Charts require an accessible name at the type level (`aria-label` or `aria-labelledby`).
+  - `pending` holds the previous render at reduced opacity during refetch — no skeleton flash.
+
+### Patch Changes
+
+- [#1347](https://github.com/ngrok/mantle/pull/1347) [`ec09b1d`](https://github.com/ngrok/mantle/commit/ec09b1d8420be706be72060f873cd859d5a04bc8) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Decouple cross-component helper imports so importing one component no longer pulls another component's implementation into the bundle:
+
+  - `preventCloseOnPromptInteraction` moved out of `toast.tsx` into its own module. The Dialog/Sheet primitive imported it from the Toast implementation, which dragged sonner (and its import-time CSS injection) into every dialog-only consumer bundle — a dialog-only Vite 8 build shrinks from 117.0 KB to 86.0 KB (−26.5%).
+  - `iconButtonVariants` moved out of `icon-button.tsx` into its own module, so `Calendar` (which only needs the classes for its nav buttons) no longer imports the `IconButton` implementation.
+
+  No public API changes — both helpers were internal.
+
+- [#1346](https://github.com/ngrok/mantle/pull/1346) [`4dbed4e`](https://github.com/ngrok/mantle/commit/4dbed4edf8a60e08f34f36720d6e4c0e1f7412e6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Remove all `Component.displayName = "..."` assignments. Bundlers (verified with Vite 8 / Rolldown) treat these top-level property assignments as side effects, which pins otherwise-unused components — and their dependencies — into consumer bundles. Dropping them lets dead components tree-shake correctly; e.g. a dialog-only bundle no longer retains the unused Toast components. React DevTools falls back to inferring names from the component function names.
+
+## 0.80.0
+
+### Minor Changes
+
+- [#1339](https://github.com/ngrok/mantle/pull/1339) [`959ee6d`](https://github.com/ngrok/mantle/commit/959ee6d357b35e31c3d1d69e62e11b3151cdeb70) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **BREAKING**: Drop React 18 support — `@ngrok/mantle` now requires `react@^19` and `react-dom@^19` peers (previously `^18 || ^19`).
+
+  - All components use React 19's native ref-as-prop instead of `forwardRef`. Call sites are unchanged (`<Button ref={ref} />` keeps working); exported components are now plain function components, and every public `*Props` type includes `ref` via `ComponentProps`.
+  - `composeRefs` and `useComposedRefs` now propagate React 19 ref cleanup functions: when a composed callback ref returns a cleanup, the composed ref returns a cleanup that invokes it (refs without cleanups still receive the legacy `null` write on detach).
+  - Removed redundant `displayName` assignments — component names are inferred from their declarations; intentional DevTools names on compound parts are kept.
+
+### Patch Changes
+
+- [#1334](https://github.com/ngrok/mantle/pull/1334) [`57cfb4d`](https://github.com/ngrok/mantle/commit/57cfb4d3ecf5c1b57f91ad9bb308e0f8f6b0344d) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `CenteredLayout.Notice`: a full-window-width strip pinned above everything else in the layout —
+  including `CenteredLayout.Header` — for maintenance notices, environment warnings, and similar app-wide
+  messaging. It renders an unstyled `<div>` (`w-full shrink-0`) that collapses to nothing when empty, the same
+  slot contract as the app-layout shell's notice strip, so an app-wide banner composes identically
+  across mantle's layouts. On
+  flows that scroll, merge `sticky top-0 z-20` via `className` to keep it pinned to the window.
+
+- [#1337](https://github.com/ngrok/mantle/pull/1337) [`758355f`](https://github.com/ngrok/mantle/commit/758355f116b53c7bff714ff0fe88fe0303ac28d2) Thanks [@forzalupo](https://github.com/forzalupo)! - Use a neutral action button for informational alert dialogs.
+
+## 0.79.3
+
+### Patch Changes
+
+- [#1328](https://github.com/ngrok/mantle/pull/1328) [`f5c6bfd`](https://github.com/ngrok/mantle/commit/f5c6bfd07b9ab742d0251de86866dd62135da48a) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump the `@ariakit/react` runtime dependency from 0.4.32 to 0.4.34 and move the `tailwindcss` peer range floor from `^4.3.2` to `^4.3.3`.
+
+  The ariakit bump (0.4.34 is a republish of 0.4.33, whose npm artifact shipped without build output) changes how `MultiSelect.Content` locks page scroll when opened outside a mantle modal: in browsers with `scrollbar-gutter` support, ariakit now reserves the gutter on the `html` element instead of hiding `body` overflow with padding compensation, and its `--scrollbar-width` CSS variable is only set in the legacy fallback path (Safari < 18.2) — styles reading it should keep a length fallback (`var(--scrollbar-width, 0px)`). Pages that already set `scrollbar-gutter` or `overflow-y: scroll` on `html` no longer shift when the popover opens. The bump also picks up a Korean IME fix for `autoSelect` comboboxes and faster component mounts. Mantle's in-modal scroll-lock opt-out (`preventBodyScroll` defaulting to `false` inside mantle modals) is unchanged and still required.
+
+  Tailwind 4.3.3 is a bug-fix-only patch (notably, achromatic `oklch` theme colors no longer shift hue under opacity modifiers); nothing in mantle requires it — the floor tracks the workspace toolchain. Consumers still on tailwindcss 4.3.2 will see an unmet-peer warning until they upgrade.
+
+- [#1331](https://github.com/ngrok/mantle/pull/1331) [`d8f5690`](https://github.com/ngrok/mantle/commit/d8f5690c583ab334dfcf74ef803f9b024baf6b1c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Restore the classic `Tabs.List` border, drawn by default in the `separator` color token: horizontal tablists draw a 1px bottom border and vertical tablists draw the matching side border (also the `separator` token now, previously `gray-200`). The border is painted on the list's content box so the focus-ring breathing padding doesn't push it past the container edges, it sits just below the active trigger's decoration, and it stays solid to the container edges while scrolled triggers fade under the scroll-fade mask.
+
+  Pass the new `hideBorder` prop on `Tabs.List` to remove the border; it is also rendered as a `data-hide-border` attribute on the tablist element. The pill appearance never draws a border, so `hideBorder` has no effect there. `Tabs.Root` now renders a `data-appearance` attribute for appearance-scoped styling.
+
+  If you previously worked around the missing border by adding your own `border-b` to `Tabs.List`, remove it — otherwise you'll render a doubled, two-tone border.
+
+## 0.79.2
+
+### Patch Changes
+
+- [#1324](https://github.com/ngrok/mantle/pull/1324) [`3a57903`](https://github.com/ngrok/mantle/commit/3a5790380dd5297df3db343fedc9f5ea8eeedd2b) Thanks [@forzalupo](https://github.com/forzalupo)! - Refine CodeBlock backgrounds, hover states, and header typography.
+
+## 0.79.1
+
+### Patch Changes
+
+- [#1322](https://github.com/ngrok/mantle/pull/1322) [`33d6214`](https://github.com/ngrok/mantle/commit/33d6214043de3bd23b6f91fbf7e72b57c39fcfba) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Breaking:** `ThemeSwitcher` is now a compound component — compose `ThemeSwitcher.Root`, `ThemeSwitcher.Trigger`, and `ThemeSwitcher.Content` instead of rendering a single `<ThemeSwitcher />`. The `contentProps` prop bag is gone: pass `DropdownMenu.Content` props (`align`, `side`, `collisionPadding`, `className`, …) directly to `ThemeSwitcher.Content`, and `IconButton` props (`appearance`, `label`, `className`, …) directly to `ThemeSwitcher.Trigger`. `ThemeSwitcher.Content` renders `ThemeDropdownMenuRadioGroup` when no children are given; pass children to own the menu contents. `ThemeSwitcherProps` is replaced by `ThemeSwitcherRootProps`, `ThemeSwitcherTriggerProps`, and `ThemeSwitcherContentProps`; `ThemeDropdownMenuRadioGroup` is unchanged. The trigger's `data-slot` is now `theme-switcher-trigger` (was `theme-switcher`) and the popover's is `theme-switcher-content dropdown-menu-content` — `DropdownMenu.Content` now joins an incoming `data-slot` chain ahead of its own slot name instead of being clobbered by it, so `[data-slot~="dropdown-menu-content"]` selectors keep matching wrapped menus.
+
+  Migration:
+
+  ```tsx
+  // before
+  <ThemeSwitcher contentProps={{ className: "shadow-2xl", collisionPadding: { right: 16 } }} />
+
+  // after
+  <ThemeSwitcher.Root>
+  	<ThemeSwitcher.Trigger />
+  	<ThemeSwitcher.Content className="shadow-2xl" collisionPadding={{ right: 16 }} />
+  </ThemeSwitcher.Root>
+  ```
+
+## 0.79.0
+
+### Minor Changes
+
+- [#1316](https://github.com/ngrok/mantle/pull/1316) [`efbf621`](https://github.com/ngrok/mantle/commit/efbf621981fae5d875371daa7527733021f8d411) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Breaking:** `AlertDialog.Root`'s `priority` prop is renamed to `intent` (still required; the value union is unchanged: `info | danger`). `AlertDialog.Action` still derives its button tone from the dialog's intent — `danger` → a danger button, otherwise an accent button (the old "default") — and `AlertDialog.Action`/`AlertDialog.Cancel` keep `appearance` and `intent` optional (their wrapper defaults are the design; a consumer-passed value still wins). Call sites that passed `priority` to `Action` rename it to `intent`. See the migration guide at https://mantle.ngrok.com/migrations/priority-to-intent-migration.
+
+- [#1316](https://github.com/ngrok/mantle/pull/1316) [`efbf621`](https://github.com/ngrok/mantle/commit/efbf621981fae5d875371daa7527733021f8d411) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Breaking:** `Alert.Root`'s `priority` prop is renamed to `intent` (still required; the value union is unchanged: `danger | important | info | success | warning`). The rename is mechanical: `<Alert.Root priority="warning">` becomes `<Alert.Root intent="warning">`. See the migration guide at https://mantle.ngrok.com/migrations/priority-to-intent-migration.
+
+- [#1316](https://github.com/ngrok/mantle/pull/1316) [`efbf621`](https://github.com/ngrok/mantle/commit/efbf621981fae5d875371daa7527733021f8d411) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Breaking:** `Button` and `IconButton` replace `priority` with `intent`, and both `appearance` and `intent` are now **required** props with no defaults — every call site states its visual weight and tone explicitly. `Button`'s tone union is `accent | danger | neutral` (`accent` replaces the old `default` value; `danger` and `neutral` are unchanged). `IconButton` gains the `intent` axis (`accent | danger | neutral`) with ghost/outlined tone styling mirroring `Button`; its pre-intent rendering was neutral-toned, so `intent="neutral"` is the visual-parity value for existing icon buttons. Buttons emit `data-intent` instead of `data-priority`. New type exports from `@ngrok/mantle/button`: `ButtonIntent`, `ButtonAppearance`, and `IconButtonAppearance`. Migration is mechanical and pixel-preserving with one deliberate exception — follow the agent-ready guide at https://mantle.ngrok.com/migrations/priority-to-intent-migration (old implicit defaults resolve to `appearance="outlined"` + `intent="accent"` on Button and `appearance="outlined"` + `intent="neutral"` on IconButton; a filled Button that omitted `priority` becomes `intent="neutral"`, the system's default primary action, instead of the accent tone it used to inherit).
+
+- [#1316](https://github.com/ngrok/mantle/pull/1316) [`efbf621`](https://github.com/ngrok/mantle/commit/efbf621981fae5d875371daa7527733021f8d411) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Breaking (pass-through surfaces):** `SplitButton.PrimaryAction` now omits `intent` instead of `priority` from its forwarded Button props (it still renders outlined + neutral; it never accepted the tone prop). `DataTable.HeaderSortButton` and `DataTable.RowExpandButton` forward the renamed props: call sites that passed `priority` to `HeaderSortButton` rename it to `intent` (`appearance`/`intent` stay optional on both, defaulting to their current ghost + neutral rendering). See the migration guide at https://mantle.ngrok.com/migrations/priority-to-intent-migration.
+
+- [#1316](https://github.com/ngrok/mantle/pull/1316) [`efbf621`](https://github.com/ngrok/mantle/commit/efbf621981fae5d875371daa7527733021f8d411) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Breaking:** `Toast.Root`'s `priority` prop is renamed to `intent` (still required; the value union is unchanged: `danger | info | success | warning`), and the public type exported from `@ngrok/mantle/toast` is renamed from `Priority` to `ToastIntent`. See the migration guide at https://mantle.ngrok.com/migrations/priority-to-intent-migration.
+
+## 0.78.0
+
+### Minor Changes
+
+- [#1313](https://github.com/ngrok/mantle/pull/1313) [`2f5ddc9`](https://github.com/ngrok/mantle/commit/2f5ddc9d44e5a48abaed6414f7dfb954e3b9fb18) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `Breadcrumb`, hierarchy-path navigation at `@ngrok/mantle/breadcrumb` following the WAI-ARIA APG breadcrumb pattern: six compound parts — `Breadcrumb.Root` (a `<nav>` landmark labeled `"Breadcrumb"` by default, overridable via `aria-label` for localization or multiple trails), `Breadcrumb.List` (an `<ol>` whose order conveys the hierarchy), `Breadcrumb.Item` (`<li>` crumbs), `Breadcrumb.Link` (a router-agnostic `<a>` that composes onto framework links like react-router's `Link` via `asChild`), `Breadcrumb.Page` (a `<span>` with `aria-current="page"` marking the current, non-link crumb), and `Breadcrumb.Separator` (a `role="presentation"` + `aria-hidden` divider defaulting to a caret icon, replaceable with custom children like a slash). Every part supports `asChild`. Documented at https://mantle.ngrok.com/components/navigation/breadcrumb. Purely additive — no changes to existing components.
+
+- [#1313](https://github.com/ngrok/mantle/pull/1313) [`2f5ddc9`](https://github.com/ngrok/mantle/commit/2f5ddc9d44e5a48abaed6414f7dfb954e3b9fb18) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `CenteredLayout` — mantle's first published layout primitive, at `@ngrok/mantle/centered-layout` and documented at https://mantle.ngrok.com/layouts/centered-layout. It is a viewport-filling centered page flow for sign-in, sign-up, onboarding, 404, checkout, and other focused full-page states, consolidating the centered "auth shell" duplicated across ngrok's dashboard and login apps. Four parts: `CenteredLayout.Root` (the `min-h-full` flex frame), `CenteredLayout.Header` (an optional semantic `<header>` utility strip for account chips and close buttons — merge `sticky top-0 z-10` via `className` to pin it to the window while the page scrolls), `CenteredLayout.Body` (the growing centered region — by convention the fully-styled brand mark is its first child, and the primary content follows as composed JSX; there is deliberately no `Logo` or `Content` part because they would own nothing), and `CenteredLayout.Footer` (a pinned semantic `<footer>` utility strip outside the centered region). Landmark semantics stay compositional: when the layout owns the document, compose mantle's `Main` directly in `Body` and pair a `SkipToMainLink` as the first child of `Root`. It owns structure only — app state never enters it; links, brand marks, and landmarks arrive as composed JSX. New export, purely additive: no impact on existing consumers.
+
+- [#1313](https://github.com/ngrok/mantle/pull/1313) [`2f5ddc9`](https://github.com/ngrok/mantle/commit/2f5ddc9d44e5a48abaed6414f7dfb954e3b9fb18) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `ThemeSwitcher` and `ThemeDropdownMenuRadioGroup` at `@ngrok/mantle/theme-switcher` — the canonical picker UI over mantle's theme system (`ThemeProvider` + `useTheme`). `ThemeSwitcher` is a compact standalone picker: a ghost `IconButton` trigger (overridable `appearance` and accessible `label` props) with an SSR-safe icon — a `Skeleton` until hydration, then `AutoThemeIcon` matching the applied theme — that opens a `DropdownMenu` of the five themes. `ThemeDropdownMenuRadioGroup` is the five-theme `DropdownMenu.RadioGroup` it hosts, embeddable in any existing menu (e.g. an account-menu `Theme` submenu) so long as it renders inside a `DropdownMenu.Content` or `DropdownMenu.SubContent`. Documented at https://mantle.ngrok.com/components/forms/theme-switcher. This consolidates the near-identical theme-switcher copies across ngrok's apps (dashboard, login, docs site) onto one shipped, tested component.
+
+### Patch Changes
+
+- [#1313](https://github.com/ngrok/mantle/pull/1313) [`2f5ddc9`](https://github.com/ngrok/mantle/commit/2f5ddc9d44e5a48abaed6414f7dfb954e3b9fb18) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Docs-only: correct `Breadcrumb.Separator`'s JSDoc to describe the actual default children — the size-3.5 `Icon`-wrapped caret — after the sizing rework.
+
+- [#1315](https://github.com/ngrok/mantle/pull/1315) [`f9445f5`](https://github.com/ngrok/mantle/commit/f9445f58f3c84a5fc103a726776f35bb841a8d50) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add a unified `size` prop to the button family: `Button` gains `size` (`xs | sm | md | lg | xl`, default `md`) and `IconButton`'s existing scale grows to match (`lg` and `xl` join `xs | sm | md`). The scale is shared — the same size name always renders the same box height on both components (`xs` 24px, `sm` 28px, `md` 36px, `lg` 40px, `xl` 48px) — and the new `ButtonSize` type is exported from `@ngrok/mantle/button`. `SplitButton.Root` also accepts `size` and drives both of its halves through context, so the primary action and menu trigger always share one height; `SplitButton.PrimaryAction` deliberately does not accept `size`. `Button` `size` has no effect when `appearance="link"` (link buttons inherit surrounding typography and have no box to size) and `data-size` is not emitted for link buttons. `IconButton` now always emits `data-size` (previously omitted when `size` was not passed); `Button` emits `data-size` too, and `SplitButton.Root`'s wrapper div gains a `data-size` attribute. Only the box scales — typography and icon glyph size are the same at every size. Purely additive: the default `md` renders exactly what `Button` rendered before. See `decisions/2026-07-13-button-size-and-intent-api.md`.
+
+- [#1288](https://github.com/ngrok/mantle/pull/1288) [`9d988f2`](https://github.com/ngrok/mantle/commit/9d988f203ddd4a7a433871478adfa1fd4e21af34) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump runtime dependencies: `@ariakit/react` to 0.4.32, `@tanstack/react-virtual` to 3.14.6, and the Radix UI primitives to their latest patch releases (`react-dialog` 1.1.19, `react-dropdown-menu` 2.1.20, `react-hover-card` 1.1.19, `react-popover` 1.1.19, `react-progress` 1.1.12, `react-select` 2.3.3, `react-slider` 1.4.3, `react-switch` 1.3.3, `react-tabs` 1.1.17, `react-tooltip` 1.2.12). The `tailwindcss` peer range floor moves from ^4.3.1 to ^4.3.2.
+
+- [#1310](https://github.com/ngrok/mantle/pull/1310) [`21c8e35`](https://github.com/ngrok/mantle/commit/21c8e355ec8aa6eb99facf611ab7a835356bfbb3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update every JSDoc `@see` link to the reorganized docs URLs. Component docs now live at `mantle.ngrok.com/components/<category>/<name>` (e.g. `/components/actions/button`); the old flat URLs permanently redirect, so previously published links keep working. Also fixes a handful of `@see` links that pointed at pages that never existed (`/components/progress`, `/components/theme-provider`, `/components/button-group`, `/components/calendar`). No runtime changes.
+
+- [#1288](https://github.com/ngrok/mantle/pull/1288) [`9d988f2`](https://github.com/ngrok/mantle/commit/9d988f203ddd4a7a433871478adfa1fd4e21af34) Thanks [@dependabot](https://github.com/apps/dependabot)! - `MultiSelect.Content` no longer applies Ariakit's body scroll lock when its trigger lives inside a mantle modal (`Dialog`, `Sheet`, `AlertDialog`) — the modal already locks body scroll. Starting with `@ariakit/react` 0.4.30, the redundant lock snapshotted the body's inline style (including the modal's transient `pointer-events: none`) and re-applied that stale snapshot on the animation frame after unmount, permanently freezing the page after closing a modal that contained an opened multi-select. Consumers can still override via the `preventBodyScroll` prop.
+
+- [#1310](https://github.com/ngrok/mantle/pull/1310) [`21c8e35`](https://github.com/ngrok/mantle/commit/21c8e355ec8aa6eb99facf611ab7a835356bfbb3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix incorrect RadioGroup JSDoc `@example` blocks: the change handler is `onChange` (Headless UI), not `onValueChange`; the namespace object is not renderable (`<RadioGroup.Root>`, not `<RadioGroup>`); and `RadioGroup.ButtonGroup` renders the radio group itself, so the examples no longer nest it inside `RadioGroup.Root` — that composition binds the buttons to an inner, uncontrolled group and silently ignores outer `value`/`onChange` props. Documentation only, no runtime changes.
+
+- [#1313](https://github.com/ngrok/mantle/pull/1313) [`2f5ddc9`](https://github.com/ngrok/mantle/commit/2f5ddc9d44e5a48abaed6414f7dfb954e3b9fb18) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Slot` now concatenates `data-slot` values in DOM order instead of letting the child clobber the composing parent's: the parent part's slot chain comes first, then the child's own (e.g. `data-slot="breadcrumb-item breadcrumb-page"`). Parts that join their incoming `data-slot` prop with their own slot name (Breadcrumb and CenteredLayout do, more to follow) accumulate the full chain through arbitrarily deep `asChild` composition.
+
+## 0.77.0
+
+### Minor Changes
+
+- [#1305](https://github.com/ngrok/mantle/pull/1305) [`d9fe81f`](https://github.com/ngrok/mantle/commit/d9fe81f030dd8bccc73e8d33ea82152d791085e7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - feat(mantle): add `useDebounce`, `useLocalStorage`, and `useSessionStorage` hooks
+
+  - `useDebounce(value, { waitMs })` returns a debounced copy of a value that only updates after the value stops changing for `waitMs` milliseconds. The sibling of `useDebouncedCallback` for values instead of functions.
+  - `useLocalStorage(key, defaultValue)` is SSR-safe, `useSyncExternalStore`-backed localStorage string state. The setter keeps every same-key hook instance in the tab in sync, cross-tab changes arrive via the native `storage` event, and corrupt entries resolve to the default instead of throwing.
+  - `useSessionStorage(key, defaultValue)` is the per-tab sibling of `useLocalStorage` with the same contract, backed by sessionStorage.
+
+- [#1291](https://github.com/ngrok/mantle/pull/1291) [`aaa0247`](https://github.com/ngrok/mantle/commit/aaa02479cc25ae7693b1d95d2822c057df7fe46b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - feat(mantle): add `Choice` layout primitive
+
+  `Choice` is a reusable indicator-left / content-right layout for a single
+  choice — a control (checkbox, radio, switch) beside an emphasized title and an
+  optional de-emphasized description. Use it to pair a `Checkbox` or `RadioGroup`
+  option with a rich, titled label, or reach for it directly for your own rows.
+
+  ```tsx
+  import { Checkbox } from "@ngrok/mantle/checkbox";
+  import { Choice } from "@ngrok/mantle/choice";
+
+  <Choice.Root name="notify">
+  	<Choice.Indicator>
+  		<Checkbox />
+  	</Choice.Indicator>
+  	<Choice.Content>
+  		<Choice.Label>Email</Choice.Label>
+  		<Choice.Description>Get notified by email.</Choice.Description>
+  	</Choice.Content>
+  </Choice.Root>;
+  ```
+
+  - Pure layout + association: `Choice.Root` owns the control's `id` and the
+    description's `id` and wires them (`htmlFor`, `aria-describedby`) without
+    threading ids. Drop your own control into `Choice.Indicator` — it is cloned
+    with the shared `id` / `name` / `aria-*` / `disabled`.
+  - `Choice.Label` renders a real `<label htmlFor>` (use when the `Choice` owns the
+    labeling); `Choice.Title` renders label-less text (use when an ancestor — a
+    clickable row, a Headless radio item, or a `Field.Label` — owns it). Mirrors
+    `Field.Label` / `Field.LabelText`.
+  - **Field interop:** inside a `Field.Control`, the field's `id` / `name` /
+    `aria-*` flow onto the control and the field's `aria-describedby` is merged
+    (never duplicated) with the `Choice`'s own description. Outside a `Field` it
+    uses its own generated ids — the two are decoupled; neither requires the other.
+
+- [#1303](https://github.com/ngrok/mantle/pull/1303) [`65eb57b`](https://github.com/ngrok/mantle/commit/65eb57b4104d00f16dd62d4f92f626532d70ce0c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - feat(mantle): add `List` component
+
+  `List` is a scrollable list of **clickable** items — the action / navigation
+  counterpart to `SelectableList`. Compose `List.Item`s inside a `List.Root`;
+  each is a `<button>` (`onClick`) by default or your own element via `asChild`
+  (e.g. an `<a>` for navigation), with an optional `current` accent. Suits
+  account switchers, SSO provider pickers.
+
+  ```tsx
+  import { List } from "@ngrok/mantle/list";
+
+  <List.Root aria-label="Your accounts" className="max-h-80">
+  	{accounts.map((account) => (
+  		<List.Item key={account.id} onClick={() => switchTo(account.id)}>
+  			<List.ItemTitle>{account.name}</List.ItemTitle>
+  			<List.ItemDescription>
+  				{account.plan} · {account.memberCount} members
+  			</List.ItemDescription>
+  		</List.Item>
+  	))}
+  </List.Root>;
+  ```
+
+  - A **non-selecting** semantic list: `role="list"` of `role="listitem"` items,
+    styled like the `MultiSelect` popover (bordered, rounded `bg-popover`; items
+    highlight on hover / selection with an inset, rounded pill).
+  - **Non-virtualized by default.** Swap `Root` → `VirtualRoot` (same
+    `Item` children) to window long lists. `@tanstack/react-virtual` ships with
+    both list entrypoints; it is small — a few kB gzipped — and does no windowing
+    work until a `VirtualRoot` renders.
+  - `Item` supports `asChild` for link/navigation items, `current`, and
+    `disabled`. `current` sets `aria-current`, so the current item is
+    announced, not just tinted. A disabled `asChild` item carries `aria-disabled`,
+    is removed from the tab order, and swallows clicks/activation — though
+    consumers should prefer omitting the `href` for a genuinely disabled link.
+  - Built on a shared internal list primitive (the scroll + item chrome and ARIA
+    wiring behind both `List` and `SelectableList`); the primitive itself is
+    deliberately not exported.
+  - **Keyboard.** Items keep their native tab order, and `Arrow`↑/`Arrow`↓ /
+    `Home` / `End` also move focus between items (skipping disabled ones, no
+    wrap); the focused item lights up with the hover tint instead of a focus ring
+    on the control. Arrow navigation spans a `VirtualRoot`'s full list — jump
+    targets are scrolled into view and mounted before focus moves — though
+    off-screen items still aren't Tab-reachable (the windowing trade-off).
+
+- [#1303](https://github.com/ngrok/mantle/pull/1303) [`65eb57b`](https://github.com/ngrok/mantle/commit/65eb57b4104d00f16dd62d4f92f626532d70ce0c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - feat(mantle): add `SelectableList` component
+
+  `SelectableList` is a filterable, multi-select **grid** of checkbox rows — the
+  inline (non-popover) counterpart to `MultiSelect` / `Combobox`. Map your data
+  into `options` once; the list owns filtering and selection. Each row is an APG
+  grid `role="row"` (`aria-selected`) whose cells hold a real `Checkbox` and a
+  `Choice`-laid-out title + description — the pattern that lets a selectable row
+  carry a real control and its own interactive content.
+
+  ```tsx
+  import { SelectableList } from "@ngrok/mantle/selectable-list";
+
+  const options = accessKeys.map((key) => ({
+  	value: key.id,
+  	label: key.name,
+  	description: key.maskedToken,
+  }));
+
+  <SelectableList.Root options={options} value={selected} onValueChange={setSelected}>
+  	<SelectableList.Filter placeholder="Filter access keys…" />
+  	<SelectableList.SelectAll>Select all</SelectableList.SelectAll>
+  	<SelectableList.Viewport aria-label="Access keys" className="max-h-80" />
+  	<SelectableList.Empty>No access keys found.</SelectableList.Empty>
+  </SelectableList.Root>;
+  ```
+
+  - **Grid, not a checkbox-group.** `role="grid"` / `role="row"` / `role="gridcell"`
+    with `aria-selected`, a real `Checkbox` in the selection cell, and the title as
+    a `Choice.Label` naming it — the WAI-ARIA grid pattern for selectable rows with
+    interactive content. The whole row is click-to-toggle (deferring to the
+    checkbox, the label, and any nested control — no double-toggle).
+  - **Composable rows.** Default title + description row, or pass a render-prop
+    child to a viewport and compose `SelectableList.Item` / `ItemTitle`
+    (`Choice.Label`) / `ItemDescription` (`Choice.Description`).
+  - **Filtering.** The query is uncontrolled by default (seed it with
+    `defaultQuery`) or controlled via `query`/`onQueryChange` on `Root`; pass
+    `filter` for a custom predicate (`(option, query) => boolean` — the default
+    is a trimmed, case-insensitive substring match over each option's plain text:
+    `labelText`, or a string `label`). A `label` may be any ReactNode; a rich
+    label requires `labelText` (enforced by the option type) so the filter has
+    text to match.
+  - **Disabled rows.** `options[].disabled` is the single source of truth —
+    `SelectableList.Item` has no `disabled` prop. Disabled rows render dimmed,
+    carry `aria-disabled`, are excluded from toggling and "select all", and are
+    skipped by keyboard navigation.
+  - **Non-virtualized by default.** Swap `Viewport` → `VirtualViewport` (same props)
+    to window long lists. `@tanstack/react-virtual` ships with every list
+    entrypoint; it is small — a few kB gzipped — and does no windowing work until
+    a `VirtualViewport` renders. Windowed rows carry `aria-rowindex` with
+    `aria-rowcount` on the grid, keeping screen-reader counts true.
+  - `SelectableList.Empty` is an always-mounted polite `role="status"` live region
+    (visually hidden while options match), so an emptied filter is announced
+    rather than the grid silently vanishing.
+  - `SelectableList.SelectAll` reuses `selectAllChecked` to drive a tri-state header
+    over the **filtered** options.
+  - Pure helpers `filterSelectableOptions`, `optionLabelText`,
+    `toggleSelectionValue`, and `summarizeSelection` are exported for custom
+    filtering/selection logic.
+  - Built on a shared internal `list` primitive (scroll + row chrome and ARIA behind
+    both list components).
+  - **Keyboard.** The grid is a single tab stop with `aria-activedescendant`
+    navigation: `Arrow`/`Home`/`End` move the active row and `Space`/`Enter`
+    toggles it. Because focus stays on the collection (never on a row), it works
+    across the **full** set under `VirtualViewport` too — arrows scroll off-screen
+    rows into view rather than stopping at the mounted window.
+
+### Patch Changes
+
+- [#1306](https://github.com/ngrok/mantle/pull/1306) [`2e589b4`](https://github.com/ngrok/mantle/commit/2e589b4220910d01a2406e3a4a40d97247e3b0f3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix: publish a lean package.json — prune custom export conditions and slim the manifest
+
+  The `@ngrok/src-live-types` custom export condition only exists so workspace apps can resolve live source files during local development, but it was shipping in the published `package.json#exports` and pointing npm consumers at `./src/...` paths that are excluded from the tarball. A new `prepack`/`postpack` lifecycle pair now rewrites the manifest while the tarball is created and restores the pristine `package.json` afterwards:
+
+  - strips all custom (`@`-namespaced) export conditions
+  - collapses `{ types, import }` export entries to plain string targets (TypeScript resolves the sibling `.d.ts` automatically)
+  - drops `import` conditions that duplicate `default` (the CSS entries)
+  - removes `devDependencies` and `scripts`, which consumers never install or run
+
+  Published packages now expose only standard conditions pointing at `dist`, and each release permanently adds roughly half as much metadata to the npm packument.
+
+- [#1304](https://github.com/ngrok/mantle/pull/1304) [`5bd39ed`](https://github.com/ngrok/mantle/commit/5bd39ed6f784e0bc7025ca1e60c41fea601602a0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(mantle): scroll `CodeBlock.TabList` on overflow instead of wrapping
+
+  `CodeBlock.TabList` now scrolls horizontally with an edge fade
+  ([`scroll-fade-x`](https://mantle.ngrok.com/base/scroll-fade#horizontal--scroll-fade-x)
+  plus `overflow-x-auto`) when its tabs exceed the header width, rather than
+  wrapping the tab strip onto a second row. `CodeBlock.TabTrigger` gains
+  `shrink-0 whitespace-nowrap` so each label keeps its intrinsic width under width
+  pressure. The list reserves room (`-m-1 p-1`) for each trigger's focus ring so
+  the scroll container never clips it. No API changes — consumers who hand-wired
+  this on `className` can drop the workaround.
+
+- [#1305](https://github.com/ngrok/mantle/pull/1305) [`d9fe81f`](https://github.com/ngrok/mantle/commit/d9fe81f030dd8bccc73e8d33ea82152d791085e7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(mantle): hooks bug fixes, JSDoc gaps, and `useRandomStableId` removal
+
+  - `useUndoRedo`: calling `undo`/`redo`/`push` multiple times within a single event handler now works correctly. Previously the callbacks read the previous render's stacks, so back-to-back `undo` calls returned the same snapshot twice and corrupted the history.
+  - Remove `useRandomStableId`. It had no consumers and React's built-in `useId` is the right tool; the hook also produced different ids on the server and client, making it a hydration-mismatch hazard.
+  - `composeRefs`/`useComposedRefs`: drop the deprecated `MutableRefObject` type and internal type assertions; document both with proper JSDoc.
+  - Add test coverage for `useCallbackRef`, `useIsomorphicLayoutEffect`, `useMatchesMediaQuery`, `usePrefersReducedMotion`/`getPrefersReducedMotion`, `useScrollBehavior`, `useUndoRedo`, and `useComposedRefs`.
+
+- [#1305](https://github.com/ngrok/mantle/pull/1305) [`d9fe81f`](https://github.com/ngrok/mantle/commit/d9fe81f030dd8bccc73e8d33ea82152d791085e7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - refactor(mantle): hoist `useIsHydrated` snapshot functions to named module-level functions and clarify JSDoc; add unit tests covering client and server rendering
+
+## 0.76.11
+
+### Patch Changes
+
+- [#1284](https://github.com/ngrok/mantle/pull/1284) [`e6c3737`](https://github.com/ngrok/mantle/commit/e6c37372810cce0f382a2eb99ad3d3a1b64a352d) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(mantle): raise `Sheet` to `z-50` so it can stack over `Dialog`
+
+  `Sheet`'s overlay and content were pinned at `z-40` while `Dialog` (and
+  `AlertDialog`, and every popover-family primitive) live at `z-50`. That fixed
+  ordering meant a `Dialog` always painted over a `Sheet` regardless of open
+  order — opening a `Sheet` from inside a `Dialog` rendered the `Sheet` _behind_
+  it.
+
+  `Sheet` now matches `Dialog` at `z-50`. Both render into portals appended to
+  `<body>`, so with equal z-index the visual stacking follows portal mount
+  order — the most recently opened layer sits on top ("last opened wins"), the
+  conventional modal-stacking behavior. This is the same mechanism that already
+  lets `z-50` popovers/dropdowns/selects layer correctly over a `Dialog`.
+
+  Note: stacking a `Sheet` over a `Dialog` now compounds both backdrops (each
+  renders a full-screen `bg-overlay backdrop-blur-xs`), dimming the layer
+  beneath.
+
+  Component docs and source JSDoc now call out Mantle's shared `z-50` floating
+  layer across `Dialog`, `Sheet`, `AlertDialog`, `Popover`, `Tooltip`,
+  `HoverCard`, `DropdownMenu`, `Select`, `Combobox`, and `MultiSelect`. The
+  JSDoc coverage includes each floating component's root export, compound
+  component namespace export, and floating content export such as `.Content` or
+  `DropdownMenu.SubContent`.
+
+## 0.76.10
+
+### Patch Changes
+
+- [#1281](https://github.com/ngrok/mantle/pull/1281) [`618f59a`](https://github.com/ngrok/mantle/commit/618f59a4d05589c44cbc4ed1e36cb6d5d8b32e0e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(mantle): ease the Accordion trigger's padding in step with the open/close slide
+
+  The open-state `pb-2` padding swap (which gives the focus ring its vertical
+  clearance) was applied instantly, so the trigger's bottom padding — and the
+  ring's bottom edge — snapped 16px→8px at the start of opening and back on close,
+  jittering against the content's height animation. The padding now transitions on
+  the same 200ms/ease-out curve as `Accordion.Content`'s height, so it eases in
+  lockstep with the slide. `motion-reduce` disables the transition.
+
+- [#1282](https://github.com/ngrok/mantle/pull/1282) [`b8acd99`](https://github.com/ngrok/mantle/commit/b8acd99f41a9948fe0323ee840f90d6493683055) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(mantle): add a `separator` color token and use it for all dividers
+
+  Adds a semantic `separator` color token (`bg-separator` / `border-separator` /
+  `text-separator`, …) that resolves per theme to what `Separator` already
+  rendered: `gray-500/20` (light), `gray-600/20` (dark), and `black` (high
+  contrast). Every divider now points at this single token instead of hard-coding
+  the color:
+
+  - `Separator` (and everything built on it — `DropdownMenu.Separator`,
+    `Command.Separator`, `MultiSelect.Separator`, `Combobox.Separator`,
+    `Select.Separator`, `Sheet`, pagination) — refactor only, no visual change.
+  - `Accordion` — item dividers now come from `divide-y divide-separator` on
+    `Accordion.Root` (previously a per-item `border-card-muted` border with
+    `last:border-b-0`); they match the separator color and are drawn by the root.
+  - `OtpInput.Separator` — previously `text-muted`, now `text-separator`.
+
+  Consumers can use `border-separator` / `bg-separator` / `divide-separator` for
+  their own dividers instead of replicating the color.
+
+## 0.76.9
+
+### Patch Changes
+
+- [#1279](https://github.com/ngrok/mantle/pull/1279) [`6f0e022`](https://github.com/ngrok/mantle/commit/6f0e0222d66d4fdfeb1aa6cc2ed4a824b1a87815) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(mantle): keep the Accordion trigger's focus ring from overlapping the body
+
+  When an open section's trigger was focused, the `ring-4` focus ring painted over
+  the first line of the body because the body sat flush against the bottom of the
+  trigger's box. The open-state trigger now trades 8px of its bottom padding for
+  matching top padding on `Accordion.Body`, moving that space outside the button
+  box to give the ring vertical clearance. The trigger→body gap stays a uniform
+  16px and the collapsed trigger keeps its symmetric `py-4` rhythm.
+
+## 0.76.8
+
+### Patch Changes
+
+- [#1276](https://github.com/ngrok/mantle/pull/1276) [`8e176e5`](https://github.com/ngrok/mantle/commit/8e176e5832e6a88a1dbe70a2c074f618063a7ae6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Accordion` updates — a new `Accordion.Body` part and an optional `type`.
+
+  **`Accordion.Content` is split into a `Content` viewport plus a new `Accordion.Body`**, matching the `Content` + `Body` composition of `Dialog` and `Sheet`. `Accordion.Content` is now the zero-padding region that animates open and closed; the section's bottom padding moves to `Accordion.Body`. Keeping padding off the animating element is what lets a closed section collapse fully — a padded `h-0` border-box can't shrink below its own padding — and it gives you a dedicated element to restyle. The accordion no longer forces `text-sm` on its content or its trigger; both inherit the ambient text size now (set a text class on `Accordion.Body` or `Accordion.Trigger` where you need one).
+
+  - `Accordion.Content` no longer applies its own `pb-4` / `text-sm`. Wrap a section's content in `Accordion.Body` to keep the default bottom padding:
+
+    ```tsx
+    // Before
+    <Accordion.Content>Two to five business days.</Accordion.Content>
+
+    // After
+    <Accordion.Content>
+      <Accordion.Body>Two to five business days.</Accordion.Body>
+    </Accordion.Content>
+    ```
+
+    Override `Accordion.Body`'s `className` (for example `pb-0` or `px-6`) to retune the padding; `cx` resolves last-wins over the defaults.
+
+  **`Accordion.Root`'s `type` prop is now optional and defaults to `"multiple"`.** Omitting `type` is the same as `type="multiple"`: sections open independently and opening one never closes another (and `value` / `defaultValue` / `onValueChange` are typed as string arrays). Set `type="single"` to opt into the accordion where opening a section auto-closes the previously open one. This is additive — existing call sites that pass `type` are unchanged — and mirrors the recent `Button` change where `type` became optional with a safe default.
+
+## 0.76.7
+
+### Patch Changes
+
+- [#1274](https://github.com/ngrok/mantle/pull/1274) [`2788217`](https://github.com/ngrok/mantle/commit/27882174a73416241cdd16c6e7c5b16a65a4cddd) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Rebuild the `Accordion` and graduate it from preview to a stable, production-ready component. It was a thin `@radix-ui/react-accordion` wrapper; it is now a framework-free disclosure built on plain `<div>` and `<button>` elements whose collapsed content stays in the DOM with `hidden="until-found"`, so the browser's find-in-page (⌘F) can discover and auto-expand matches inside closed sections (synced via the `beforematch` event). Accessibility mirrors a native `<details>`/`<summary>`: the item is a `role="group"` and the trigger a `<button aria-expanded>`. Supports `"single"` and `"multiple"` modes with controlled (`value` + `onValueChange`) and uncontrolled (`defaultValue`) usage. `Accordion.TriggerIcon` accepts an `svg` prop to override the default caret.
+
+  Breaking changes:
+
+  - Removed `Accordion.Heading`. Compose a rich header as a plain flex row with `Accordion.Trigger` and any sibling controls (e.g. an "Add Rule" button) directly inside `Accordion.Item` — no heading wrapper and no absolute positioning.
+  - `Accordion.Root` now requires `type` (`"single"` | `"multiple"`) and types `value` / `defaultValue` / `onValueChange` per mode (a `string` in single mode, a `string[]` in multiple mode). The `collapsible` prop is gone — single mode is always collapsible (use `""` for "nothing open").
+
+## 0.76.6
+
+### Patch Changes
+
+- [#1270](https://github.com/ngrok/mantle/pull/1270) [`3145538`](https://github.com/ngrok/mantle/commit/3145538cc0da903805a9b751f3402e37a0d5da95) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Remove unused dependencies and config.
+
+  - Drop the `browserslist` devDependency and config key — nothing in the current toolchain reads them. The build uses tsdown with an explicit `target`, and Tailwind 4 lowers CSS via its bundled lightningcss with its own defaults.
+  - Drop the unused `date-fns` `devDependency` and `peerDependency`. Mantle's source never imports `date-fns`; the calendar's `react-day-picker` declares `date-fns` as its own dependency, so consumers no longer need to install it just for Mantle.
+
+  Both packages remain available transitively where they are actually used.
+
+- [#1272](https://github.com/ngrok/mantle/pull/1272) [`006ad3a`](https://github.com/ngrok/mantle/commit/006ad3a3d633d6eedc703e26a6773c52815d1800) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Vendor the `cx` class-merge engine and drop the `clsx` + `tailwind-merge` runtime dependencies.
+
+  `cx` is now powered by a vendored, byte-for-byte port of `clsx` + `tailwind-merge` (adapted from [`cnfast`](https://github.com/aidenybai/cnfast)), living in `src/utils/cx/vendor`. Mantle's previous `extendTailwindMerge` overrides — the `em` spacing scale (`w-em`, `p-em`, …) and the `text-mono` / `text-size-inherit` font-size utilities — are now baked directly into the vendored default config, so no extend call is needed.
+
+  - **Output is byte-identical** to the previous `clsx` + `extendTailwindMerge` implementation (guarded by a 3,200+ case parity fixture).
+  - **Same public API:** `cx(...inputs)` is unchanged (`(...inputs: ClassValue[]) => string`).
+  - **Faster**, with the largest gains on repeated re-render call sites (interned conflict keys, per-token descriptor caching, and a V8 arg cache).
+  - **New, additive:** `cx` can also be called as a tagged template — `` cx`px-2 px-4 ${active && "bg-blue-500"}` `` — which caches by call-site identity.
+
+  `clsx` and `tailwind-merge` are no longer dependencies of `@ngrok/mantle`. (`clsx` remains available transitively via `class-variance-authority`.)
+
+  Export `clsx` from the `@ngrok/mantle/cx` subpath alongside `cx`.
+
+## 0.76.5
+
+### Patch Changes
+
+- [#1263](https://github.com/ngrok/mantle/pull/1263) [`3703172`](https://github.com/ngrok/mantle/commit/37031720d86cc52710d02db5114c2bdd5eae7304) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add expandable-row support to `DataTable` for inline, per-row detail panels — restoring the click-to-expand record inspection pattern that the migration off `GenericTable` lost.
+
+  New API, all driven by native [TanStack Table expansion state](https://tanstack.com/table/latest/docs/guide/expanding) (no invented state):
+
+  - `DataTable.Row` gains an optional `renderExpanded` prop — the primary, ergonomic path. When the row is expanded it renders its data row plus a sibling detail row holding the returned content, so consumers no longer hand-write the `Fragment`, the `getIsExpanded()` conditional, or the extra `<tr>`. It is called lazily (only while open), so collapsed rows never build their panel. `DataTable.Row` also now sets `data-expanded` as a styling hook.
+  - `DataTable.RowExpandButton` — an accessible `+`/`−` toggle (`@phosphor-icons/react` Plus/Minus) for a leading `columnHelper.display` column. Renders a real `<button>` that sets `aria-expanded` and (only while expanded) `aria-controls`, stops click propagation so it never fires a row-level `onClick`, lets a consumer `onClick` veto the toggle via `event.preventDefault()`, and renders nothing when `row.getCanExpand()` is `false`.
+  - `DataTable.ExpandHeader` — a narrow `<th>` for the toggle column, mirroring `DataTable.ActionHeader`.
+  - `DataTable.ExpandedRow` — the sibling `<tr>` `renderExpanded` wraps content in, also exported for full control (custom `colSpan`, multiple panels, bespoke markup). Spans every visible column, carries the `id` that `RowExpandButton` targets via `aria-controls`, suppresses its top divider so it reads as one block with its parent row, sits on an opaque surface so it coexists with a sticky action column, and exposes `data-expanded-content` for styling.
+  - `expandedRowId(row)` — the exported helper that derives the shared, stable DOM id used by the toggle's `aria-controls` and the expanded row's `id`.
+
+  Add `jsonCodeBlockValue` and `jsonToShikiHtml` to `@ngrok/mantle/code-block`: an ultralight (~1 KB) client-side JSON syntax highlighter whose output is byte-for-byte identical to Mantle's server/build-time Shiki highlighting — without shipping Shiki, any grammar, or WASM to the browser. Because Mantle highlights with a CSS-variables theme, only tokenization needs to happen client-side; the colors already live in CSS. Ideal for rendering a row's underlying object as highlighted JSON inside a `DataTable.ExpandedRow` with no build-time plugin and no server roundtrip. Multi-line objects and arrays are collapsible by default (`foldable`, on), reusing the same `computeJsonFoldRanges` + fold runtime as every other JSON `CodeBlock`, so the fold markup and behavior are identical.
+
+## 0.76.4
+
+### Patch Changes
+
+- [#1257](https://github.com/ngrok/mantle/pull/1257) [`7a32ee9`](https://github.com/ngrok/mantle/commit/7a32ee90d58b597d19b9f990dbef0427b689388a) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Simplify several costly CSS selectors to cheaper, equivalent forms. All changes are behavior-, theming-, and a11y-preserving — no public API changes.
+
+  - **CodeBlock fold gutter** (`mantle.css` + `decorate-highlighted-html.ts`): the gutter-reservation rule no longer probes every line with a per-line relational `:not(:has(> .mantle-code-fold-toggle))` (whose style-recalc cost scaled with line count). A single per-`<pre>` `:has()` now scopes the rule, content gets the gutter margin by default, and the sparse opener lines are tagged `mantle-code-line-opener` so CSS can reset theirs. Measured in Chromium on a fold-enabled block, this removes ~0.5 ms of style-recalc at 5,000 lines and ~3.6 ms at 20,000 lines, while keeping HTML payload flat (only opener lines gain a class).
+  - **Command group heading** (`command.tsx`): the five `**:[[cmdk-group-heading]]:*` deep-descendant scans are now direct-child `[&>[cmdk-group-heading]]:*` selectors (cmdk renders the heading as a direct child of the group). Identical specificity, smaller match scope.
+  - **Command item icons** (`command.tsx`): the brittle `[&_svg:not([class*='size-'])]` / `[&_svg:not([class*='text-'])]` substring-attribute scans are replaced with `:where()`-wrapped defaults (`[:where(&_svg)]:size-5` / `[:where(&_svg)]:text-muted`), matching the `Label` precedent. Consumer icon size/color classes still override the defaults cleanly, without the substring scan or its false matches (e.g. `text-sm`).
+  - **HorizontalSeparatorGroup** (`separator.tsx`): the universal-descendant `[&_*:not([data-separator])]:shrink-0` is now a direct-child `[&>*:not([data-separator])]:shrink-0`. `flex-shrink` only affects direct flex items, so this collapses an unbounded subtree walk to a single parent check with no rendered difference.
+
+- [#1256](https://github.com/ngrok/mantle/pull/1256) [`1a48962`](https://github.com/ngrok/mantle/commit/1a489627fb8c4ac5374a38c5dd2a20f214f6dc7c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Button` and `IconButton` now default `type` to `"button"` instead of requiring it.
+
+  The `type` prop is relaxed from required to optional on both components; when omitted it renders `type="button"`, matching the wider React ecosystem (Radix, shadcn, MUI, …) and neutralizing the native `<button>` accidental-form-submit footgun. This is backward compatible — every existing call site already passes `type`, so nothing changes for them; omitting `type` simply stops being a compile error.
+
+  Forms note: because the default is now `"button"`, a `Button`/`IconButton` that relies on **native** form submission must opt in with `type="submit"`.
+
+  When `asChild` is used, `type` continues to have no effect and is not forwarded to the child.
+
+- [#1254](https://github.com/ngrok/mantle/pull/1254) [`b5b72bc`](https://github.com/ngrok/mantle/commit/b5b72bc30a63bf00ccd615a7278fe1f3a42e36f7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Stop publishing source maps. The `.js.map` files were ~58% of the package's unpacked size (and compressed tarball) and embedded the full original source via `sourcesContent`, despite `src/` not being shipped. Dropping them more than halves the published package.
+
+  This affects nothing consumers import at runtime. The typed `.d.ts` surface (with its JSDoc and `@example` blocks) and the bundled agent-discovery artifacts (`dist/agent.json`, `dist/llms.txt`) are unchanged; only stepping into mantle's original source in a debugger is no longer possible.
+
+## 0.76.3
+
+### Patch Changes
+
+- [#1241](https://github.com/ngrok/mantle/pull/1241) [`f7be346`](https://github.com/ngrok/mantle/commit/f7be3464e3d823d8d8e8c1c96ba15b615871ddb7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update `react-day-picker` to `10.0.1` (from `9.14.0`) and bump the `tailwindcss` peer dependency to `^4.3.1`. The `Calendar` component already used the v9+ API surface — no removed navigation/focus/event props, formatter or label aliases, or renamed `classNames` keys — so this is a transparent dependency bump with no public API changes.
+
+- [#1247](https://github.com/ngrok/mantle/pull/1247) [`846f5bd`](https://github.com/ngrok/mantle/commit/846f5bddbb0b4bfbf16aff66960b79f5afd3a8fe) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix two issues with `Checkbox`'s indeterminate handling:
+
+  - A controlled checkbox toggling through `"indeterminate"` (e.g. a table "select all" header cycling unchecked → indeterminate → checked) logged React's "changing a controlled input to be uncontrolled" warning. The indeterminate frame now keeps `checked` a boolean, so the input stays controlled for its entire lifetime.
+  - A controlled `checked="indeterminate"` set on mount did not render the indeterminate visual — two competing effects clobbered each other. The native `indeterminate` DOM property is now driven by a single effect keyed on the effective checked state, so it renders correctly on first paint and on every update.
+
+  Add `selectAllChecked` to `@ngrok/mantle/checkbox` — a helper that resolves the tri-state `checked` value (`true` / `"indeterminate"` / `false`) for a "select all" checkbox from `{ allSelected, someSelected }` selection counts, ready to pass straight to `Checkbox`. Encapsulates the correctness-prone tri-state branch every multi-select list reinvents. Also exports the `CheckedState` type.
+
+- [#1247](https://github.com/ngrok/mantle/pull/1247) [`846f5bd`](https://github.com/ngrok/mantle/commit/846f5bddbb0b4bfbf16aff66960b79f5afd3a8fe) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update the `DataTable` source JSDoc `@example` blocks so the regenerated `.d.ts`, `llms.txt`, and agent component manifest teach canonical patterns instead of throwaway ones: the two empty states (an `Empty` hosted in `DataTable.EmptyRow` — "no data yet" vs. "no results for the active filter", with a `Clear filters` reset) and pagination via `CursorPagination` with a page-size dropdown (replacing hand-rolled prev/next `Button`s). No runtime API changes.
+
+- [#1249](https://github.com/ngrok/mantle/pull/1249) [`44ee551`](https://github.com/ngrok/mantle/commit/44ee5510ae9ac938b32862244fc2c80848709d18) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Drive the `scroll-fade-x` edge-fade utility with a CSS scroll-driven animation instead of JS-toggled `data-scroll-left` / `data-scroll-right` attributes, and add a matching `scroll-fade-y` utility for vertical scroll containers. Single-edge variants — `scroll-fade-t`, `scroll-fade-b`, `scroll-fade-l`, `scroll-fade-r` — are also available for containers that should fade only one edge (e.g. a sidebar that fades content scrolling under a sticky header but stays flush at the bottom). `Table` and `Tabs` now render their horizontal edge fades purely in CSS: the `Tabs.List` effect no longer runs a scroll listener, `ResizeObserver`, or `MutationObserver` for the fade (it only keeps a keyboard-focused trigger scrolled into view), and `Table` no longer writes the fade attributes. Consumers can still pin an edge opaque by overriding `--_fade-left` / `--_fade-right` (the animation drives the upstream `--_scroll-fade-*` vars). Where `animation-timeline: scroll()` is unsupported (Firefox stable as of mid-2026) the fade is simply absent — content is never clipped.
+
+- [#1248](https://github.com/ngrok/mantle/pull/1248) [`3a234e0`](https://github.com/ngrok/mantle/commit/3a234e0ea88570d6c08ef3bf4264d138faf3edca) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update Radix UI dependencies to their latest patch/minor releases: `@radix-ui/react-accordion` to `1.2.14`, `@radix-ui/react-dialog` to `1.1.17`, `@radix-ui/react-dropdown-menu` to `2.1.18`, `@radix-ui/react-hover-card` to `1.1.17`, `@radix-ui/react-popover` to `1.1.17`, `@radix-ui/react-progress` to `1.1.10`, `@radix-ui/react-select` to `2.3.1`, `@radix-ui/react-slider` to `1.4.1`, `@radix-ui/react-slot` to `1.3.0`, `@radix-ui/react-switch` to `1.3.1`, `@radix-ui/react-tabs` to `1.1.15`, and `@radix-ui/react-tooltip` to `1.2.10`. No public API changes.
+
+- [#1239](https://github.com/ngrok/mantle/pull/1239) [`9b00072`](https://github.com/ngrok/mantle/commit/9b000727a50b90e60c118652ab8bc04703c0839a) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Surface each component's JSDoc `@example` blocks in the agent-facing component manifest (`/api/components.json`), giving agents copy-pasteable canonical usage without a network lookup. Fix two malformed examples caught in the process: `Sheet` examples used `opOpenChange` instead of `onOpenChange`, and `SandboxedOnClick`'s example was missing its closing code fence. Also documents the `Field` slot-order anti-pattern — help text (`Field.Description`) renders below `Field.Control`, not above it.
+
+## 0.76.2
+
+### Patch Changes
+
+- [#1233](https://github.com/ngrok/mantle/pull/1233) [`fa978b0`](https://github.com/ngrok/mantle/commit/fa978b0c5990cdbcb0d61e748419acc36aeb134c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Refine `Empty` and `Well` styling: `Empty` uses tighter padding (`p-6`), `Empty.Icon` is smaller with a neutral color, `Empty.Title` and `Empty.Description` adopt smaller sans-serif text with a muted description, and `Well` uses the muted card border.
+
+## 0.76.1
+
+### Patch Changes
+
+- [#1229](https://github.com/ngrok/mantle/pull/1229) [`a569ca3`](https://github.com/ngrok/mantle/commit/a569ca386a7c779328216c21e54de15500c89503) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Remove the unused `@uidotdev/usehooks` dependency. It was never imported by any mantle code; consumers no longer install it transitively.
+
+## 0.76.0
+
+### Minor Changes
+
+- [#1227](https://github.com/ngrok/mantle/pull/1227) [`fbec001`](https://github.com/ngrok/mantle/commit/fbec0010f1ce6048e2468c27983bbeb4ad73e633) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(mantle): Dialog.Footer renders children in DOM order
+
+  `Dialog.Footer` previously applied `flex-row-reverse`, laying its children out
+  right-to-left so the DOM order was the visual mirror of the source. It now uses
+  `flex justify-end` and renders children in DOM order, matching `Sheet.Footer`
+  and `AlertDialog.Footer`. This also makes keyboard tab order follow visual
+  order.
+
+  **Breaking visually:** footers with two or more children that relied on the
+  reversal will now render in the opposite order. Reverse the direct children of
+  each affected `Dialog.Footer` (conventionally secondary/cancel first, primary
+  last) to preserve the previous appearance. See the migration guide at
+  https://mantle.ngrok.com/migrations/dialog-footer-dom-order-migration.
+
+## 0.75.0
+
+### Minor Changes
+
+- [#1225](https://github.com/ngrok/mantle/pull/1225) [`6b22e51`](https://github.com/ngrok/mantle/commit/6b22e51c9829ba17e9c8b62a30f9d5101ec6b434) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - feat(mantle): add Well component
+
+  A recessed, inset container that renders like `Card.Root` but with the base
+  background and an inset shadow, for grouping and de-emphasizing content such as
+  empty states, code samples, and read-only summaries. Supports `asChild` for
+  polymorphic rendering.
+
+## 0.74.0
+
+### Minor Changes
+
+- [#1221](https://github.com/ngrok/mantle/pull/1221) [`100debf`](https://github.com/ngrok/mantle/commit/100debfbb49f035f07f254aece2448ade6a774cd) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add the `QrCode` component — a scannable QR code that encodes its `value` with the dependency-free `uqr` library. Compose `QrCode.Root` with a `QrCode.Frame` wrapping a `QrCode.Pattern`, plus an optional `QrCode.Overlay` for a centered brand logo. Always renders black modules on a white background for scannability in any theme. The quiet-zone margin around the code is configurable via the `quietZone` prop (defaults to the spec-recommended `4`).
+
+### Patch Changes
+
+- [#1223](https://github.com/ngrok/mantle/pull/1223) [`6dc792c`](https://github.com/ngrok/mantle/commit/6dc792c0f2f91f4f2b34f5ef5ccc4f5a06b2c1b5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update dependencies: `@ariakit/react` to 0.4.29, `@radix-ui/*` packages (accordion, dialog, dropdown-menu, hover-card, popover, progress, select, slider, slot, switch, tabs, tooltip), and `date-fns` to 4.4.0.
+
+## 0.73.5
+
+### Patch Changes
+
+- [#1218](https://github.com/ngrok/mantle/pull/1218) [`61d638d`](https://github.com/ngrok/mantle/commit/61d638d19f71af96341bd7d128f684b2a4e2c7ba) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `mantleCode` templates now support nested fragment interpolation: interpolating another top-level `mantleCode` value's `.code` (declared in the same module, or imported from another module) is highlighted inline at build time by the updated `@ngrok/mantle-vite-plugins`, with correct per-line rendering and no runtime substitution cost. There is no runtime API change — without the plugin, `${fragment.code}` continues to fall back to plain string interpolation.
+
+## 0.73.4
+
+### Patch Changes
+
+- [#1207](https://github.com/ngrok/mantle/pull/1207) [`b9fadca`](https://github.com/ngrok/mantle/commit/b9fadca2c3e8ba923ece71578af197aca4220162) Thanks [@dependabot](https://github.com/apps/dependabot)! - Lint cleanup round across `@ngrok/mantle`. No public-API changes.
+  - `Checkbox`: the underlying `<input>` no longer receives both `checked` and `defaultChecked` at once (React would warn about this). The component now passes exactly one based on whether it's in controlled mode (`checked !== undefined`). Indeterminate behavior is unchanged for both controlled and uncontrolled usage — the DOM `indeterminate` flag is still applied via a ref effect.
+  - Context providers in `Input`, `CursorPagination`, `Dialog`, `Tabs`, `Select`, `Toast`, and the `www` navigation context now memoize their `value` prop via `useMemo`, and `HorizontalSeparatorGroup` lifts its constant value to module scope. This prevents unnecessary re-renders of context consumers when the providing component re-renders for unrelated reasons.
+  - `ThemeProvider`: the cross-tab `BroadcastChannel` listener now uses `addEventListener("message", …)` instead of assigning to `onmessage`, matching the modern event API used elsewhere in the file. Cleanup still goes through `BroadcastChannel.close()`.
+  - Internal: tightened `vi.fn` generics in tests, normalized JSDoc tag names (`@fileoverview` → `@file`), tightened a few helper JSDocs, and added inline lint-disables with justifications where rules were false-positives (notably `button-has-type` on `<button type={type}>` and `require-post-message-target-origin` on `BroadcastChannel.postMessage`).
+
+- [#1213](https://github.com/ngrok/mantle/pull/1213) [`5a2c3f0`](https://github.com/ngrok/mantle/commit/5a2c3f0b2c9dec32f8dd1bfd6c858607bf29c30c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Breaking:** flattened the `Command.Dialog.*` namespace into top-level members on `Command`.
+
+  | Before                   | After                   |
+  | ------------------------ | ----------------------- |
+  | `Command.Dialog.Root`    | `Command.DialogRoot`    |
+  | `Command.Dialog.Trigger` | `Command.DialogTrigger` |
+  | `Command.Dialog.Content` | `Command.DialogContent` |
+
+  The nested `Command.Dialog` namespace was a pass-through re-export of `Dialog.Root` / `Dialog.Trigger` plus the `Command`-specific `Content` slot. The extra namespace level didn't shorten call sites, was inconsistent with every other compound in mantle (which are single-level), and the inferred-literal-of-`as const`-of-Radix-re-exports shape was brittle against `@types/react` upgrades. Flat exports type-check cleanly and resolve through stable, nameable types in the generated `.d.ts`.
+
+  Migration: replace `Command.Dialog.Root` → `Command.DialogRoot`, `Command.Dialog.Trigger` → `Command.DialogTrigger`, `Command.Dialog.Content` → `Command.DialogContent`.
+
+  Other changes in this release (no API impact):
+  - **Stable default prop references** in `Alert`, `Field`, and `MultiSelect`. The default `<XIcon />` for `Alert.DismissIconButton`, the default `<QuestionIcon />` for `Field.HelpTrigger`, and the default `[]` values for `MultiSelect.Root`'s `defaultSelectedValue` and `MultiSelect.TagValues`'s `lockedValues` are now hoisted to module scope so they keep referential equality across renders.
+  - **Dependency bumps**: `@ariakit/react` 0.4.26 → 0.4.28, `@types/react` 19.2.14 → 19.2.15, `date-fns` 4.1.0 → 4.3.0 (peer also bumped to `^4.3.0`).
+
+## 0.73.3
+
+### Patch Changes
+
+- [#1203](https://github.com/ngrok/mantle/pull/1203) [`f248067`](https://github.com/ngrok/mantle/commit/f248067bf0abbff57539710406a37a396aeb7d93) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `Field.LabelText` — static, label-styled text for `Field.Item` rows that do **not** caption a focusable form control. Renders a `<p>` (not a `<label>`) with the same `text-strong text-sm font-medium` typography as `Field.Label`, so read-only rows (owner cards, derived values, system-managed metadata inside sheets and detail panels) compose cleanly alongside real form fields without misrepresenting themselves as control captions. Supports `asChild` for polymorphic rendering. For rows with a real focusable control, keep using `Field.Label` so the label-to-control association stays wired.
+
+  ```tsx
+  <Field.Item name="owner">
+  	<Field.LabelText>Owner</Field.LabelText>
+  	<CredentialOwnerCard owner={owner} />
+  	<Field.Description>The user or service user that owns this API key.</Field.Description>
+  </Field.Item>
+  ```
+
+## 0.73.2
+
+### Patch Changes
+
+- [#1200](https://github.com/ngrok/mantle/pull/1200) [`c4e968e`](https://github.com/ngrok/mantle/commit/c4e968e5f625b5e89be5f13bbc9426f5a68b9451) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Make `Field.Item` the single source of truth for the control's `name`, `id`, `aria-*`, and `validation`. When a control is wrapped in `Field.*`, all four are owned by the surrounding `Field.Item` and overwrite anything passed on the child or `Field.Control`. To override, set the prop on `Field.Item` itself; to opt out of the contract entirely, render the control without `Field.Control`. The pit of success is "use `Field.*` and let it wire everything up."
+
+  **Required `name` on `Field.Item`, automatic id/htmlFor**
+  - `Field.Item` now requires a `name: string` prop.
+  - `Field.Control` splats the surrounding `Field.Item`'s `name` and a stable generated `id` onto its focusable child. Any `name` or `id` passed on the child is intentionally overwritten.
+  - `Field.Label` defaults its `htmlFor` to that same generated id when rendered inside a `Field.Item`, so labels wire to their controls without a manual `htmlFor` / `id` pair (or a separate `useId()` call). Pass `htmlFor` on `Field.Label` to opt out (e.g. when the focusable element is rendered outside of `Field.Control`).
+
+  This is a particularly tight fit with TanStack Form's `field.name`:
+
+  ```tsx
+  <form.Field name="email">
+  	{(field) => (
+  		<Field.Item name={field.name}>
+  			<Field.Label>Email</Field.Label>
+  			<Field.Control>
+  				<Input
+  					type="email"
+  					value={field.state.value}
+  					onBlur={field.handleBlur}
+  					onChange={(event) => field.handleChange(event.target.value)}
+  				/>
+  			</Field.Control>
+  		</Field.Item>
+  	)}
+  </form.Field>
+  ```
+
+  **One policy for overrides**
+
+  `Field.Control` no longer accepts a `validation` prop, and no longer reads `aria-invalid` off the child element. Set `validation` on `Field.Item` to opt out of inferred error state from rendered `Field.Errors` / `Field.ErrorList`. This collapses the previous three policies (child wins for `aria-invalid`, context wins for `aria-describedby` / `aria-errormessage`, `Field.Control` wins for `validation`) into one: `Field.Item` owns it.
+
+  **`Field.Control` around compound widgets (`Select`, etc.)**
+
+  `Field.Control` now publishes the resolved ARIA props through a new internal `FieldControlContext`. `Select.Trigger` consumes it for `aria-describedby` / `aria-errormessage` (which `Select.Root` doesn't forward to its inner trigger), so the natural composition
+
+  ```tsx
+  <Field.Item name="fruits">
+  	<Field.Label>Fruits</Field.Label>
+  	<Field.Control>
+  		<Select.Root>
+  			<Select.Trigger>
+  				<Select.Value placeholder="Select a fruit" />
+  			</Select.Trigger>
+  			<Select.Content>…</Select.Content>
+  		</Select.Root>
+  	</Field.Control>
+  </Field.Item>
+  ```
+
+  works end-to-end — `name` lands on `Select.Root`'s hidden form input, and the field's helper / error IDs reach the focusable trigger button.
+
+  `Slider` now forwards `aria-label` / `aria-labelledby` to its rendered thumb(s), and its Field examples pass an explicit `aria-label`. Slider thumbs are ARIA slider widgets rather than native labelable controls, so `Field.Label` provides the visible caption while the slider prop provides the accessible thumb name.
+
+  **Duplicate error messages**
+
+  `Field.Errors` and `toErrorMessages` now collapse duplicate validation messages after trimming. This keeps repeated validator output — for example the same Zod message present in multiple TanStack Form validation phases — from rendering the same error twice.
+
+## 0.73.1
+
+### Patch Changes
+
+- [#1198](https://github.com/ngrok/mantle/pull/1198) [`2c00e7c`](https://github.com/ngrok/mantle/commit/2c00e7caad939048b2b02d19919211385566d031) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `toErrorMessages`, a first-class helper exported from `@ngrok/mantle/field` for normalizing TanStack React Form's mixed `field.state.meta.errors` array into a clean `string[]` for `Field.Errors`. Folds together the shapes TanStack Form yields across its built-in validators — plain strings, `{ message }` issue objects (Zod / Standard Schema), thrown `Error` instances, and the falsy slots Standard Schema can produce — into trimmed, non-empty strings without coupling Mantle to a specific form library.
+
+  ```tsx
+  import { Field, toErrorMessages } from "@ngrok/mantle/field";
+
+  <Field.Errors messages={toErrorMessages(field.state.meta.errors)} />;
+  ```
+
+  Also exports the `FieldError` input type (`{ message?: string } | string | null | undefined | false`) for callers that want to type their own error arrays against the helper's contract.
+
+## 0.73.0
+
+### Minor Changes
+
+- [#1191](https://github.com/ngrok/mantle/pull/1191) [`e09de2d`](https://github.com/ngrok/mantle/commit/e09de2da092c6f0ab91251ea4a00170593a985a5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `Field`, a compound layout primitive for a single form field. Pair with the existing mantle `<Label>` — the component intentionally does not invent a new label primitive. Layout parts plus `Field.Description`, `Field.Optional`, and `Field.ErrorList` support `asChild`; `Field.Set`, `Field.Legend`, and `Field.ErrorItem` always render `<fieldset>`, `<legend>`, and `<li>` respectively so their core semantics cannot be accidentally removed.
+
+  The default tree is a `Field.Group` of `Field.Item`s — that's all most forms need. Reach for the semantic `Field.Set` + `Field.Legend` only when the grouping itself carries semantic weight (radios, related checkboxes); a `<fieldset>` around plain unrelated inputs reads as noise to assistive tech.
+
+  Parts:
+  - `Field.Item` — a single form field. Stacks `Label`, control (`Input`, `Select`, `Checkbox`, etc.), and any `Field.Description` / `Field.Errors` / `Field.ErrorList` siblings vertically with `gap-1.5`. Renders a plain `<div>` — no implicit ARIA role, since the `<label htmlFor>` ↔ control association already provides the right semantics for a single field.
+  - `Field.Group` — the default primitive for stacking multiple `Field.Item`s vertically with `gap-4`. Pure layout, no semantics.
+  - `Field.Set` / `Field.Legend` — a semantic `<fieldset>` + `<legend>` for grouping a set of related controls under a single accessible name. Use specifically with `RadioGroup` (one question, many answers) or related checkboxes (preference toggles, permission flags). Skip it for unrelated fields stacked together — `Field.Group` is the right call there. `Field.Legend` owns its own `mb-1.5` (instead of relying on the parent fieldset's flex `gap`, which `<legend>` ignores in browsers) so the legend sits 6px above the next sibling — override with any `mb-*` utility.
+  - `Field.LabelRow` — horizontal flex container (`items-center`, `gap-1`) for pairing a `<Label>` with a sibling affordance like a help-icon trigger. Clicks on a `<label>` forward focus to the associated control, so an interactive button can't live inside it — `Field.LabelRow` is the way out.
+  - `Field.Help` / `Field.HelpTrigger` / `Field.HelpContent` — thin wrappers over `Popover` + `IconButton` + a default Phosphor `QuestionIcon` so the help-affordance pattern stays concise while still requiring a contextual accessible label. `Popover` (not `Tooltip`) so the affordance is reachable on touch. `Field.HelpTrigger` carries a default `-my-0.5` so the 24px `xs` button keeps its full click target while contributing only 20px to the `Field.LabelRow` flex line — matching the label's text line-height so the label is not pushed off-center. Override with any `my-*` utility.
+  - `Field.Optional` — inline muted "(Optional)" suffix for placement inside the `<Label>` so screen readers announce it as part of the accessible name.
+  - `Field.Description` — muted body-color hint text. Sits below the control inside a `Field.Item`.
+  - `Field.Errors` — convenience renderer for string validation messages. Trims messages, filters empty values, and renders a semantic `Field.ErrorList` / `Field.ErrorItem` tree without coupling Mantle to a specific form library.
+  - `Field.ErrorList` / `Field.ErrorItem` — literal semantic `<ul role="list">` of `<li>` validation errors for custom error markup. Empty `Field.ErrorItem` children collapse so message-less validator results do not produce empty referenced list items.
+
+  Field parts forward refs through React 18's `forwardRef` API so refs land on the rendered DOM element, including supported `asChild` substitutions.
+
+  `Field.Item` auto-generates stable IDs for descendant `Field.Description` / non-empty `Field.Errors` / `Field.ErrorList` parts, then merges those IDs onto known form controls via `aria-describedby` / `aria-errormessage` without changing the control's own `id` or `name`, so `id={field.name}` remains the right TanStack Form pattern.
+
+  When a `Field.Description` follows `Field.Errors` or `Field.ErrorList`, the parent's `gap-1.5` auto-collapses via `-mt-1.5` so the error list and the trailing helper read as a single tight block. Pass any margin utility on `Field.Description` to override — the rule's specificity is flattened to `(0,1,0)` so a user class wins.
+
+  `Switch` now accepts `validation` and reads the ambient `Field.Item` / `Field.Control` state, matching the rest of the mantle form controls (`Checkbox`, `Input`, `Combobox`, `MultiSelect`, `OtpInput`, `Select`, `TextArea`). Validation-specific styles (`data-validation-{success,warning,error}`) drive the checked track color and focus ring.
+
+  `Field.Control` now throws a descriptive error when its child is not a valid React element or a render-prop function, instead of crashing inside `Slot` with an opaque "expected a single child" message.
+
+### Patch Changes
+
+- [#1195](https://github.com/ngrok/mantle/pull/1195) [`fb7d6f3`](https://github.com/ngrok/mantle/commit/fb7d6f33d30aacd6be7b215e5466acd58c3925fa) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Bump `tailwindcss` and `@tailwindcss/vite` to `4.3.0`, and `tailwind-merge` to `3.6.0`.
+
+- [#1193](https://github.com/ngrok/mantle/pull/1193) [`985659f`](https://github.com/ngrok/mantle/commit/985659fd8f91b6bae7d971a0a59e7666f79f46ec) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `CodeBlock.CopyButton` now accepts an optional `label` prop for the accessible (screen-reader) label, defaulting to `"Copy code"`.
+
+- [#1189](https://github.com/ngrok/mantle/pull/1189) [`e2c07e5`](https://github.com/ngrok/mantle/commit/e2c07e5507fb1819b6e5d8d2237ca9bc6bfc1a16) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `CodeBlock.Code` no longer paints a browser-default focus outline on its `<pre>`, and no longer hardcodes `tabIndex={-1}` on the element.
+
+  The `tabIndex={-1}` default was a leftover workaround from when Prism.js auto-injected `tabIndex={0}` on every `<pre>` it touched. Prism was replaced with build-time Shiki, so nothing is forcing a tabindex anymore — the override is dead weight that also opted the scroll container out of Chrome's keyboard-focusable-scroller heuristic, hurting keyboard-only users on overflowing blocks. The prop is now passed through cleanly via `...props`, so consumers can still set `tabIndex={-1}` (or any other value) per instance if they want to exclude a block from the tab order.
+
+  The `outline-hidden` is paired with the tabindex change so the now-optionally-focusable `<pre>` doesn't paint the browser-default focus ring when scripted focus or scroll-container heuristics put focus on it. Nested controls (fold toggles, copy buttons) keep their own `:focus-visible` styles.
+
+- [#1185](https://github.com/ngrok/mantle/pull/1185) [`72b52b1`](https://github.com/ngrok/mantle/commit/72b52b1bd442a5561a741430193558de84c01c9b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Label` now defaults to `font-medium` when it doesn't wrap an interactive form control, and inherits weight when it does (e.g. `<Label><Input /></Label>`). The default is applied through a `:where()`-wrapped selector so the rule's total specificity is `(0,0,0)` — a user-supplied `font-bold` / `font-normal` / `font-semibold` overrides it cleanly without needing the `!` important modifier.
+
+  Detection covers `<input>`, `<textarea>`, `<select>`, `<button>`, and `[contenteditable]` descendants, which transitively covers mantle's checkbox/radio (real `<input>`), select/multi-select/menu triggers (real `<button>`), and any third-party control built on those primitives. The `[contenteditable]` attribute selector would normally raise the rule's specificity to `(0,1,0)` and tie with a bare utility class — wrapping the whole selector in `:where()` flattens it back to `(0,0,0)` so user overrides still win.
+
+- [#1194](https://github.com/ngrok/mantle/pull/1194) [`40cb820`](https://github.com/ngrok/mantle/commit/40cb82019e4eac86f0f47a42062954c11685d76b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `Dialog.Body` and `Sheet.Body` now reserve space for the scrollbar via `scrollbar-gutter: stable`, preventing horizontal content shift when the body grows past its container and a scrollbar appears.
+
+## 0.72.0
+
+### Minor Changes
+
+- [#1174](https://github.com/ngrok/mantle/pull/1174) [`51a0864`](https://github.com/ngrok/mantle/commit/51a086436804f6c4f576b9021e0e3ab7699e8907) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Extend code-block folding toward VS Code parity by switching the JS/TS/JSX/TSX, HTML, XML, and CSS strategies to AST / parser-quality matchers, and adding keyword-pair folding for Bash / Shell / Ruby. The runtime click handler is unchanged — all heavier work runs server- or build-side inside `@ngrok/mantle-server-syntax-highlighter`.
+
+  What now folds (per language):
+  - **JS / TS / JSX / TSX** (`oxc-parser`) — block statements, object/array literals, class/interface/type-literal/enum bodies, switch statements, multi-line template literals (including tagged), JSX elements (`<Foo>…</Foo>`), JSX fragments (`<>…</>`), member-expression element names (`<obj.Foo>`), and multi-line self-closing opening tags / attribute lists. Single-line self-closing JSX tags still don't get a toggle.
+  - **HTML / XML** (`parse5` with `sourceCodeLocationInfo`) — multi-line elements (`<div>…</div>`), nested element folds, multi-line opening tags (the attribute list collapses into the tag name), and full HTML documents with explicit `<html>`/`<head>`/`<body>`. XML routes through parse5's SVG fragment context for foreign-content (XML-like) tokenizer rules so `<empty/>` is correctly self-closing.
+  - **CSS** — single-pass CSS-aware brace matcher (skips `/* … */` comments, `"…"` and `'…'` strings, and backslash escapes) replacing the previous token-based bracket walk.
+  - **Bash / Shell** — keyword pairs from VS Code's `shellscript` grammar: `if … fi`, `case … esac`, `for|while|until|select … do … done`, brace-form function bodies. Folds the leading-`}` brace-group close while ignoring `${VAR}` parameter expansions (which never lead a line).
+  - **Ruby** — combines the bracket pass with keyword pairs from VS Code's `ruby` grammar: `def`, `class`, `module`, `begin`, `if`, `unless`, `while`, `until`, `for`, `case`, and `do |args|` blocks, all closing on `end`. Mid-block keywords (`else`, `rescue`, `when`) deliberately don't pop, so `begin … rescue … end` is a single fold.
+
+  New exports on `@ngrok/mantle-server-syntax-highlighter`:
+  - `computeServerFoldRanges({ code, language, tokens })` — main dispatcher, called by `highlightWithMantleShiki`.
+  - `serverFoldStrategyFor(language)` / `serverFoldNeedsTokens(strategy)` — let callers control whether to capture Shiki's `includeExplanation: 'scopeName'` tokens.
+  - `computeJsxFoldRanges`, `computeHtmlFoldRanges`, `computeCssFoldRanges`, `computeKeywordFoldRanges` — per-strategy computers, individually testable.
+
+  `@ngrok/mantle/highlight-utils` and `@ngrok/mantle/code-block` now also re-export `finalizeFoldRanges` so consumers building custom strategies can reuse the dedup pass.
+
+  Skipping `includeExplanation` on the AST and raw-source paths (JS/TS/HTML/CSS/JSON) keeps the highlight pipeline cheaper than the previous token-only approach for those languages.
+
+- [#1174](https://github.com/ngrok/mantle/pull/1174) [`51a0864`](https://github.com/ngrok/mantle/commit/51a086436804f6c4f576b9021e0e3ab7699e8907) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Extend fold gutters to every supported language, not just JSON. Each language uses the folding model that fits its grammar:
+  - **AST-based** (`javascript`, `typescript`, `jsx`, `tsx`) — `oxc-parser` emits folds for blocks, object/array literals, JSX elements/fragments, multi-line template literals, and TypeScript-only bodies.
+  - **Raw-source** (`json`, `css`) — single-pass matchers fold braces/brackets while skipping strings, comments, and escapes without requiring Shiki scope explanations.
+  - **Bracket-paired** (`go`, `java`, `csharp`, `rust`) — multi-line `{ … }` and `[ … ]` ranges fold via TextMate-scope-aware token walking.
+  - **Indentation-based** (`python`, `yaml`) — blocks are detected by leading whitespace; the opener (e.g. `def`, `class`, a YAML key) stays visible and child lines collapse.
+  - **AST-based** (`html`, `xml`) — `parse5` source locations fold multi-line elements and opening tags while honoring self-closing XML tags and HTML void elements.
+  - **Keyword-paired** (`bash`, `shell`, `sh`) — shell blocks fold from VS Code-style keyword pairs (`if … fi`, `case … esac`, `do … done`) plus brace-form function bodies.
+  - **Bracket + keyword** (`ruby`) — Ruby combines brace/array folds with keyword blocks such as `def`, `class`, `module`, `begin`, `do`, `if`, and `case`, all closing on `end`.
+  - **No folding** (plain text) — text-like languages have no block model to fold.
+
+  New helper exports from `@ngrok/mantle/code-block` and `@ngrok/mantle/highlight-utils`:
+  - `computeFoldRanges({ language, tokens })` — generic fold-range computer that dispatches to the right strategy. Consumes Shiki tokens with `includeExplanation: 'scopeName'`.
+  - `foldStrategyFor(language)` — returns `'bracket' | 'indentation' | 'tag' | 'none'` for a supported language.
+  - Types: `ComputeFoldRangesInput`, `FoldStrategy`, `FoldLine`, `FoldToken`, `FoldExplanation`, `FoldScope`.
+
+  `computeFoldRanges` is a low-level token helper for custom integrations; the Vite plugin, MDX code fences, and server highlighter use the richer `@ngrok/mantle-server-syntax-highlighter` dispatcher for AST, raw-source, and keyword folding.
+
+  The existing `computeJsonFoldRanges` continues to work for callers that already use it on raw JSON source.
+
+  Also fixes a latent bug where toggling `CodeBlock.ExpanderButton` would replace the highlighted `<code>`'s child DOM (because `dangerouslySetInnerHTML` received a fresh `{ __html }` object on every parent re-render). The replacement was invisible for plain code blocks but silently broke fold toggles, since the runtime's per-`<code>` geometry cache then pointed at detached line elements. The prop is now memoized so child DOM identity survives unrelated re-renders, and the fold runtime additionally validates that cached lines are still connected before reusing them.
+
+### Patch Changes
+
+- [#1174](https://github.com/ngrok/mantle/pull/1174) [`51a0864`](https://github.com/ngrok/mantle/commit/51a086436804f6c4f576b9021e0e3ab7699e8907) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add VS Code-style fold gutters to JSON code blocks. Every multi-line `{ … }` or `[ … ]` now renders a semantic `<button>` toggle in the gutter; clicking (or focusing and pressing `Enter` / `Space`) hides the inner content while keeping the opener and closer lines visible, with a `⋯` placeholder marking the collapsed region.
+  - Fold ranges are computed at build time, so there is zero highlighting cost in the browser.
+  - All toggle interaction runs through a single delegated click handler per `<pre>` — no per-line listeners and no React re-renders. This keeps fold/unfold cheap even on JSON blobs with thousands of lines.
+  - New helper exports from `@ngrok/mantle/code-block` and `@ngrok/mantle/highlight-utils`: `computeJsonFoldRanges(code)` and the `FoldableRange` type.
+  - `decorateHighlightedHtml` accepts a new optional `foldableRanges` input. When omitted, the decorator behaves exactly as before — no fold gutter is rendered.
+  - Server-highlighted code blocks can provide fold ranges for every supported language with a folding strategy; raw JSON callers can continue using `computeJsonFoldRanges(code)` directly.
+
+- [#1176](https://github.com/ngrok/mantle/pull/1176) [`5174b31`](https://github.com/ngrok/mantle/commit/5174b313d128c1db89f93cf5d45601ba48d834e0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `OtpInput.Root` now accepts a `validation` prop (`"error" | "success" | "warning" | false`, or a function returning one). When set, each group's outer borders and the active focus ring are recolored with the matching validation hue, mirroring the styling contract of `Input`. `validation="error"` additionally sets `aria-invalid` on the underlying input so assistive tech announces the failure state.
+
+  Internal: `ProgressDonut` now uses the `$cssProperties` helper for inline CSS-variable styles instead of an `as CSSProperties` cast — no behavior change.
+
+## 0.71.1
+
+### Patch Changes
+
+- [#1170](https://github.com/ngrok/mantle/pull/1170) [`5c7ea22`](https://github.com/ngrok/mantle/commit/5c7ea22ad5871b05d8b3d1962435cdbe7cda9773) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Expand the machine-readable surface for AI agents.
+
+  New endpoints on the docs site:
+  - `/api/package.json` — version, peer/dev dependency ranges, and the sorted list of importable `@ngrok/mantle/*` subpaths.
+  - `/api/changelog.json` — `CHANGELOG.md` parsed into one entry per version with PR/commit/author metadata broken out by semver bump.
+  - `/api/search-index.json` — flat sorted array spanning components, hooks, and utilities, with keyword tokens derived from each name + summary.
+  - `/api/schema.json` — JSON Schema (draft-07) definitions for every `/api/*.json` payload.
+
+  Each entry in `/api/components.json` now also carries a `jsdoc` field with the first sentence of the source JSDoc on the component's primary export.
+
+  The published package now ships `@ngrok/mantle/agent.json` and `@ngrok/mantle/llms.txt` — pointers to the live endpoints above plus the package's own subpath inventory — for agents working without network access.
+
+- [#1168](https://github.com/ngrok/mantle/pull/1168) [`9da2cac`](https://github.com/ngrok/mantle/commit/9da2cac4f9b4078fd07cf24feee7ce4fada25303) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Reduce `OtpInput.Slot` transition duration from 300ms to 150ms for snappier focus feedback.
+
+## 0.71.0
+
+### Minor Changes
+
+- [#1167](https://github.com/ngrok/mantle/pull/1167) [`acd0c55`](https://github.com/ngrok/mantle/commit/acd0c55527fefdf410e28858db2eaf90a9f5d2f5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `OtpInput`, a compound component for capturing one-time passcodes (OTP). Built on top of [`input-otp`](https://github.com/guilhermerodz/input-otp), it renders a single hidden input that handles paste, autofill, and IME correctly while displaying each character in its own styled slot. Composes as `OtpInput.Root` > `OtpInput.Group` > `OtpInput.Slot` with optional `OtpInput.Separator` between groups. Re-exports the `REGEXP_ONLY_DIGITS`, `REGEXP_ONLY_CHARS`, and `REGEXP_ONLY_DIGITS_AND_CHARS` pattern helpers for restricting accepted characters.
+
+### Patch Changes
+
+- [#1166](https://github.com/ngrok/mantle/pull/1166) [`4f35862`](https://github.com/ngrok/mantle/commit/4f35862874e471f871865aabd36a40aff494d523) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Significantly expand JSDoc coverage across the package to improve agentic and IntelliSense-driven discovery. Every `index.ts` barrel now ships a `@see` link to its docs page. All hooks (`useCallbackRef`, `useCopyToClipboard`, `useDebouncedCallback`, `useIsomorphicLayoutEffect`, `useMatchesMediaQuery`, `usePrefersReducedMotion`, `useRandomStableId`, `useScrollBehavior`, `useUndoRedo`) now document `@param`, `@returns`, and at least one `@example`. Compound components (`Dialog`, `Sheet`, `AlertDialog`, `Tooltip`, `Popover`, `HoverCard`, `Select`, `Combobox`, `MultiSelect`, `DataTable`) gained "when to use vs alternatives" guidance on their top-level namespace JSDoc, full-tree `@example` blocks across sub-components, and explicit notes on required setup (`TooltipProvider` mount, `useReactTable` instance for `DataTable.Root`, etc.). Also removes the empty `"./date-picker"` export from `package.json` (it had no implementation and was never importable). No runtime behavior changes.
+
+- [#1161](https://github.com/ngrok/mantle/pull/1161) [`913acb6`](https://github.com/ngrok/mantle/commit/913acb63b7fd17d490aa64cb110e9d57542ed8a6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Expand JSDoc coverage on `Skeleton`, `Badge`, `Code`, `Kbd`, `MediaObject`, `Anchor`, `Flag`, `Label`, `PasswordInput`, and the top-level `DataTable` (full layout examples — sortable+filterable+paginated, sticky action column, and clickable-row-with-Link). All follow the same template as the flagship components: a one-line summary, a "When to use / When not to use" block, accessibility notes where relevant, and `@example`s with imports. No runtime behavior changes — IntelliSense surfaces more guidance for both human contributors and AI agents using the library.
+
+- [#1155](https://github.com/ngrok/mantle/pull/1155) [`0f0b607`](https://github.com/ngrok/mantle/commit/0f0b607813fbe15c969aa1e3e3c0ac9a4d27c8fe) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update `tailwindcss` and `@tailwindcss/vite` to `4.2.4`.
+
+## 0.70.2
+
+### Patch Changes
+
+- [#1152](https://github.com/ngrok/mantle/pull/1152) [`01b04f4`](https://github.com/ngrok/mantle/commit/01b04f4850a38d4f27b87b36eb393150a8098a30) Thanks [@forzalupo](https://github.com/forzalupo)! - Clean up `CodeBlock` copy button placement and wrapper sizing so it aligns consistently within the code block.
+
+- [#1160](https://github.com/ngrok/mantle/pull/1160) [`60d8c53`](https://github.com/ngrok/mantle/commit/60d8c53b135181af15654a73588706bb27a57cb5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - `DataTable.Row` now auto-applies `cursor-pointer` when an `onClick` handler is provided, so consumers no longer need to add it manually. Pass a different `cursor-*` class via `className` (for example, `cursor-wait`) to override.
+
+- [#1160](https://github.com/ngrok/mantle/pull/1160) [`60d8c53`](https://github.com/ngrok/mantle/commit/60d8c53b135181af15654a73588706bb27a57cb5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix `useComposedRefs` returning a thunk (`() => (node) => void`) instead of a ref callback, which meant the composed ref never actually received the DOM node. The hook now returns a stable ref callback that reads the latest refs via an internal ref box, so passed refs stay up-to-date without causing ref thrashing on every render.
+
+- [#1160](https://github.com/ngrok/mantle/pull/1160) [`60d8c53`](https://github.com/ngrok/mantle/commit/60d8c53b135181af15654a73588706bb27a57cb5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Breaking:** `useCopyToClipboard` now returns the async copy function directly instead of a `[state, copyFn]` tuple. The internal `useState` that tracked the last copied value has been removed, eliminating an extra render per successful copy.
+
+  ```tsx
+  // Before
+  const [, copyToClipboard] = useCopyToClipboard();
+
+  // After
+  const copyToClipboard = useCopyToClipboard();
+  ```
+
+## 0.70.1
+
+### Patch Changes
+
+- [#1148](https://github.com/ngrok/mantle/pull/1148) [`6085190`](https://github.com/ngrok/mantle/commit/60851902cd6ed01ea7c45429817cf16145d84167) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add missing `data-slot` attributes across the component library so every exported component and compound sub-part exposes a stable `data-slot="<name>"` (or `data-slot="<name>-<part>"`) styling hook. Also adds `asChild` support (via `Slot`) to `Empty.Root`, `Empty.Actions`, `Code`, and `ButtonGroup`.
+
+  Components updated include (non-exhaustive): `Main`, `SkipToMainLink`, `Empty`, `CodeBlock`, `Tabs`, `TextArea`, `Toast`/`Toaster`, `Separator`, `HorizontalSeparatorGroup`, `Sheet`, `Skeleton`, `Switch`, `Table`, `Label`, `MediaObject`, `Popover`, `RadioGroup`, `Select`, `Flag`, `HoverCard`, `Icon`, `SvgOnly`, `Input`/`PasswordInput`, `Kbd`, `DescriptionList`, `Dialog`, `DropdownMenu`, `DataTable`, `MetaKey`, `CursorPagination`, `ProgressBar`, and `ProgressDonut`. `HoverCard.Trigger`, `Dialog.Trigger`/`Dialog.Close`, and `DropdownMenu.Trigger` are now thin wrappers around their underlying Radix primitives so they can carry a `data-slot` attribute.
+
+  Note: `ProgressBar`'s existing `data-slot` values were renamed to follow the compound-component naming convention — `data-slot="progress"` → `data-slot="progress-bar"` and `data-slot="progress-indicator"` → `data-slot="progress-bar-indicator"`. Consumers styling against those specific values will need to update their selectors.
+
+- [#1150](https://github.com/ngrok/mantle/pull/1150) [`e623364`](https://github.com/ngrok/mantle/commit/e623364b21f9e5b8159e8995fdcaf82700195fa6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Anchors (`<a>` elements, including those rendered by the `Anchor` component) that are descendants of `Alert.Root` now inherit the alert's variant text color (e.g. `text-warning-700` inside a warning alert) and are underlined at all times — not just on hover. This keeps inline links visually coherent with the surrounding alert copy while still marking them as links.
+
+  **Visual change**: consumers that currently render links inside `Alert.Root` will see those links shift from the default `text-accent-600` to the alert's priority color, and the underline will be persistent rather than hover-only.
+
+- [#1150](https://github.com/ngrok/mantle/pull/1150) [`e623364`](https://github.com/ngrok/mantle/commit/e623364b21f9e5b8159e8995fdcaf82700195fa6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add "when to use" guidance and WAI-ARIA cross-references to the `Tooltip`, `Popover`, and `HoverCard` compound-namespace JSDoc so editor hover tips surface the correct component for each use case.
+
+## 0.70.0
+
+### Minor Changes
+
+- [#1147](https://github.com/ngrok/mantle/pull/1147) [`5e3aca7`](https://github.com/ngrok/mantle/commit/5e3aca7c859b54403c9845ce93538c8e0b46f929) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `SkipToMainLink` and `Main` components for accessible "skip to main content" navigation. `SkipToMainLink` is a visually-hidden-until-focused link that uses the browser History API directly, so it works in any framework (React Router, Next.js, plain HTML). `Main` renders a focusable `<main id="main" tabIndex={-1}>` landmark designed to pair with it.
+
+  Also registers a new `z-max` utility (backed by `--z-index-max: 2147483647`, i.e. int32 max) so consumers can stack elements above any other z-index layer.
+
+### Patch Changes
+
+- [#1107](https://github.com/ngrok/mantle/pull/1107) [`4d35209`](https://github.com/ngrok/mantle/commit/4d35209cd3ec2b15215e51107aec3de007768aa6) Thanks [@forzalupo](https://github.com/forzalupo)! - Internal: switch `=== undefined` / `!== undefined` checks to `== null` / `!= null` for consistency with the project's nullish-equality style. No behavior change.
+
+## 0.69.2
+
+### Patch Changes
+
+- [#1126](https://github.com/ngrok/mantle/pull/1126) [`545a09d`](https://github.com/ngrok/mantle/commit/545a09d77c0503f7dfdffe5eb1cde69d59aa65f4) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump @ariakit/react from 0.4.25 to 0.4.26
+
+## 0.69.1
+
+### Patch Changes
+
+- [#1141](https://github.com/ngrok/mantle/pull/1141) [`f82feb8`](https://github.com/ngrok/mantle/commit/f82feb81f2da67d332962cd16e138bd0de9ae45b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add a `Composition` section to every compound component doc page showing the structural tree of its parts (ASCII art). Rename existing `asChild`-style `Composition` sections on `Badge`, `Button`, `IconButton`, `Separator`, and `SplitButton` to `Polymorphism`. Rename the `Input` children-composition section to `Child Elements` and the `Dialog` tooltip section to `Combining with a Tooltip` to avoid colliding with the new `Composition` name.
+
+  Add the same ASCII composition tree as a `@example Composition` block to the top-level namespace JSDoc of every compound component (`Accordion`, `Alert`, `AlertDialog`, `Card`, `CodeBlock`, `Combobox`, `Command`, `CursorPagination`, `DataTable`, `DescriptionList`, `Dialog`, `DropdownMenu`, `Empty`, `HoverCard`, `MediaObject`, `MultiSelect`, `Popover`, `ProgressBar`, `ProgressDonut`, `RadioGroup`, `Select`, `Sheet`, `SplitButton`, `Table`, `Tabs`, `Toast`, `Tooltip`) so consumers and LLMs see the full structural shape at a glance in IDE IntelliSense.
+
+- [#1141](https://github.com/ngrok/mantle/pull/1141) [`f82feb8`](https://github.com/ngrok/mantle/commit/f82feb81f2da67d332962cd16e138bd0de9ae45b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Expand JSDoc coverage across `CodeBlock`, `Command`, `Dialog`, `Empty`, `Popover`, `Select`, and `Sheet` compound components and their sub-parts for improved IntelliSense and documentation.
+
+- [#1141](https://github.com/ngrok/mantle/pull/1141) [`f82feb8`](https://github.com/ngrok/mantle/commit/f82feb81f2da67d332962cd16e138bd0de9ae45b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix several code fence metastring parsing bugs in `mantleCodeRehypePlugin`:
+  - `mantleShowLineNumbers`, `mantleCollapsible`, and `mantleDisableCopy` are now stringified on HAST `<pre>` properties. Previously, boolean `false` values were dropped during HAST→JSX compilation, causing `showLineNumbers=false` fence meta to be silently ignored (the rendered `<pre>` ended up with `data-mantle-line-numbers="true"` and no left padding).
+  - `collapsible=true`, `collapsible=false`, and `collapsible="true"` in fence meta are no longer silently dropped. The `collapsible` key now accepts the same bare-flag, key-value, and quoted-value forms as `disableCopy`.
+  - When a key appears multiple times in fence meta (e.g. `title="first" title="second"`), `getMetaValue` now returns the last value, matching `parseMetastring` semantics. Previously it returned the first.
+  - `tokenizeMetastring` now splits on tabs, newlines, and carriage returns in addition to spaces. Previously only literal spaces were treated as token separators, so meta like `title="Foo"\tcollapsible` was lexed as a single token.
+
+## 0.69.0
+
+### Minor Changes
+
+- [#1138](https://github.com/ngrok/mantle/pull/1138) [`3f06774`](https://github.com/ngrok/mantle/commit/3f06774967405751d4eec8be9d479a6b5516a6d7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add new `Empty` compound component for rendering empty states. Includes `Empty.Root`, `Empty.Icon`, `Empty.Title`, `Empty.Description`, and `Empty.Actions` sub-components.
+
+## 0.68.7
+
+### Patch Changes
+
+- [#1134](https://github.com/ngrok/mantle/pull/1134) [`5bde2bb`](https://github.com/ngrok/mantle/commit/5bde2bb43fd24dff97db51d63a559650151d4ed3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix InputContainer focus ring flicker by preventing mousedown default on non-input children. Use `flushSync` in PasswordInput to animate the eye icon inline in the click handler after React commits the new icon to the DOM. Remove `pointer-events-none` from validation feedback icons.
+
+## 0.68.6
+
+### Patch Changes
+
+- [#1132](https://github.com/ngrok/mantle/pull/1132) [`c0ea674`](https://github.com/ngrok/mantle/commit/c0ea67486b837fba066000226630f74896ce8dcf) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix Input focus ring showing as black when clicking the PasswordInput visibility toggle by using `focus-within` for both ring size and color. Add a blink animation to the PasswordInput eye icon toggle that respects `prefers-reduced-motion`.
+
+## 0.68.5
+
+### Patch Changes
+
+- [#1130](https://github.com/ngrok/mantle/pull/1130) [`8c7866b`](https://github.com/ngrok/mantle/commit/8c7866b085a3f508d29fd0eed8361f96f6977f62) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(table): switch to border-separate for continuous sticky column indicator
+
+  Replaced `border-collapse` with `border-separate border-spacing-0` on `Table.Element` and moved row dividers from group-level borders (`divide-y` on `<thead>`/`<tbody>`/`<tfoot>`) to cell-level borders. This prevents table cells from clipping overflow content, allowing the `StickyColIndicator` shadow strip to extend across row boundaries and render as one continuous vertical line instead of per-row segments with visible gaps.
+
+  Also changed `overscroll-none` to `overscroll-x-none` on the table scroll container so vertical page scrolling is no longer blocked when hovering over a table.
+
+## 0.68.4
+
+### Patch Changes
+
+- [#1122](https://github.com/ngrok/mantle/pull/1122) [`327d46c`](https://github.com/ngrok/mantle/commit/327d46ca0e950871fbae0b17f4e587b55afa27d0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix table horizontal scroll masking, improve scroll perf, and add `DataTable.ActionHeader`.
+  - **`Table.Root`**: Split into outer wrapper (border, rounded corners, background) and inner scroll container (`scroll-fade-x` mask, `overflow-x: auto`, `overflow-y: clip`, `overscroll-behavior: none`). Tables only scroll horizontally and no longer bounce.
+  - **Scroll fade**: Left and right edge fades driven by scroll position. Right-side fade correctly suppressed when a sticky right column is present (`DataTable.ActionCell` / `DataTable.ActionHeader`).
+  - **`DataTable.ActionCell`**: Replaced per-cell `box-shadow` with `bg-inherit` and a `StickyColIndicator` child span (1px divider + soft leftward gradient). Tracks the row's background including hover state.
+  - **`DataTable.ActionHeader`** (new): Sticky `<th>` that pairs with `DataTable.ActionCell` so the pinned action column aligns across header and body rows during horizontal scroll.
+  - **`useHorizontalOverflowObserver`**: Now tracks `scrolledToStart`, coalesces rapid-fire scroll/resize/mutation events via `requestAnimationFrame`, and uses `useLayoutEffect` so corrections apply before the browser paints.
+
+  See `migrations/data-table-action-header-migration.md` for migration guidance.
+
+## 0.68.3
+
+### Patch Changes
+
+- [#1119](https://github.com/ngrok/mantle/pull/1119) [`0c20cf7`](https://github.com/ngrok/mantle/commit/0c20cf736429dd6e0085d4f38affce86f7de8ee9) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Default `showLineNumbers` to `true` in `mantleCode()` and `highlightWithMantleShiki()` so code blocks show line numbers by default. Single-line shell snippets (`bash`, `sh`, `shell`) default to `false` since line numbers add noise to one-liners like install commands.
+
+## 0.68.2
+
+### Patch Changes
+
+- [#1116](https://github.com/ngrok/mantle/pull/1116) [`5b0be5a`](https://github.com/ngrok/mantle/commit/5b0be5a7ffb8372984477da21cbb85b139d04e3f) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - no-op patch to verify publish CI
+
+## 0.68.1
+
+### Patch Changes
+
+- [#1114](https://github.com/ngrok/mantle/pull/1114) [`d46e3b3`](https://github.com/ngrok/mantle/commit/d46e3b3fbdcdf561db1d90e89afc8cca8e374be3) Thanks [@forzalupo](https://github.com/forzalupo)! - Improve contrast in code block syntax highlighting
+
+- [#1112](https://github.com/ngrok/mantle/pull/1112) [`ad24f11`](https://github.com/ngrok/mantle/commit/ad24f11155af28d4b3141c1fb77416577bc75ed2) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add README documentation for npm packages, switch to ES2025 preset
+
+## 0.68.0
+
+### Minor Changes
+
+- [#1067](https://github.com/ngrok/mantle/pull/1067) [`ab6da43`](https://github.com/ngrok/mantle/commit/ab6da43e32e3e2e2dadf29aa8d99fcb2738569f4) Thanks [@forzalupo](https://github.com/forzalupo)! - Mantle theme updates: updates the functional colors, and modifies the color treatments across various components. It also adds font smoothing globally, while retaining the "auto" setting for Family, for a perceived higher weight.
+
+### Patch Changes
+
+- [#1099](https://github.com/ngrok/mantle/pull/1099) [`4a81875`](https://github.com/ngrok/mantle/commit/4a81875621f00eb46887b2b83ab5e6021465d7d4) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Bump dependencies: @ariakit/react to 0.4.24, browserslist to 4.28.2, tailwindcss peer to ^4.2.2
+
+- [#1082](https://github.com/ngrok/mantle/pull/1082) [`383d538`](https://github.com/ngrok/mantle/commit/383d53821a264e59c4532f45e07818f541bfb686) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update ariakit and headlessui
+
+- [#1104](https://github.com/ngrok/mantle/pull/1104) [`2be1db1`](https://github.com/ngrok/mantle/commit/2be1db1ffb23bb5719181f73090ef28d7e19a50f) Thanks [@forzalupo](https://github.com/forzalupo)! - Polish component styles: soften card/popover/dialog hover backgrounds with `color-mix()`, update SplitButton menu item icon placement and gap, use `bg-active-menu-item` in Command palette, reduce table header height, improve Combobox item icon sizing, and flatten DataTable ActionCell layout.
+
+- [#1106](https://github.com/ngrok/mantle/pull/1106) [`41ce842`](https://github.com/ngrok/mantle/commit/41ce842787bcfb6386d94cba4e5e495a298c5a22) Thanks [@forzalupo](https://github.com/forzalupo)! - Themed code block with granular syntax highlighting: richer Shiki token color palette, semantic background tokens (`bg-card`/`bg-base`), redesigned copy button using `IconButton`, and subtler tab trigger styling. Server highlighter adds fine-grained token scope mappings for types, variables, operators, attributes, properties, and escape characters.
+
+## 0.67.0
+
+### Minor Changes
+
+- [#1018](https://github.com/ngrok/mantle/pull/1018) [`f27c01f`](https://github.com/ngrok/mantle/commit/f27c01fc3291344380f32018d65cd6d21381fcaa) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - CodeBlock: replace PrismJS with Shiki for build-time syntax highlighting, removing Shiki/Prism from the browser bundle
+
+### Patch Changes
+
+- [#1089](https://github.com/ngrok/mantle/pull/1089) [`36e5921`](https://github.com/ngrok/mantle/commit/36e59211a9b76f0542d2551bd28d858449d3a131) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Tabs: use fade mask instead of shadow for horizontal overflow
+
+- [#1089](https://github.com/ngrok/mantle/pull/1089) [`36e5921`](https://github.com/ngrok/mantle/commit/36e59211a9b76f0542d2551bd28d858449d3a131) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(tabs): correct border width and focus ring clipping in horizontal classic tabs
+
+- [#1089](https://github.com/ngrok/mantle/pull/1089) [`36e5921`](https://github.com/ngrok/mantle/commit/36e59211a9b76f0542d2551bd28d858449d3a131) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(tabs): remove bottom border from horizontal classic tab list
+
+- [#1088](https://github.com/ngrok/mantle/pull/1088) [`54743f1`](https://github.com/ngrok/mantle/commit/54743f1deee01709952fcf5222e0ea205c282e5d) Thanks [@forzalupo](https://github.com/forzalupo)! - MultiSelect: polish styling
+
+## 0.66.17
+
+### Patch Changes
+
+- [#1071](https://github.com/ngrok/mantle/pull/1071) [`c32a7d2`](https://github.com/ngrok/mantle/commit/c32a7d23c2d55787042f702377bbdd1ddc923285) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bundle prismjs into the code-block dist output to fix `ReferenceError: Prism is not defined` with Vite 8 / Rollup 4. Previously, prismjs component files (plain IIFEs with no `module.exports`) were left as external imports, and Rollup had no visibility into their implicit dependency on the prismjs main module — causing it to evaluate a component before `window.Prism` was set. Bundling prismjs directly resolves the ordering issue transparently for all consuming apps.
+
+- [#1086](https://github.com/ngrok/mantle/pull/1086) [`537de55`](https://github.com/ngrok/mantle/commit/537de55161043570699316e07162c6bf6d93282a) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add horizontal overflow scrolling to `Tabs.List` with scroll-position-aware edge shadows. When the tab list overflows its container it scrolls horizontally; fade shadows appear on whichever sides have hidden content and disappear when you reach an edge or when there is no overflow. Keyboard arrow-key navigation smoothly scrolls the focused trigger into view. Scroll bounce is disabled on the list.
+
+## 0.66.16
+
+### Patch Changes
+
+- [#1076](https://github.com/ngrok/mantle/pull/1076) [`582bec9`](https://github.com/ngrok/mantle/commit/582bec9c0cd558fe14ebc5d461b2ddd6debc9c33) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `--spacing-em` (`1em`) theme token for font-relative sizing utilities like `size-em`, `w-em`, `h-em`
+
+- [#1076](https://github.com/ngrok/mantle/pull/1076) [`582bec9`](https://github.com/ngrok/mantle/commit/582bec9c0cd558fe14ebc5d461b2ddd6debc9c33) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add default `width="2.61em" height="1em"` to `NgrokWordmarkIcon` and `width="1em" height="1em"` to `NgrokLettermarkIcon` so they render at font size without requiring explicit sizing classes
+
+## 0.66.15
+
+### Patch Changes
+
+- [#1074](https://github.com/ngrok/mantle/pull/1074) [`284aaa9`](https://github.com/ngrok/mantle/commit/284aaa9e1e3ad894612ea27739a1ae40aa6b06e6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update NgrokLettermarkIcon dimensions
+
+## 0.66.14
+
+### Patch Changes
+
+- [#1072](https://github.com/ngrok/mantle/pull/1072) [`5dcc9be`](https://github.com/ngrok/mantle/commit/5dcc9be89bf4b61216e7229e68b611bb64496082) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Rename `NgrokIcon` to `NgrokWordmarkIcon` and add new `NgrokLettermarkIcon`
+
+## 0.66.13
+
+### Patch Changes
+
+- [#1061](https://github.com/ngrok/mantle/pull/1061) [`1b0e722`](https://github.com/ngrok/mantle/commit/1b0e7227c79396b48d4845b0ed5b534085aa91f7) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump `@ariakit/react` dependency.
+
+## 0.66.12
+
+### Patch Changes
+
+- [#1064](https://github.com/ngrok/mantle/pull/1064) [`24ffd25`](https://github.com/ngrok/mantle/commit/24ffd2558567ec81c6576604be4848cdc8ceaa7e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Decompose `Command.Dialog` into a `Root`/`Trigger`/`Content` namespace.
+
+  **Breaking change**: `Command.Dialog` is now a compound namespace instead of a monolithic component. Migrate existing usage:
+
+  ```diff
+  - <Command.Dialog open={open} onOpenChange={setOpen}>
+  -   <Command.Input placeholder="..." />
+  -   <Command.List>...</Command.List>
+  - </Command.Dialog>
+  + <Command.Dialog.Root open={open} onOpenChange={setOpen}>
+  +   <Command.Dialog.Content>
+  +     <Command.Input placeholder="..." />
+  +     <Command.List>...</Command.List>
+  +   </Command.Dialog.Content>
+  + </Command.Dialog.Root>
+  ```
+
+  The new `Command.Dialog.Trigger` sub-component allows opening the dialog from a button without managing `open` state manually:
+
+  ```tsx
+  <Command.Dialog.Root>
+  	<Command.Dialog.Trigger asChild>
+  		<Button type="button">Open Command Palette</Button>
+  	</Command.Dialog.Trigger>
+  	<Command.Dialog.Content>
+  		<Command.Input placeholder="Type a command or search..." />
+  		<Command.List>...</Command.List>
+  	</Command.Dialog.Content>
+  </Command.Dialog.Root>
+  ```
+
+  Also fixes two bugs:
+  - `Command.Dialog` now correctly closes on Escape key press.
+  - `Command.Separator` now automatically hides when all adjacent groups are filtered out.
+
+## 0.66.11
+
+### Patch Changes
+
+- [#1057](https://github.com/ngrok/mantle/pull/1057) [`930e5fb`](https://github.com/ngrok/mantle/commit/930e5fbb5883369ca31a6904d6adc369b7912a23) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Export `fixMediaScriptContent` from `@ngrok/mantle/theme`. This function returns the raw JavaScript string for the inline `<script>` that fixes theme stylesheet `media` attributes — useful for legacy Go services and other non-React servers that need to inline it directly into SSR HTML.
+
+## 0.66.10
+
+### Patch Changes
+
+- [#1055](https://github.com/ngrok/mantle/pull/1055) [`714c79e`](https://github.com/ngrok/mantle/commit/714c79e0362b3c2a1f4762755b97471041fb2a73) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(use-copy-to-clipboard): remove unnecessary async wrapper, guarantee polyfill DOM cleanup
+
+## 0.66.9
+
+### Patch Changes
+
+- [#1048](https://github.com/ngrok/mantle/pull/1048) [`ca1ce98`](https://github.com/ngrok/mantle/commit/ca1ce982cd68cae8e96181031a59673763c259d1) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix(code-block): restore syntax highlight token styles to mantle.css
+
+  The `.token.*` styles were moved out of `mantle.css` into a colocated
+  `syntax-highlight.css` imported as a side-effect in `code-block.tsx`.
+  However, tsdown extracts CSS imports into a sidecar file without emitting
+  a corresponding `import` in the bundled JS, so consuming apps never loaded
+  the styles. Moved the token styles back into `mantle.css` where they are
+  reliably included.
+
+## 0.66.8
+
+### Patch Changes
+
+- [#1038](https://github.com/ngrok/mantle/pull/1038) [`00fda43`](https://github.com/ngrok/mantle/commit/00fda438dd9818cc3f3a63ab2d4798b96e28ec8f) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Breaking:** `MantleStylesheets` is renamed to `MantleStyleSheets` (and `MantleStylesheetsProps` → `MantleStyleSheetsProps`).
+
+  The component no longer imports CSS `?url` paths internally. Instead, pass the browser-accessible CSS URLs as required props using the new `mantleStyleSheetUrls` helper, which collects the three Vite `?url` imports into a spreadable object:
+
+  ```tsx
+  // Before
+  import { MantleStylesheets } from "@ngrok/mantle/theme";
+  <MantleStylesheets nonce={nonce} ssrCookie={ssrCookie} />;
+
+  // After
+  import darkCssUrl from "@ngrok/mantle/mantle-dark.css?url";
+  import darkHighContrastCssUrl from "@ngrok/mantle/mantle-dark-high-contrast.css?url";
+  import lightHighContrastCssUrl from "@ngrok/mantle/mantle-light-high-contrast.css?url";
+  import { mantleStyleSheetUrls, MantleStyleSheets } from "@ngrok/mantle/theme";
+
+  const themeUrls = mantleStyleSheetUrls({
+  	darkCssUrl,
+  	lightHighContrastCssUrl,
+  	darkHighContrastCssUrl,
+  });
+
+  <MantleStyleSheets {...themeUrls} nonce={nonce} ssrCookie={ssrCookie} />;
+  ```
+
+  This fixes a build error (`Unknown file extension ".css"`) in apps using React Router's SSR build, where `?url` imports inside node_modules are not transformed by Vite.
+
+  When `forceTheme` is set to a non-light theme, only the link tag for that theme is rendered — the others are omitted to avoid unnecessary network requests. `forceTheme="light"` renders no link tags since light is the base theme with no dedicated lazy stylesheet.
+
+## 0.66.7
+
+### Patch Changes
+
+- [#1036](https://github.com/ngrok/mantle/pull/1036) [`1521814`](https://github.com/ngrok/mantle/commit/1521814c50e01d0111bd03696c9698dd718ff5f1) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Move syntax highlight token styles into the code-block component
+
+  The `.token.*` CSS rules for syntax highlighting were previously included unconditionally in `mantle.css`, adding to the critical CSS payload for all pages even those with no code blocks.
+
+  These styles are now colocated in `packages/mantle/src/components/code-block/syntax-highlight.css` and imported as a side-effect from `code-block.tsx`. Vite bundles them as a CSS chunk associated with the code-block module — apps that never import `@ngrok/mantle/code-block` no longer pay the cost, and apps that do get the styles automatically.
+
+- [#1036](https://github.com/ngrok/mantle/pull/1036) [`1521814`](https://github.com/ngrok/mantle/commit/1521814c50e01d0111bd03696c9698dd718ff5f1) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `MantleStylesheets` component and split dark/high-contrast themes into separate CSS files
+
+  **New: `MantleStylesheets`**
+
+  A new component exported from `@ngrok/mantle/theme` that renders `<link rel="stylesheet">` tags for the dark, light-high-contrast, and dark-high-contrast theme CSS files. Each stylesheet is gated behind a `media` attribute matching its OS preference, making it non-render-blocking for users whose OS does not match.
+
+  Place it in `<head>`, immediately after `<PreventWrongThemeFlashScript>`:
+
+  ```tsx
+  <head>
+  	<PreventWrongThemeFlashScript nonce={nonce} />
+  	<MantleStylesheets nonce={nonce} ssrCookie={loaderData?.ssrCookie} />
+  </head>
+  ```
+
+  Props:
+  - `forceTheme?: ResolvedTheme` — force a specific theme's stylesheet to `media="all"` unconditionally (e.g. for a dark-only app)
+  - `ssrCookie?: string` — pass the extracted theme cookie (via `extractThemeCookie`) so the server renders the correct `media` attribute directly in SSR HTML, eliminating FOUC for users with a manually-selected non-system theme
+  - `nonce?: string` — CSP nonce for the inline fix script
+
+  An inline `<script>` is rendered after the `<link>` tags. It runs synchronously before first paint and corrects any `media` attributes based on `html[data-applied-theme]` set by `PreventWrongThemeFlashScript`, covering cases where `ssrCookie` is not provided. On the client, a `MutationObserver` watches `html[data-applied-theme]` to keep media attributes in sync as the user changes their theme.
+
+  **New CSS exports**
+
+  Three new CSS files are now exported from `@ngrok/mantle`:
+  - `@ngrok/mantle/mantle-dark.css` — dark theme custom properties
+  - `@ngrok/mantle/mantle-light-high-contrast.css` — light high-contrast theme custom properties
+  - `@ngrok/mantle/mantle-dark-high-contrast.css` — dark high-contrast theme custom properties
+
+  These files contain only CSS custom property blocks and do not need to be added to your app's `@import` chain — `MantleStylesheets` handles loading them via `<link>` tags. `mantle.css` continues to hold the light theme and all Tailwind directives and must remain in your CSS `@import` chain as before.
+
+- [#1036](https://github.com/ngrok/mantle/pull/1036) [`1521814`](https://github.com/ngrok/mantle/commit/1521814c50e01d0111bd03696c9698dd718ff5f1) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `@ngrok/mantle-vite-plugins` package and `source-all.css`, optimize `mantle.css`
+
+  **New: `@ngrok/mantle-vite-plugins`**
+
+  A new package that exports `mantleSourcePlugin` — a Vite plugin that writes targeted Tailwind `@source` directives into your global CSS file for only the `@ngrok/mantle` components your app actually imports. Scans `.ts`, `.tsx`, `.js`, `.jsx`, `.mdx`, and `.md` files. Uses a disk-write approach (required because `@tailwindcss/vite` reads CSS from disk at startup before Vite's transform pipeline runs).
+
+  **New: `@ngrok/mantle/source-all.css`**
+
+  A zero-configuration alternative to `mantleSourcePlugin`. Import it alongside `mantle.css` to tell Tailwind to scan all mantle component dist files:
+
+  ```css
+  @import "@ngrok/mantle/mantle.css";
+  @import "@ngrok/mantle/source-all.css";
+  ```
+
+  Use this for apps that import most or all mantle components. Use `mantleSourcePlugin` for apps that import a subset and want the smallest possible CSS output.
+
+  **`mantle.css` optimizations**
+  - Removed `@source "../dist"` — source scanning is now opt-in via `source-all.css` or `mantleSourcePlugin`
+  - Deduplicated `--color-gray-*` in light/dark themes using `var(--color-neutral-*)` aliases
+  - Removed 21 light-theme color overrides (`neutral-50`–`neutral-900`, all `red-*` shades) that were identical to Tailwind v4 defaults
+  - Moved ~60 semantic tokens (`--background-color-base`, etc.) from `@theme {}` to `@theme inline {}` to stop generating unused utility classes like `bg-background-color-base`
+
+## 0.66.6
+
+### Patch Changes
+
+- [#1034](https://github.com/ngrok/mantle/pull/1034) [`949ec0f`](https://github.com/ngrok/mantle/commit/949ec0fb0ca512143eb6f355efb88efbf9f1b518) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update `font-display` policy for core fonts: `roobert` and `jetbrains-mono` (normal) use `swap`, italic faces (`jetbrains-mono-italic`, `family-italic`) use `optional`, `family-regular` stays `fallback`.
+
+## 0.66.5
+
+### Patch Changes
+
+- [#1032](https://github.com/ngrok/mantle/pull/1032) [`b9a04cc`](https://github.com/ngrok/mantle/commit/b9a04ccbea762504b2dddd450757729dcefe3aa5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - **Add** `preloadFontLink(name: CoreFontName): string` — returns an HTTP `Link` header value that preloads a single core font. Sending preload hints as response headers lets the browser start fetching fonts before it parses any HTML, improving LCP on mobile.
+
+  **Remove** `MantleThemeHeadContent` and `PreloadCoreFonts`.
+
+  **Migration:** use `PreventWrongThemeFlashScript` in `<head>` and `preloadFontLink` in your HTTP response headers. For apps without header control, use individual `PreloadFont` elements instead.
+
+  ```ts
+  // entry.server.tsx — send font preloads as HTTP Link headers
+  import { assetsCdnOrigin, preloadFontLink } from "@ngrok/mantle/theme";
+
+  responseHeaders.set(
+  	"Link",
+  	[
+  		`<${assetsCdnOrigin}>; rel=preconnect; crossorigin`,
+  		preloadFontLink("roobert"),
+  		preloadFontLink("jetbrains-mono"),
+  		preloadFontLink("family-regular"),
+  	].join(", "),
+  );
+  ```
+
+  ```tsx
+  // root.tsx — only the FOUC script in <head>
+  import { PreventWrongThemeFlashScript } from "@ngrok/mantle/theme";
+
+  <head>
+  	<PreventWrongThemeFlashScript nonce={nonce} />
+  </head>;
+  ```
+
+  ```tsx
+  // Non-SSR fallback — no header control
+  import { PreloadFont, PreventWrongThemeFlashScript } from "@ngrok/mantle/theme";
+
+  <head>
+  	<PreventWrongThemeFlashScript nonce={nonce} />
+  	<PreloadFont name="roobert" />
+  	<PreloadFont name="jetbrains-mono" />
+  	<PreloadFont name="family-regular" />
+  </head>;
+  ```
+
+## 0.66.4
+
+### Patch Changes
+
+- [#1030](https://github.com/ngrok/mantle/pull/1030) [`2b740bb`](https://github.com/ngrok/mantle/commit/2b740bbf4e6dc42d6a674e2bd25ee04367ef47bf) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - export PreventWrongThemeFlashScript
+
+## 0.66.3
+
+### Patch Changes
+
+- [`0dac608`](https://github.com/ngrok/mantle/commit/0dac6083db43e746213fa4047ac03aaca3e9bce5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Improve code block utility performance by speeding up indentation normalization and `fmtCode`, adding LRU caching for repeated syntax highlighting, and replacing linear language/indentation lookups with set membership checks. Also normalize CRLF input correctly, rename the indentation normalizer to `normalize-indentation`, and guard line-number expansion against excessively large ranges.
+
+- [#1028](https://github.com/ngrok/mantle/pull/1028) [`11f4575`](https://github.com/ngrok/mantle/commit/11f45750cf33affe31108f0e717e26e3ffbf1705) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - add individual PreloadFont component, preload a core font by name
+
+## 0.66.2
+
+### Patch Changes
+
+- [#1023](https://github.com/ngrok/mantle/pull/1023) [`bc1bc6c`](https://github.com/ngrok/mantle/commit/bc1bc6cbb8ebbb34a6a771c4f60b60c2e0271757) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - multi-select.tsx
+  - close the combobox popover on `Escape` at the multi-select trigger level
+
+  dialog/primitive.tsx
+  - centralize `onInteractOutside` / `onPointerDownOutside` prompt-protection
+  - add `preventCloseOnNestedPopupEscape(...)`
+  - detect focused nested popup owners via `aria-expanded="true"` + `aria-controls`
+  - only prevent parent modal close while the controlled popup is still mounted/open
+  - add JSDoc documenting the first-ESC / second-ESC flow
+
+  dialog.tsx
+  - remove duplicated `onInteractOutside` / `onPointerDownOutside` wrappers
+
+  sheet.tsx
+  - remove duplicated `onInteractOutside` / `onPointerDownOutside` wrappers
+
+  alert-dialog.tsx
+  - remove duplicated `onInteractOutside` / `onPointerDownOutside` wrappers
+
+## 0.66.1
+
+### Patch Changes
+
+- [#1004](https://github.com/ngrok/mantle/pull/1004) [`b04e08f`](https://github.com/ngrok/mantle/commit/b04e08f14262c1dfad91384e9a6ebdeb7be4b5fe) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies: tailwind, ariakit, react-day-picker
+
+- [#1021](https://github.com/ngrok/mantle/pull/1021) [`aab7d30`](https://github.com/ngrok/mantle/commit/aab7d305ed2d5222b82dfe701377738c0e5f2c10) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Swap from tsup to tsdown (6.2x speedup)
+
+- [#1022](https://github.com/ngrok/mantle/pull/1022) [`df6d158`](https://github.com/ngrok/mantle/commit/df6d158e4ff64406c5d84a71a3e9d0278ffc3c38) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix `MultiSelect.Content` inside modal `Sheet`, `Dialog`, and `AlertDialog` containers so it works with the default modal behavior without requiring `modal={false}`.
+
+## 0.66.0
+
+### Minor Changes
+
+- [#997](https://github.com/ngrok/mantle/pull/997) [`612171b`](https://github.com/ngrok/mantle/commit/612171b3afb4fb44e5695445d69418bd621a203e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add MultiSelect component
+
+## 0.65.0
+
+### Minor Changes
+
+- [#1000](https://github.com/ngrok/mantle/pull/1000) [`56a5245`](https://github.com/ngrok/mantle/commit/56a5245e386fc0dde2688c25d95b52a1d7c1e871) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `@ngrok/mantle/utils` export and new `useInView` hook.
+
+  **Breaking changes:**
+  - `@ngrok/mantle/compose-refs` is removed. Import `composeRefs` from `@ngrok/mantle/utils` and `useComposedRefs` from `@ngrok/mantle/hooks` instead.
+  - `@ngrok/mantle/utils/sorting` is removed. Import sorting utilities from `@ngrok/mantle/utils` instead.
+
+  **New exports at `@ngrok/mantle/utils`:**
+  - `inView(element, onStart, options)` — framework-agnostic `IntersectionObserver` helper that calls `onStart` when an element enters the viewport. If `onStart` returns a function, it is called when the element leaves. Returns a cleanup function that disconnects the observer.
+  - `composeRefs` and `useComposedRefs` — moved from `@ngrok/mantle/compose-refs`.
+  - All sorting utilities — moved from `@ngrok/mantle/utils/sorting`.
+
+  **New hook at `@ngrok/mantle/hooks`:**
+  - `useInView(ref, options)` — React hook that returns `true` when the referenced element is visible in the viewport. Supports `root`, `margin`, `amount`, `once`, and `initial` options.
+
+### Patch Changes
+
+- [#1001](https://github.com/ngrok/mantle/pull/1001) [`922a053`](https://github.com/ngrok/mantle/commit/922a053d84fb8ad8f51c42fe1058fb49da7be55d) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Address review feedback from PR #1000.
+  - `inView`: call `observer.unobserve(element)` before `observer.disconnect()` in the cleanup function for cleaner teardown.
+  - `useInView`: restore intentional omission of `isInView` from `useEffect` deps (matching the upstream motion implementation); replace the bare eslint-disable comment with an explanation of why including `isInView` would cause the observer to restart on every visibility change.
+  - `tsup.config.ts`: exclude `compose-refs` and `sorting` from individual build entries since they are now consolidated into the `./utils` export.
+  - `hooks.mdx`: fix missing `forwardRef` import in the `useComposedRefs` code example.
+  - `hooks.mdx`: remove `inView` from the hooks page; it now has a dedicated page under the new Utils section.
+  - `hooks.mdx`: add a live interactive demo for `useInView`.
+  - Changeset: correct version bump type to `major` (breaking changes) and clarify `useComposedRefs` migration path to `@ngrok/mantle/hooks`.
+  - Add `use-in-view.test.tsx` test coverage for the `useInView` hook.
+  - Add a Utils section to the docs site with dedicated pages for `cx`, `color`, `inView`, `composeRefs`, and `sorting`.
+
+- [#1002](https://github.com/ngrok/mantle/pull/1002) [`f6e8271`](https://github.com/ngrok/mantle/commit/f6e8271c70f6932d657b552f8cb24bebe6094a2a) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add optional `icon` prop to `Alert.DismissIconButton`.
+
+  The dismiss button now accepts an `icon` prop (`ReactNode`) to render a custom icon in place of the default `X` icon.
+
+- [#999](https://github.com/ngrok/mantle/pull/999) [`4ebf12b`](https://github.com/ngrok/mantle/commit/4ebf12bdc73f6c88f7968b2378b94b8ff1a3e0eb) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump tsconfig target/lib to ES2023
+
+- [#994](https://github.com/ngrok/mantle/pull/994) [`c4d9812`](https://github.com/ngrok/mantle/commit/c4d9812c9c14924418339d52aa06be61191cd224) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump up min version of tailwind
+
+## 0.64.3
+
+### Patch Changes
+
+- [#990](https://github.com/ngrok/mantle/pull/990) [`16c731a`](https://github.com/ngrok/mantle/commit/16c731a10cc1bbfd6299ff0350171ffa48c261e5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - update to tailwind 4.2.0
+
+- [#988](https://github.com/ngrok/mantle/pull/988) [`7e59d87`](https://github.com/ngrok/mantle/commit/7e59d8722fcf2585105b580e752bf9356e7dea9a) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update dropdown, select, and combobox menu item styling
+
+## 0.64.2
+
+### Patch Changes
+
+- [#985](https://github.com/ngrok/mantle/pull/985) [`ce626cc`](https://github.com/ngrok/mantle/commit/ce626cc088b7fcf3dc0a36e9c2fa6a2098f5d569) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Slider: Add `color` prop to customize the range fill color (defaults to `"bg-accent-500"`), and `showTicks` prop to render tick marks at each `step` interval. Also adds `--color-card-border` and `--color-card-border-muted` semantic color tokens.
+
+## 0.64.1
+
+### Patch Changes
+
+- [#980](https://github.com/ngrok/mantle/pull/980) [`c2735ed`](https://github.com/ngrok/mantle/commit/c2735ed94e9d7ab8b0e5faec42d19deeb4846cd7) Thanks [@dependabot](https://github.com/apps/dependabot)! - Fix accessibility and linting issues in `Input` and `RadioGroup.InputSandbox`: replace `aria-disabled`/`aria-invalid` CSS hooks on wrapper divs with `data-disabled`, add `role="none"` to presentational wrapper divs
+
+- [#984](https://github.com/ngrok/mantle/pull/984) [`b3a32ec`](https://github.com/ngrok/mantle/commit/b3a32ec036d9913cb2d8260902615d47f44e7968) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Change `font-display` from `swap` to `fallback` in all `@font-face` declarations to eliminate layout shift (font bounce) while still downloading and caching fonts for subsequent loads
+
+- [#981](https://github.com/ngrok/mantle/pull/981) [`e43df1c`](https://github.com/ngrok/mantle/commit/e43df1c81fb5881376756e6918210ec7927cdc82) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Bump up Slider thumb shadow to shadow-md (from shadow-sm)
+
+- [#980](https://github.com/ngrok/mantle/pull/980) [`c2735ed`](https://github.com/ngrok/mantle/commit/c2735ed94e9d7ab8b0e5faec42d19deeb4846cd7) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update tailwind-merge
+
+## 0.64.0
+
+### Minor Changes
+
+- [#974](https://github.com/ngrok/mantle/pull/974) [`623935c`](https://github.com/ngrok/mantle/commit/623935c925afad2675aab412ae8ee92e840b7b2f) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Remove `AutoScrollToHash` component and `useAutoScrollToHash` hook. This also removes `react-router` as a peer dependency of `@ngrok/mantle`. If you were using `AutoScrollToHash`, move the implementation into your app directly.
+
+- [#973](https://github.com/ngrok/mantle/pull/973) [`a8ff1c9`](https://github.com/ngrok/mantle/commit/a8ff1c9857c44abf4bc87c69cc85bb2e54a0a439) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add NgrokIcon to Icons
+
+- [#979](https://github.com/ngrok/mantle/pull/979) [`68cc794`](https://github.com/ngrok/mantle/commit/68cc7946d887bbca790c36ca9580c454be99cadc) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add new Slider component, supports single, range, and multiple use cases
+
+### Patch Changes
+
+- [#971](https://github.com/ngrok/mantle/pull/971) [`5781aae`](https://github.com/ngrok/mantle/commit/5781aae83604925bfb03cdbea1d3d85b8e9e47a0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix doc block links
+
+- [#978](https://github.com/ngrok/mantle/pull/978) [`286fab3`](https://github.com/ngrok/mantle/commit/286fab3721c6aabe27fddaf91e4a8dfb7ba8c5ea) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix jerky accordion close animation. Moved spacing from `padding-top` on the animated container to `margin-top` on the first child so it collapses smoothly with the height animation.
+
+- [#974](https://github.com/ngrok/mantle/pull/974) [`623935c`](https://github.com/ngrok/mantle/commit/623935c925afad2675aab412ae8ee92e840b7b2f) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add explicit generic type parameters to `isValidElement` calls in `Button` and `Slot` for React 19 type compatibility. React 19 changed `ReactElement.props` from `any` to `unknown`, requiring explicit type annotations to access props safely. This change is fully backwards compatible with React 18.
+
+- [#978](https://github.com/ngrok/mantle/pull/978) [`286fab3`](https://github.com/ngrok/mantle/commit/286fab3721c6aabe27fddaf91e4a8dfb7ba8c5ea) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix `CodeBlock.CopyButton` timeout lifecycle handling by clearing pending timers on unmount and before scheduling a new copy-state reset.
+
+- [#975](https://github.com/ngrok/mantle/pull/975) [`d9a7206`](https://github.com/ngrok/mantle/commit/d9a72068b93aac1524334395fbe0fdc761c6e8cd) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix theme flash on hydration by reading the theme cookie during SSR. `useInitialHtmlThemeProps` now accepts an optional `ssrCookie` string so the server can render the correct theme class, eliminating the mismatch between server HTML and the inline script.
+
+## 0.63.2
+
+### Patch Changes
+
+- [#969](https://github.com/ngrok/mantle/pull/969) [`76e1afd`](https://github.com/ngrok/mantle/commit/76e1afd09e6011650e6b4f3ed14ea348143e1591) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix `useIsBelowBreakpoint` performance regression during window resize. The `subscribe` and `getSnapshot` functions passed to `useSyncExternalStore` were recreated on every render, causing listener teardown/re-attach churn on each frame. They are now cached per breakpoint for referential stability.
+
+- [#969](https://github.com/ngrok/mantle/pull/969) [`76e1afd`](https://github.com/ngrok/mantle/commit/76e1afd09e6011650e6b4f3ed14ea348143e1591) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Restore all `@custom-variant` definitions in `mantle.css` that were accidentally removed. This includes theme variants (`light`, `dark`, `high-contrast`, `dark-high-contrast`), aria/data attribute variants, hover media query variants (`hover-hover`, `hover-none`), and the `where` variant.
+
+## 0.63.1
+
+### Patch Changes
+
+- [#966](https://github.com/ngrok/mantle/pull/966) [`d26aee3`](https://github.com/ngrok/mantle/commit/d26aee3e3ba025847aef6473a96942a86a8c4875) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix mantle.css exports
+
+## 0.63.0
+
+### Minor Changes
+
+- [#963](https://github.com/ngrok/mantle/pull/963) [`1a68417`](https://github.com/ngrok/mantle/commit/1a684177f8c07e321620910a9edbb771091d7d52) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add "info" as a first-class semantic color (mirrors "accent")
+
+- [#965](https://github.com/ngrok/mantle/pull/965) [`fd7e2eb`](https://github.com/ngrok/mantle/commit/fd7e2eb5119a69f1b505c07f7889ea57686c7258) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add new SplitButton component
+
+### Patch Changes
+
+- [#963](https://github.com/ngrok/mantle/pull/963) [`1a68417`](https://github.com/ngrok/mantle/commit/1a684177f8c07e321620910a9edbb771091d7d52) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix Anchor component target types to delegate to React's built-in types
+
+- [#963](https://github.com/ngrok/mantle/pull/963) [`1a68417`](https://github.com/ngrok/mantle/commit/1a684177f8c07e321620910a9edbb771091d7d52) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix mantle.css theme syntax
+
+- [#963](https://github.com/ngrok/mantle/pull/963) [`1a68417`](https://github.com/ngrok/mantle/commit/1a684177f8c07e321620910a9edbb771091d7d52) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Apply font-sans to components for consistent typography
+
+- [#962](https://github.com/ngrok/mantle/pull/962) [`030099b`](https://github.com/ngrok/mantle/commit/030099b6645039f0aadde90324ee19feeeef94c5) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update react-day-picker
+
+## 0.62.2
+
+### Patch Changes
+
+- [#957](https://github.com/ngrok/mantle/pull/957) [`141490d`](https://github.com/ngrok/mantle/commit/141490dec9ef4b6b5776986a14cac190b65adc77) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix return type of $cssProperties
+
+## 0.62.1
+
+### Patch Changes
+
+- [#955](https://github.com/ngrok/mantle/pull/955) [`bf79ae2`](https://github.com/ngrok/mantle/commit/bf79ae237df0f9350daf8e998e3b4252f398a2b7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DescriptionList styling fixes
+
+## 0.62.0
+
+### Minor Changes
+
+- [#954](https://github.com/ngrok/mantle/pull/954) [`7235e48`](https://github.com/ngrok/mantle/commit/7235e4823cb9232ef0ed2853bf1b8ad9af48d368) Thanks [@randseay](https://github.com/randseay)! - Add DescriptionList component.
+
+  This component is a semantic wrapper for `<dl>`, `<dt>`, and `<dd>` elements. It allows for a more accessible and semantic way to display label/value pairs.
+
+### Patch Changes
+
+- [#946](https://github.com/ngrok/mantle/pull/946) [`e095088`](https://github.com/ngrok/mantle/commit/e095088e084fa07b138715d74ea04ff7f554f969) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add CssProperties, $cssProperties type and helper for supporting typechecking of react CSSProperties AND custom css properties (--foo-bar)
+
+## 0.61.3
+
+### Patch Changes
+
+- [#939](https://github.com/ngrok/mantle/pull/939) [`d2922d2`](https://github.com/ngrok/mantle/commit/d2922d2b0199aa1361e11e483fed129c3fcd2d15) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DataTable.HeaderSortButton: remove scaling when active
+
+## 0.61.2
+
+### Patch Changes
+
+- [#935](https://github.com/ngrok/mantle/pull/935) [`b03ef99`](https://github.com/ngrok/mantle/commit/b03ef99e5a61b81b2b544cce970cfd1b38fed087) Thanks [@aaronshekey](https://github.com/aaronshekey)! - Add 2xs breakpoint (360px)
+
+## 0.60.2
+
+### Patch Changes
+
+- [#912](https://github.com/ngrok/mantle/pull/912) [`d6c1f46`](https://github.com/ngrok/mantle/commit/d6c1f46e8d10c9783134ef49e1e159ad67a67cb3) Thanks [@aaronshekey](https://github.com/aaronshekey)! - Create fluid typography. Kill references to Inter.
+
+- [#902](https://github.com/ngrok/mantle/pull/902) [`da31911`](https://github.com/ngrok/mantle/commit/da31911f4c78f86181f43a34b682e49ad84dc5e8) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update runtime dependencies: @ariakit/react, react-day-picker
+
+- [#914](https://github.com/ngrok/mantle/pull/914) [`e704a7d`](https://github.com/ngrok/mantle/commit/e704a7d314f2341ccea49e6d50bd5f7aa0ae6e82) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update dependencies: react-day-picker and @ariakit/react
+
+- [#914](https://github.com/ngrok/mantle/pull/914) [`e704a7d`](https://github.com/ngrok/mantle/commit/e704a7d314f2341ccea49e6d50bd5f7aa0ae6e82) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Toast: support keeping toasts open until manually dismissed by passing `duration_ms <= 0` or `Number.POSITIVE_INFINITY`
+
+- [#902](https://github.com/ngrok/mantle/pull/902) [`da31911`](https://github.com/ngrok/mantle/commit/da31911f4c78f86181f43a34b682e49ad84dc5e8) Thanks [@dependabot](https://github.com/apps/dependabot)! - Switch to node-24 as LTS
+
+## 0.60.1
+
+### Patch Changes
+
+- [#900](https://github.com/ngrok/mantle/pull/900) [`5174f39`](https://github.com/ngrok/mantle/commit/5174f3906faf163e575b9cb62f3970c4d426f0df) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Button, IconButton: scale w/ transition ease-out
+
+## 0.60.0
+
+### Minor Changes
+
+- [#896](https://github.com/ngrok/mantle/pull/896) [`b58edd7`](https://github.com/ngrok/mantle/commit/b58edd7c1c97c06ce113a90717c947d6822342c3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add Slot component with automatic className merging
+
+  Introduces a new `@ngrok/mantle/slot` component that wraps Radix UI's Slot with automatic Tailwind CSS className merging using `cx`. All internal components now use the Mantle Slot instead of importing directly from Radix UI, providing consistent className merge behavior across the design system where child classes take priority over parent classes.
+
+### Patch Changes
+
+- [#893](https://github.com/ngrok/mantle/pull/893) [`0507080`](https://github.com/ngrok/mantle/commit/05070800b4cf647c9abcf2565902d5b1a1deb976) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Button, IconButton: add data-appearance, data-priority to DOM
+
+## 0.59.1
+
+### Patch Changes
+
+- [#887](https://github.com/ngrok/mantle/pull/887) [`eeca62d`](https://github.com/ngrok/mantle/commit/eeca62d79949a0932c1906bcabf079dbd5a3089c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix tooltip jsdoc urls
+
+## 0.59.0
+
+### Minor Changes
+
+- [#885](https://github.com/ngrok/mantle/pull/885) [`918bdd9`](https://github.com/ngrok/mantle/commit/918bdd9078d1edffc7d670326f0600623a4406cc) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Promote Tooltip component out of preview
+
+  The Tooltip component has been promoted from preview to stable. This includes:
+  - Updated documentation route from `/components/preview/tooltip` to `/components/tooltip`
+  - Updated all JSDoc URLs to reflect the new documentation path
+  - Added comprehensive API reference for TooltipProvider, Tooltip.Root, Tooltip.Trigger, and Tooltip.Content
+  - Improved tooltip arrow styling with proper positioning and background matching
+  - Fixed Tailwind 4 dev mode class scanning by adding `@source "../src"` to mantle.css
+
+## 0.58.4
+
+### Patch Changes
+
+- [#878](https://github.com/ngrok/mantle/pull/878) [`9ecfcd4`](https://github.com/ngrok/mantle/commit/9ecfcd47242496ad382451183a241cd76fd843b5) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies; bump min version of tailwind
+
+- [#883](https://github.com/ngrok/mantle/pull/883) [`e3d39ef`](https://github.com/ngrok/mantle/commit/e3d39ef80e1ead067b2a27f3e960d45a432be732) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - move mantle.css to src/ and improve HMR
+  - Moved `mantle.css` from `packages/mantle/assets/` to `packages/mantle/src/` to enable proper hot module reload during development
+  - Updated `mantle.css` package export to use source conditions (`@ngrok/mantle/source` → `src/mantle.css`, `default` → `dist/mantle.css`), matching the pattern used for component exports
+  - Added build step to copy `mantle.css` to `dist/` directory for production builds
+
+## 0.58.3
+
+### Patch Changes
+
+- [#879](https://github.com/ngrok/mantle/pull/879) [`8a66858`](https://github.com/ngrok/mantle/commit/8a6685805fa2dc540a5e03a550ebf66e13cae644) Thanks [@acrobat130](https://github.com/acrobat130)! - enable an appearance prop on the tabs root component that allows the user to specify pill-style tabs
+
+## 0.58.2
+
+### Patch Changes
+
+- [#873](https://github.com/ngrok/mantle/pull/873) [`f8170b9`](https://github.com/ngrok/mantle/commit/f8170b9f2a73cde6aa5dfc44b10f64f3c2eb8180) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies; add static white, static black, and ff00ff as colors
+
+## 0.58.1
+
+### Patch Changes
+
+- [#871](https://github.com/ngrok/mantle/pull/871) [`61b3eee`](https://github.com/ngrok/mantle/commit/61b3eee335b17bcb12a5df170f070b60d82a1c42) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update Kbd bg color
+
+## 0.58.0
+
+### Minor Changes
+
+- [#869](https://github.com/ngrok/mantle/pull/869) [`e38e79a`](https://github.com/ngrok/mantle/commit/e38e79a664f26a1793c74f2d4056c2194bb72507) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add Kbd component and documentation page for keyboard shortcuts
+
+## 0.57.5
+
+### Patch Changes
+
+- [#864](https://github.com/ngrok/mantle/pull/864) [`aa7f600`](https://github.com/ngrok/mantle/commit/aa7f600d4abcc7d063da1911e2f2e0acc2d82bb3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add `filter` and `shouldFilter` props to `Command.Dialog` for custom filtering behavior
+
+## 0.57.4
+
+### Patch Changes
+
+- [#858](https://github.com/ngrok/mantle/pull/858) [`df04845`](https://github.com/ngrok/mantle/commit/df048454e61c20712309ac375547b1154e350a3d) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix: restore text-size-inherit utility
+
+  Re-added `text-size-inherit` font-size utility that was accidentally removed in v0.57.3. This utility allows components to inherit font-size from their parent element.
+
+  **Note:** This utility is named `text-size-inherit` (not `text-inherit`) to avoid conflicts with Tailwind's standard `text-inherit` utility which controls color inheritance.
+
+  **Changes:**
+  - Added `--text-size-inherit: inherit;` to `@theme inline` block
+  - Added `text-size-inherit` to font-size class group in cx helper's tailwind-merge config
+  - Added tests for proper class merging with text-size-inherit
+
+## 0.57.3
+
+### Patch Changes
+
+- [#856](https://github.com/ngrok/mantle/pull/856) [`20c2da9`](https://github.com/ngrok/mantle/commit/20c2da97779a267ad4232f83167f357a07fe5a0f) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix: enable text-mono font-size overrides with cx helper
+
+  Extended the `cx` helper's tailwind-merge configuration to recognize `text-mono` as a font-size class. This allows users to properly override the monospace font size in Table.Cell and CodeBlock components using standard Tailwind font-size utilities like `text-base`, `text-xl`, etc.
+
+  **Before:**
+
+  ```tsx
+  <Table.Cell className="text-base">INV001</Table.Cell>
+  // Both text-mono and text-base were present in className
+  // text-mono took precedence → 13px font-size
+  ```
+
+  **After:**
+
+  ```tsx
+  <Table.Cell className="text-base">INV001</Table.Cell>
+  // tailwind-merge properly removes text-mono
+  // text-base takes effect → 16px font-size
+  ```
+
+  **Technical Details:**
+  - Added `text-mono` to the `font-size` class group in `extendTailwindMerge` config
+  - Added tests verifying proper class merging behavior
+  - Updated table docs example to demonstrate font-size override
+
+## 0.57.2
+
+### Patch Changes
+
+- [#854](https://github.com/ngrok/mantle/pull/854) [`8819cb0`](https://github.com/ngrok/mantle/commit/8819cb05a05a7db9415db439f0100104391bb41b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - fix: convert text-size-mono to text-mono for proper tailwind-merge support
+
+  Changed the custom `@utility text-size-mono` to a proper Tailwind theme fontSize extension `--font-size-mono`, which generates the `text-mono` utility class. This allows `text-mono` to be properly overridden by other font-size utilities like `text-base` or `text-xl` when using the `cx` helper.
+
+  **Breaking Change:** Users need to replace `text-size-mono` with `text-mono` in their code.
+
+  **Before:**
+
+  ```tsx
+  <Table.Cell className="text-size-mono">...</Table.Cell>
+  ```
+
+  **After:**
+
+  ```tsx
+  <Table.Cell className="text-base">...</Table.Cell> // text-base now properly overrides the default text-mono
+  ```
+
+## 0.57.1
+
+### Patch Changes
+
+- [#852](https://github.com/ngrok/mantle/pull/852) [`d5cbefb`](https://github.com/ngrok/mantle/commit/d5cbefbbb04d507380c90f1e1a5d6642a6a3790c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Command: export MetaKey component for platform-aware keyboard shortcuts
+
+  Extract MetaKey as a reusable SSR-safe component that displays the appropriate modifier key (⌘ for macOS/iOS, Ctrl for others) in keyboard shortcut hints.
+
+## 0.57.0
+
+### Minor Changes
+
+- [#849](https://github.com/ngrok/mantle/pull/849) [`a83221a`](https://github.com/ngrok/mantle/commit/a83221adbe84a309c77b19378ad5ed973584dee7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Remove EuclidSquare bold/semibold; export new theme font helper components
+
+## 0.56.0
+
+### Minor Changes
+
+- [#839](https://github.com/ngrok/mantle/pull/839) [`7dc6877`](https://github.com/ngrok/mantle/commit/7dc68778486e90dd92867c7ecd15450610bd6b8a) Thanks [@randseay](https://github.com/randseay)! - Implement Command component
+
+## 0.55.5
+
+### Patch Changes
+
+- [#842](https://github.com/ngrok/mantle/pull/842) [`0bdcaba`](https://github.com/ngrok/mantle/commit/0bdcaba1b72080d4b90545ca3d3d559b6aed9b22) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - IconButton: add in sr-only label as inner children when using asChild
+
+## 0.55.4
+
+### Patch Changes
+
+- [#840](https://github.com/ngrok/mantle/pull/840) [`6d60f2e`](https://github.com/ngrok/mantle/commit/6d60f2ec304241a3a5d98f78c0349eabae78826b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Table: set overscroll-x-none on Table.Root
+
+## 0.55.3
+
+### Patch Changes
+
+- [#834](https://github.com/ngrok/mantle/pull/834) [`235593b`](https://github.com/ngrok/mantle/commit/235593be593f2d510ce1917792118c8fa0861ff9) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update ariakit and react-day-picker
+
+- [#837](https://github.com/ngrok/mantle/pull/837) [`ba79d27`](https://github.com/ngrok/mantle/commit/ba79d27dd3d04039c81d86cf41abe23d192e13d3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Theme: improve cookie parsing and reduce risk of FOUC, hydration issues
+
+## 0.55.2
+
+### Patch Changes
+
+- [#828](https://github.com/ngrok/mantle/pull/828) [`5cdda38`](https://github.com/ngrok/mantle/commit/5cdda38c1278e0fa24f84816ecfc5065db2b6591) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - AutoScrollToHash + useAutoScrollToHash: switch to context provider, allow for programmatic scrollToHash()
+
+## 0.55.1
+
+### Patch Changes
+
+- [#826](https://github.com/ngrok/mantle/pull/826) [`48ce32d`](https://github.com/ngrok/mantle/commit/48ce32d29cb6102620c3658fc5f435608e202248) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add react-router to peer dependencies of mantle, document AutoScrollToHash peerDep on react-router
+
+## 0.55.0
+
+### Minor Changes
+
+- [#825](https://github.com/ngrok/mantle/pull/825) [`d9dfa70`](https://github.com/ngrok/mantle/commit/d9dfa703c8f3029a00f8fbd8b4f066fdfc0d3f92) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Export AutoScrollToHash, useAutoScrollToHash, and useScrollBehavior
+
+### Patch Changes
+
+- [#823](https://github.com/ngrok/mantle/pull/823) [`05ca536`](https://github.com/ngrok/mantle/commit/05ca536b24ca024d44c31bb53d6d6388a02887a4) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies
+
+## 0.54.3
+
+### Patch Changes
+
+- [#813](https://github.com/ngrok/mantle/pull/813) [`30580b7`](https://github.com/ngrok/mantle/commit/30580b7c30b07421d2226143a3b0f5e2b46568c5) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump tw-animate-css
+
+- [#815](https://github.com/ngrok/mantle/pull/815) [`dd1eb1f`](https://github.com/ngrok/mantle/commit/dd1eb1f5efeff8e044c808ea0f57267abc47ee55) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add visibilitychange handler for ThemeProvider
+
+## 0.54.2
+
+### Patch Changes
+
+- [#810](https://github.com/ngrok/mantle/pull/810) [`8005c93`](https://github.com/ngrok/mantle/commit/8005c937d5780c45c2a3573023df5967851e08d2) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Theme: fix cross-tab theme sync when the cookie changes
+
+## 0.54.1
+
+### Patch Changes
+
+- [#808](https://github.com/ngrok/mantle/pull/808) [`1f943b7`](https://github.com/ngrok/mantle/commit/1f943b7266c9bf3464d4271b8fdc93a421f59eab) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - remove microtask in FOUC script
+
+## 0.54.0
+
+### Minor Changes
+
+- [#806](https://github.com/ngrok/mantle/pull/806) [`c1162a4`](https://github.com/ngrok/mantle/commit/c1162a40080c574acb76fba83f24b0c4d756a18b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Switch from localStorage to cookie for theme preference storage primitive
+
+## 0.53.0
+
+### Minor Changes
+
+- [#804](https://github.com/ngrok/mantle/pull/804) [`9286f3a`](https://github.com/ngrok/mantle/commit/9286f3afb365ae4a7f8881905e8890a0ef7740ef) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Rename theme-provider export to theme
+
+### Patch Changes
+
+- [#803](https://github.com/ngrok/mantle/pull/803) [`165981f`](https://github.com/ngrok/mantle/commit/165981f4334a389da899787530cf8b80c2ff52a9) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update react day picker dependency
+
+- [#801](https://github.com/ngrok/mantle/pull/801) [`47ecff2`](https://github.com/ngrok/mantle/commit/47ecff27f9bea00f5d4b4fc72fb9d281fb331174) Thanks [@aaronshekey](https://github.com/aaronshekey)! - Add the xs breakpoint to the breakpoint component
+
+## 0.52.9
+
+### Patch Changes
+
+- [#797](https://github.com/ngrok/mantle/pull/797) [`a5a1b91`](https://github.com/ngrok/mantle/commit/a5a1b91428b682c32657540c84ff1912368bf734) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Dialog Overlay Primitive: add data-overlay attribute to Overlay primitive
+
+## 0.52.8
+
+### Patch Changes
+
+- [#790](https://github.com/ngrok/mantle/pull/790) [`2806bb4`](https://github.com/ngrok/mantle/commit/2806bb4efd2cedaf5e6b1a4a3e40a79ed7a31f8d) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Combobox: fix scrolling presentation in content
+
+- [#790](https://github.com/ngrok/mantle/pull/790) [`2806bb4`](https://github.com/ngrok/mantle/commit/2806bb4efd2cedaf5e6b1a4a3e40a79ed7a31f8d) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Combobox: bump up spacing between input and content
+
+- [#789](https://github.com/ngrok/mantle/pull/789) [`df7b954`](https://github.com/ngrok/mantle/commit/df7b9546cfb478605528450346560f9fd8d70582) Thanks [@dependabot](https://github.com/apps/dependabot)! - bump headlessui version
+
+## 0.52.7
+
+### Patch Changes
+
+- [#777](https://github.com/ngrok/mantle/pull/777) [`a484cab`](https://github.com/ngrok/mantle/commit/a484cab854475ccc0e4288d2a6046e896bbe553a) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Button: remove the need for inner span
+
+- [#779](https://github.com/ngrok/mantle/pull/779) [`37f40bd`](https://github.com/ngrok/mantle/commit/37f40bd43c97665e412600ce991cb70a83524ae6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Button, IconButton: add active:scale-[0.97]
+
+## 0.52.6
+
+### Patch Changes
+
+- [#775](https://github.com/ngrok/mantle/pull/775) [`3519c45`](https://github.com/ngrok/mantle/commit/3519c45582baf2d2c74daeaddece917062c392db) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - anchor: fix ring class on focus-visible
+
+- [#773](https://github.com/ngrok/mantle/pull/773) [`17dcb26`](https://github.com/ngrok/mantle/commit/17dcb264e1dd504c5cb78bd20ec0a32acfb7a503) Thanks [@dependabot](https://github.com/apps/dependabot)! - update tailwindcss min peer dep
+
+## 0.52.5
+
+### Patch Changes
+
+- [#770](https://github.com/ngrok/mantle/pull/770) [`9f55e0e`](https://github.com/ngrok/mantle/commit/9f55e0ecebbb3dcaa0644a973038a758d1681acf) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Alert: when appearance="banner", also remove the top border
+
+## 0.52.4
+
+### Patch Changes
+
+- [#767](https://github.com/ngrok/mantle/pull/767) [`10899b2`](https://github.com/ngrok/mantle/commit/10899b27d6b3dcc49222a558af86210cf99b82dc) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update tw-animate-css
+
+- [#768](https://github.com/ngrok/mantle/pull/768) [`b8cd5d3`](https://github.com/ngrok/mantle/commit/b8cd5d35dcbe349c4d88d22786a4ec6dd1faeb35) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Alert: add appearance prop to support "banner" alerts
+
+## 0.52.3
+
+### Patch Changes
+
+- [#763](https://github.com/ngrok/mantle/pull/763) [`fe24bbb`](https://github.com/ngrok/mantle/commit/fe24bbbfb36d9b325b7b92d1a29d53c7ab73cb5b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Card: fix how we render borders between Card.Header, Card.Body, and Card.Footer
+
+## 0.52.2
+
+### Patch Changes
+
+- [#760](https://github.com/ngrok/mantle/pull/760) [`9b8ea0b`](https://github.com/ngrok/mantle/commit/9b8ea0b409420effb979f4f9a752fc3ed5d962b5) Thanks [@melanieseltzer](https://github.com/melanieseltzer)! - ProgressDonut: add `indeterminateRotationSpeed` prop to control spin speed. Fix default `animation-duration-[15s]` so it no longer overrides consumer-provided `animation-duration-*` classes.
+
+## 0.52.1
+
+### Patch Changes
+
+- [#752](https://github.com/ngrok/mantle/pull/752) [`be2c37a`](https://github.com/ngrok/mantle/commit/be2c37a5df3b9908dd2ed48df0c58acb23ac5b19) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Combobox: fix ItemValue data-user-value bolding
+
+## 0.52.0
+
+### Minor Changes
+
+- [#748](https://github.com/ngrok/mantle/pull/748) [`2e7509c`](https://github.com/ngrok/mantle/commit/2e7509c937086d51bd7c8dfa00d57cf2dc105212) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - add useIsBelowBreakpoint hook, improve performance of breakpoint hooks
+
+- [#745](https://github.com/ngrok/mantle/pull/745) [`9611901`](https://github.com/ngrok/mantle/commit/9611901fc1db0daec0691044dcf95535bdf75218) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Rename InlineCode to Code
+
+- [#746](https://github.com/ngrok/mantle/pull/746) [`639eed2`](https://github.com/ngrok/mantle/commit/639eed24e29b23856fec43b99ea11a20fe9da0eb) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add useIsHydrated hook
+
+- [#746](https://github.com/ngrok/mantle/pull/746) [`639eed2`](https://github.com/ngrok/mantle/commit/639eed24e29b23856fec43b99ea11a20fe9da0eb) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add useBreakpoint hook
+
+- [#746](https://github.com/ngrok/mantle/pull/746) [`639eed2`](https://github.com/ngrok/mantle/commit/639eed24e29b23856fec43b99ea11a20fe9da0eb) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add BrowserOnly component
+
+### Patch Changes
+
+- [#743](https://github.com/ngrok/mantle/pull/743) [`9e2621c`](https://github.com/ngrok/mantle/commit/9e2621c83d289ff71f864c1405dccd8367a139a0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Switch Alert, Dialog, and AlertDialog Description components to render a div instead of a p by default
+
+- [#746](https://github.com/ngrok/mantle/pull/746) [`639eed2`](https://github.com/ngrok/mantle/commit/639eed24e29b23856fec43b99ea11a20fe9da0eb) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update hooks documentation for useMatchesMediaQuery and useCopyToClipboard
+
+## 0.51.3
+
+### Patch Changes
+
+- [#740](https://github.com/ngrok/mantle/pull/740) [`bbfd6d4`](https://github.com/ngrok/mantle/commit/bbfd6d418d51e8780c108fb905c42fbdb44e95ec) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Accordion: fix export object for compound component definition
+
+## 0.51.2
+
+### Patch Changes
+
+- [#733](https://github.com/ngrok/mantle/pull/733) [`55565dc`](https://github.com/ngrok/mantle/commit/55565dcbb954f938f4f08ec2171959532a595813) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update react-day-picker and tw-animate-css
+
+## 0.51.1
+
+### Patch Changes
+
+- [#731](https://github.com/ngrok/mantle/pull/731) [`cd19eb1`](https://github.com/ngrok/mantle/commit/cd19eb172a1bcad11137eecb9a0bd5f32e192088) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DropdownMenu: support tooltips on disabled dropdown menu items
+
+## 0.51.0
+
+### Minor Changes
+
+- [#730](https://github.com/ngrok/mantle/pull/730) [`e61565f`](https://github.com/ngrok/mantle/commit/e61565f9dc66197c65f377afed37642a99822856) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DataTable: remove DataTable.Rows convenience component; instead prefer to map over rows directly
+
+### Patch Changes
+
+- [#728](https://github.com/ngrok/mantle/pull/728) [`521d59f`](https://github.com/ngrok/mantle/commit/521d59ffe88f8af4aae54d49b365593eeef0621f) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies
+
+## 0.50.4
+
+### Patch Changes
+
+- [#722](https://github.com/ngrok/mantle/pull/722) [`961e157`](https://github.com/ngrok/mantle/commit/961e15757e9147818a9527126b77c002975d58c8) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DataTable: support passing fn as child to DataTable.Rows
+
+## 0.50.3
+
+### Patch Changes
+
+- [#719](https://github.com/ngrok/mantle/pull/719) [`7cab99c`](https://github.com/ngrok/mantle/commit/7cab99cb6fa934beae615be4e90391ec0727482b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Toast: for toast message, use font-body instead of font-sans
+
+- [#721](https://github.com/ngrok/mantle/pull/721) [`31c6ec0`](https://github.com/ngrok/mantle/commit/31c6ec03a466da457e875eb61c7fee07ba56b3a3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DataTable: export cell component too
+
+## 0.50.2
+
+### Patch Changes
+
+- [#717](https://github.com/ngrok/mantle/pull/717) [`024cf70`](https://github.com/ngrok/mantle/commit/024cf70f82bd0aed57992ecaa4002868861ecce2) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Colors: fix dark mode swap of white and black as semantic colors
+
+- [#717](https://github.com/ngrok/mantle/pull/717) [`024cf70`](https://github.com/ngrok/mantle/commit/024cf70f82bd0aed57992ecaa4002868861ecce2) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - replace remaining hsl() usages with oklch() and --color-\* css vars
+
+## 0.50.1
+
+### Patch Changes
+
+- [#714](https://github.com/ngrok/mantle/pull/714) [`6507acf`](https://github.com/ngrok/mantle/commit/6507acf7248389e94a6c841802241e14621df324) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix missing production dependency for tw-animate-css
+
+## 0.50.0
+
+### Minor Changes (0.x breaking)
+
+- [#656](https://github.com/ngrok/mantle/pull/656) [`e0846f8`](https://github.com/ngrok/mantle/commit/e0846f8f5dc22ef63efc2fcb776b9161f4eace20) Thanks [@aaronshekey](https://github.com/aaronshekey)! - Migrate mantle to Tailwind v4
+
+## 0.40.1
+
+### Patch Changes
+
+- [#711](https://github.com/ngrok/mantle/pull/711) [`3f531c5`](https://github.com/ngrok/mantle/commit/3f531c587caa33a532fb0cc2434cb15d321a302d) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update ariakit (combobox improvements)
+
+## 0.40.0
+
+### Minor Changes (0.x breaking)
+
+- [#687](https://github.com/ngrok/mantle/pull/687) [`a3b49ab`](https://github.com/ngrok/mantle/commit/a3b49ab9a832c6636416792b73d648dc782265c3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Implement composite named exports
+
+## 0.32.3
+
+### Patch Changes
+
+- [#699](https://github.com/ngrok/mantle/pull/699) [`82f26dc`](https://github.com/ngrok/mantle/commit/82f26dccb2605cf9a1dab9e4d8d91d45f929e24d) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add nonce prop to MantleThemeHeadContent, update doc blocks
+
+## 0.32.2
+
+### Patch Changes
+
+- [#695](https://github.com/ngrok/mantle/pull/695) [`0b342d7`](https://github.com/ngrok/mantle/commit/0b342d7675e53317324636309be01d76dfd7b63a) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update headlessui and sonner dependencies
+
+## 0.32.1
+
+### Patch Changes
+
+- [#678](https://github.com/ngrok/mantle/pull/678) [`c303597`](https://github.com/ngrok/mantle/commit/c30359783e449583ac522bddb36ef92225e5ba84) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add explicit displayNames to all mantle components
+
+- [#680](https://github.com/ngrok/mantle/pull/680) [`7b6b15a`](https://github.com/ngrok/mantle/commit/7b6b15afdcc42104dbefb9a1213d694c2c7d39dd) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - add missing intellisense jsdocs to all mantle components
+
+## 0.32.0
+
+### Minor Changes
+
+- [#675](https://github.com/ngrok/mantle/pull/675) [`4a65a5a`](https://github.com/ngrok/mantle/commit/4a65a5ac00c0d656f0771503fbe1f8ffeada8057) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add ProgressBar component
+
+## 0.31.6
+
+### Patch Changes
+
+- [#670](https://github.com/ngrok/mantle/pull/670) [`bc3e6ac`](https://github.com/ngrok/mantle/commit/bc3e6ac87bd453b7af82dddad013cd9fd7de0671) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - remove zod as a peerDependency of mantle
+
+## 0.31.5
+
+### Patch Changes
+
+- [#662](https://github.com/ngrok/mantle/pull/662) [`1cfccd6`](https://github.com/ngrok/mantle/commit/1cfccd66c5e4091c34553436e422e2e1cda356a4) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Sprinkle use client everywhere
+
+## 0.31.4
+
+### Patch Changes
+
+- [#660](https://github.com/ngrok/mantle/pull/660) [`2fddd06`](https://github.com/ngrok/mantle/commit/2fddd06a2d7ac056f022a96d64888230bb261dcf) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Change peerDependencies for react and react-dom
+
+## 0.31.3
+
+### Patch Changes
+
+- [#642](https://github.com/ngrok/mantle/pull/642) [`1bb8fdd`](https://github.com/ngrok/mantle/commit/1bb8fdd7769f39dfc5fd2556cee5a8d08e3d006d) Thanks [@dependabot](https://github.com/apps/dependabot)! - update dependencies
+
+- [#651](https://github.com/ngrok/mantle/pull/651) [`57d5b60`](https://github.com/ngrok/mantle/commit/57d5b6054b96c5e68ecafa35099aabcb1adbdce7) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies
+
+- [#659](https://github.com/ngrok/mantle/pull/659) [`1d43071`](https://github.com/ngrok/mantle/commit/1d43071a93f4d5d618dd503ddf9dfbd2a89adf6b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fix mantle react, react-dom peer dependencies range
+
+- [#658](https://github.com/ngrok/mantle/pull/658) [`ad402db`](https://github.com/ngrok/mantle/commit/ad402dbf34c05825538f89ddb4ee03cf778a0bce) Thanks [@melanieseltzer](https://github.com/melanieseltzer)! - Fix bug where `setValueOnClick` prop was destructured (to set a default) but then never passed along and used (so the consumer could never override it).
+
+## 0.31.2
+
+### Patch Changes
+
+- [#643](https://github.com/ngrok/mantle/pull/643) [`148dd76`](https://github.com/ngrok/mantle/commit/148dd764cbcbd4025503e0cbcfb2a5ea24a40b76) Thanks [@aaronshekey](https://github.com/aaronshekey)! - Fix breakpoint configuration to allow for arbitrary breakpoint
+
+## 0.31.1
+
+### Patch Changes
+
+- [#635](https://github.com/ngrok/mantle/pull/635) [`baa2d7f`](https://github.com/ngrok/mantle/commit/baa2d7fe2008c1e14baeec8618209e48c2ce835b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - RadioIndicator: add shrink-0 so the indicator does not shrink in flex contexts
+
+## 0.31.0
+
+### Minor Changes
+
+- [#633](https://github.com/ngrok/mantle/pull/633) [`0632cca`](https://github.com/ngrok/mantle/commit/0632cca37f5376072f086256dfc25c69c973e53c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - SelectItem: allow for icon slot
+
+- [#633](https://github.com/ngrok/mantle/pull/633) [`0632cca`](https://github.com/ngrok/mantle/commit/0632cca37f5376072f086256dfc25c69c973e53c) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Icons: export AutoThemeIcon and ThemeIcon
+
+### Patch Changes
+
+- [#631](https://github.com/ngrok/mantle/pull/631) [`2d18988`](https://github.com/ngrok/mantle/commit/2d18988384fee665f88aa316e2bec112434cb35c) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies
+
+- [#609](https://github.com/ngrok/mantle/pull/609) [`fc8b793`](https://github.com/ngrok/mantle/commit/fc8b793e1c7ea43b7575cff89f15ed645f3c9ce7) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies
+
+## 0.30.0
+
+### Minor Changes
+
+- [#620](https://github.com/ngrok/mantle/pull/620) [`c76d1bd`](https://github.com/ngrok/mantle/commit/c76d1bd1c32fbc84ccbe69a176e8ea06326cfd28) Thanks [@aaronshekey](https://github.com/aaronshekey)! - Add `AlertDismissIconButton` to `Alert` component
+
+### Patch Changes
+
+- [#617](https://github.com/ngrok/mantle/pull/617) [`c72c6e1`](https://github.com/ngrok/mantle/commit/c72c6e1228f5b62a0fa7ec39957ac71081df2667) Thanks [@aaronshekey](https://github.com/aaronshekey)! - Table edge case refinements and a sans serif font on tooltips by default
+
+## 0.29.0
+
+### Minor Changes
+
+- [#603](https://github.com/ngrok/mantle/pull/603) [`264dc1b`](https://github.com/ngrok/mantle/commit/264dc1b8947b9c44fac3eef97e22446c249e0f17) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies; use named \*Icon imports from phosphor
+
+## 0.28.1
+
+### Patch Changes
+
+- [#595](https://github.com/ngrok/mantle/pull/595) [`26cdffa`](https://github.com/ngrok/mantle/commit/26cdffa6a10da1a6eb7b868db892f3c60e15bef6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Revert phosphor update
+
+## 0.28.0
+
+### Minor Changes
+
+- [#591](https://github.com/ngrok/mantle/pull/591) [`2cf4f4c`](https://github.com/ngrok/mantle/commit/2cf4f4c6cd219172f6d8131a4a6b2270152b53d4) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update phosphor icons to new suffix Icon imports
+
+## 0.27.4
+
+### Patch Changes
+
+- [#589](https://github.com/ngrok/mantle/pull/589) [`2eb2764`](https://github.com/ngrok/mantle/commit/2eb2764c12bcb0cab0e9d99801dc1b8e0ed60dc4) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - RadioButton: don't highlight border on hover when checked AND disabled
+
+## 0.27.3
+
+### Patch Changes
+
+- [#559](https://github.com/ngrok/mantle/pull/559) [`9da7027`](https://github.com/ngrok/mantle/commit/9da7027f0009b0f57df385377c73da262177efee) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - tsconfig: improve tsconfigs and remove unused imports/vars
+
+- [#551](https://github.com/ngrok/mantle/pull/551) [`fceb2ef`](https://github.com/ngrok/mantle/commit/fceb2effdc828719a340110e5e3fd216d88ae564) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Table: improve component design and styling
+
+- [#576](https://github.com/ngrok/mantle/pull/576) [`ce359c0`](https://github.com/ngrok/mantle/commit/ce359c0e5046d00af54814693dddad7b95099d66) Thanks [@dependabot](https://github.com/apps/dependabot)! - update dependencies
+
+- [#568](https://github.com/ngrok/mantle/pull/568) [`3d9c378`](https://github.com/ngrok/mantle/commit/3d9c378c01d278e6376e8a668d465d93666b281a) Thanks [@dependabot](https://github.com/apps/dependabot)! - update dependencies
+
+## 0.27.2
+
+### Patch Changes
+
+- [#544](https://github.com/ngrok/mantle/pull/544) [`cc043a7`](https://github.com/ngrok/mantle/commit/cc043a74bd909c4c1c4d77027fee10c8ae5653db) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DataTable: fix react key errors in DataTableHead and DataTableRow
+
+- [#546](https://github.com/ngrok/mantle/pull/546) [`44cc9b9`](https://github.com/ngrok/mantle/commit/44cc9b9d3eef4f09a87579350e12d12fcf7d78aa) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DataTable: fix hover styles, add DataTableActionCell
+
+- [#546](https://github.com/ngrok/mantle/pull/546) [`44cc9b9`](https://github.com/ngrok/mantle/commit/44cc9b9d3eef4f09a87579350e12d12fcf7d78aa) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Tailwind Preset: fix content glob, should point to dist folder now
+
+## 0.27.1
+
+### Patch Changes
+
+- [#538](https://github.com/ngrok/mantle/pull/538) [`1c2f1af`](https://github.com/ngrok/mantle/commit/1c2f1af3d26841671fd53f2334d722790bd03454) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DataTable: add most of the remaining core components
+
+- [#536](https://github.com/ngrok/mantle/pull/536) [`585624a`](https://github.com/ngrok/mantle/commit/585624a29920d6c92d5e2bf81ea682a56cd89f47) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DataTable: export both DataTableHeaderSortButton and DataTableHeader, decouple behavior to make it fully customizable
+
+## 0.27.0
+
+### Minor Changes
+
+- [#533](https://github.com/ngrok/mantle/pull/533) [`8211d3b`](https://github.com/ngrok/mantle/commit/8211d3b636a5197b305ed4774d7316cf8cf09ca6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Tailwind Preset: replace 'text-mono' with 'text-size-mono' (so it doesn't clash with tw-merge text-\* color classes)
+
+### Patch Changes
+
+- [#533](https://github.com/ngrok/mantle/pull/533) [`8211d3b`](https://github.com/ngrok/mantle/commit/8211d3b636a5197b305ed4774d7316cf8cf09ca6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DataTable: add tests to helper methods, render example on docs site
+
+- [#533](https://github.com/ngrok/mantle/pull/533) [`8211d3b`](https://github.com/ngrok/mantle/commit/8211d3b636a5197b305ed4774d7316cf8cf09ca6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Toast: change class from .mantle-prompt to .overlay-prompt, improve compat w/ legacy ui components
+
+- [#533](https://github.com/ngrok/mantle/pull/533) [`8211d3b`](https://github.com/ngrok/mantle/commit/8211d3b636a5197b305ed4774d7316cf8cf09ca6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Table: fix/improve styling
+
+- [#533](https://github.com/ngrok/mantle/pull/533) [`8211d3b`](https://github.com/ngrok/mantle/commit/8211d3b636a5197b305ed4774d7316cf8cf09ca6) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update dependencies
+
+## 0.26.0
+
+### Minor Changes
+
+- [#525](https://github.com/ngrok/mantle/pull/525) [`bf41174`](https://github.com/ngrok/mantle/commit/bf41174756a5fe1b563e5fe43ea6f80ec3df09d3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add custom mantle icons exports (Sort, TrafficPolicyFile) and sorting helper functions, types
+
+- [#527](https://github.com/ngrok/mantle/pull/527) [`f702d8a`](https://github.com/ngrok/mantle/commit/f702d8a8a228eb568f3273c650b0ad00d0b35adb) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DataTable: add DataTableHeader component, which supports column sorting by default (if enabled on the column)
+
+- [#527](https://github.com/ngrok/mantle/pull/527) [`f702d8a`](https://github.com/ngrok/mantle/commit/f702d8a8a228eb568f3273c650b0ad00d0b35adb) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Table: improve documentation and fix markup, exports to match html spec 1:1; improve styling and include horizontal overflow detection
+
+### Patch Changes
+
+- [#524](https://github.com/ngrok/mantle/pull/524) [`38ac3db`](https://github.com/ngrok/mantle/commit/38ac3dbadfa45dfa283bc4a8853966b190839776) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies
+
+- [#527](https://github.com/ngrok/mantle/pull/527) [`f702d8a`](https://github.com/ngrok/mantle/commit/f702d8a8a228eb568f3273c650b0ad00d0b35adb) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Table: Improve Table component docs
+
+## 0.25.2
+
+### Patch Changes
+
+- [#515](https://github.com/ngrok/mantle/pull/515) [`eb03234`](https://github.com/ngrok/mantle/commit/eb03234c6ef14d63d4e7d15320a6a8123ef16237) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - PopoverContent: add preferredWidth prop, use that instead of explicit width
+
+- [#515](https://github.com/ngrok/mantle/pull/515) [`eb03234`](https://github.com/ngrok/mantle/commit/eb03234c6ef14d63d4e7d15320a6a8123ef16237) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Calendar: add min-w-min to months container (prevent overflow in nav)
+
+## 0.25.1
+
+### Patch Changes
+
+- [#513](https://github.com/ngrok/mantle/pull/513) [`052f571`](https://github.com/ngrok/mantle/commit/052f57113ae811c6dbefbb293c0cb22fbcfaf950) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - AlertDialogContent, DialogContent: add preferredWidth prop
+
+- [#510](https://github.com/ngrok/mantle/pull/510) [`7dcc1e0`](https://github.com/ngrok/mantle/commit/7dcc1e050bc181d2f193257d51a1df3092a016ef) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies
+
+## 0.25.0
+
+### Minor Changes
+
+- [#501](https://github.com/ngrok/mantle/pull/501) [`a669615`](https://github.com/ngrok/mantle/commit/a6696155e7fab6651d331af6bfe6459b7b8ecac1) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - CodeBlock: add support for setting the indentation used (tabs vs spaces), fallback to detecting what the given language prefers or spaces if none
+
+### Patch Changes
+
+- [#500](https://github.com/ngrok/mantle/pull/500) [`275f8d1`](https://github.com/ngrok/mantle/commit/275f8d1b40bbc9e87d7271ddcab4b94748fc8744) Thanks [@dependabot](https://github.com/apps/dependabot)! - update dependencies
+
+- [#501](https://github.com/ngrok/mantle/pull/501) [`a669615`](https://github.com/ngrok/mantle/commit/a6696155e7fab6651d331af6bfe6459b7b8ecac1) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - CodeBlock: improve documentation and intellisense
+
+## 0.24.1
+
+### Patch Changes
+
+- [#497](https://github.com/ngrok/mantle/pull/497) [`b5526a0`](https://github.com/ngrok/mantle/commit/b5526a01de147d8ca7f74e0ceca3b0a0b6f5868d) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - AlertDialog: improve intellisense and docs, support asChild
+
+- [#496](https://github.com/ngrok/mantle/pull/496) [`8d88570`](https://github.com/ngrok/mantle/commit/8d885708597d45decf0addf40dd5c0179f6b73c0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Flag: improve intellisense
+
+- [#496](https://github.com/ngrok/mantle/pull/496) [`8d88570`](https://github.com/ngrok/mantle/commit/8d885708597d45decf0addf40dd5c0179f6b73c0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Icon: update docs and intellisense
+
+- [#496](https://github.com/ngrok/mantle/pull/496) [`8d88570`](https://github.com/ngrok/mantle/commit/8d885708597d45decf0addf40dd5c0179f6b73c0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Label: update docs and intellisense
+
+- [#496](https://github.com/ngrok/mantle/pull/496) [`8d88570`](https://github.com/ngrok/mantle/commit/8d885708597d45decf0addf40dd5c0179f6b73c0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - MediaObject: update docs and intellisense, add asChild support
+
+- [#494](https://github.com/ngrok/mantle/pull/494) [`c4961ac`](https://github.com/ngrok/mantle/commit/c4961ac846a3d5dddac9d0c9cf371b14c63240a0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Card: improve docs and intellisense, support asChild on all sub-components
+
+- [#496](https://github.com/ngrok/mantle/pull/496) [`8d88570`](https://github.com/ngrok/mantle/commit/8d885708597d45decf0addf40dd5c0179f6b73c0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Badge: improve intellisense
+
+- [#493](https://github.com/ngrok/mantle/pull/493) [`410bc33`](https://github.com/ngrok/mantle/commit/410bc330fd2715ca47e1858a1c5949e02d3a7b7e) Thanks [@melanieseltzer](https://github.com/melanieseltzer)! - Combobox: fix intellisense on `ComboboxItemValue`
+
+- [#496](https://github.com/ngrok/mantle/pull/496) [`8d88570`](https://github.com/ngrok/mantle/commit/8d885708597d45decf0addf40dd5c0179f6b73c0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Skeleton: update docs and intellisense, add asChild support
+
+## 0.24.0
+
+### Minor Changes
+
+- [#491](https://github.com/ngrok/mantle/pull/491) [`97538d9`](https://github.com/ngrok/mantle/commit/97538d9986c5b38098729b10acd3274ce28cc98b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Anchor: add support for icons and their placement, improve docs and intellisense
+
+## 0.23.2
+
+### Patch Changes
+
+- [#489](https://github.com/ngrok/mantle/pull/489) [`1c47edc`](https://github.com/ngrok/mantle/commit/1c47edc8c4ac9a352befc154e11be5610f523870) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - CodeBlock: fix unescaped inner html on initial render
+
+## 0.23.1
+
+### Patch Changes
+
+- [#486](https://github.com/ngrok/mantle/pull/486) [`671867c`](https://github.com/ngrok/mantle/commit/671867cb3a23797a28a0434b86e1be1f6df28955) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Switch: improve intellisense and docs, fix readOnly prop
+
+- [#483](https://github.com/ngrok/mantle/pull/483) [`247bbc4`](https://github.com/ngrok/mantle/commit/247bbc45dde598f90862ebd051be8fad695f9312) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Separator, ProgressDonut: improve docs and intellisense
+
+- [#485](https://github.com/ngrok/mantle/pull/485) [`13d21f3`](https://github.com/ngrok/mantle/commit/13d21f3d01ae93300fc379c8439834c03fbe1d5b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Checkbox: improve intellisense and docs
+
+## 0.23.0
+
+### Minor Changes
+
+- [#478](https://github.com/ngrok/mantle/pull/478) [`1b8857b`](https://github.com/ngrok/mantle/commit/1b8857b0bfc23b027ffadf29f3bb8eb9a7535181) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add SandboxedOnClick component
+
+- [#477](https://github.com/ngrok/mantle/pull/477) [`de42d20`](https://github.com/ngrok/mantle/commit/de42d2073df5d23609df63606e2ebbd9c4565e5b) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - SheetContent: add preferredWidth prop, remove side: "top" and "bottom" options
+
+### Patch Changes
+
+- [#469](https://github.com/ngrok/mantle/pull/469) [`d879af8`](https://github.com/ngrok/mantle/commit/d879af88e3aff48523b94cd618dee720813ba878) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies, add dependabot config, clean up scripts
+
+- [#479](https://github.com/ngrok/mantle/pull/479) [`e775e11`](https://github.com/ngrok/mantle/commit/e775e1115626eb7b38480e36507e44d74ac45b5f) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - PopoverContent: prevent click events from bubbling out of the PopoverContent container
+
+- [#480](https://github.com/ngrok/mantle/pull/480) [`c87c906`](https://github.com/ngrok/mantle/commit/c87c906f5d91c6d5988097eb8ca8f461038355a0) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - TextArea: improve docs and intellisense
+
+## 0.22.2
+
+### Patch Changes
+
+- [#467](https://github.com/ngrok/mantle/pull/467) [`1556c80`](https://github.com/ngrok/mantle/commit/1556c80892e453eb0ce76ba4638a3c2ab79b03a6) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies
+
+## 0.22.1
+
+### Patch Changes
+
+- [#464](https://github.com/ngrok/mantle/pull/464) [`b55338e`](https://github.com/ngrok/mantle/commit/b55338ea37f0f1a074713990bdcb96b998ef8c09) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies
+
+- [#466](https://github.com/ngrok/mantle/pull/466) [`a708b7f`](https://github.com/ngrok/mantle/commit/a708b7f298dcd75c5607f4a226f1fede0d593921) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Sheet: improve inline intellisense and docsite documentation
+
+## 0.22.0
+
+### Minor Changes
+
+- [#462](https://github.com/ngrok/mantle/pull/462) [`2e9f116`](https://github.com/ngrok/mantle/commit/2e9f11667f8f2f895ac81883efc386e7df8131d1) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Checkbox: remove zodCheckbox export
+
+### Patch Changes
+
+- [#460](https://github.com/ngrok/mantle/pull/460) [`e62f0ef`](https://github.com/ngrok/mantle/commit/e62f0ef753984366b4c3f3bc53e656abfc0f4b98) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Select: improve component docs, add inline intellisense examples w/ links, make content width default to "trigger"
+
+## 0.21.5
+
+### Patch Changes
+
+- [#458](https://github.com/ngrok/mantle/pull/458) [`494430c`](https://github.com/ngrok/mantle/commit/494430cfa5e08958de9fc8eb7710644362dee18b) Thanks [@dependabot](https://github.com/apps/dependabot)! - update prism to fix security vulnerability
+
+## 0.21.4
+
+### Patch Changes
+
+- [#456](https://github.com/ngrok/mantle/pull/456) [`2ed9953`](https://github.com/ngrok/mantle/commit/2ed9953b76c231445a67a63b3f4be31158968306) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Alert: improve doc site entry and intellisense for each component; remove unused default priority and make priority required; add AlertIcon component
+
+## 0.21.3
+
+### Patch Changes
+
+- [#454](https://github.com/ngrok/mantle/pull/454) [`2ddbdab`](https://github.com/ngrok/mantle/commit/2ddbdab61f0a875854452c11a3b7dba1913b4737) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - ProgressDonut: properly fix the render AND hydration issue
+
+## 0.21.2
+
+### Patch Changes
+
+- [#452](https://github.com/ngrok/mantle/pull/452) [`f76dc0e`](https://github.com/ngrok/mantle/commit/f76dc0e7f3e862f4f50e0270fe29709facd88803) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - ProgressDonut: fix hydration error, add examples in intellisense
+
+## 0.21.1
+
+### Patch Changes
+
+- [#450](https://github.com/ngrok/mantle/pull/450) [`00de431`](https://github.com/ngrok/mantle/commit/00de431a6f3f95d877a62a89a6d305d82b56b639) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - CodeBlock: fix alignment of absolutely positioned copy button
+
+## 0.21.0
+
+### Minor Changes
+
+- [#428](https://github.com/ngrok/mantle/pull/428) [`944e9a6`](https://github.com/ngrok/mantle/commit/944e9a69b0e295d2794e6dbcbc3bdc6fc922e990) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add combobox component
+
+### Patch Changes
+
+- [#447](https://github.com/ngrok/mantle/pull/447) [`8d47922`](https://github.com/ngrok/mantle/commit/8d47922ad3d3cba9305eaab75552c9910f6af7e9) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Flags: add GB alias for UK flag
+
+## 0.20.2
+
+### Patch Changes
+
+- [#444](https://github.com/ngrok/mantle/pull/444) [`63ce798`](https://github.com/ngrok/mantle/commit/63ce7986ea424774168209218d4562cbda5906d1) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Flags: rename Flags type to CountryCode, export countryCodes list and isCountryCode type predicate fn
+
+## 0.20.1
+
+### Patch Changes
+
+- [#443](https://github.com/ngrok/mantle/pull/443) [`46087c5`](https://github.com/ngrok/mantle/commit/46087c5e763c2c0d034f5d9d1e1b48191dfe1ccd) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Flag: add border radius and inset transparent black border
+
+- [#441](https://github.com/ngrok/mantle/pull/441) [`2867bdf`](https://github.com/ngrok/mantle/commit/2867bdfb23df6d35da1e50bd9ad95b65c70cc3e3) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Prep for react 19: swap react-19-deprecated ElementRef type for ComponentRef type
+
+## 0.20.0
+
+### Minor Changes
+
+- [#439](https://github.com/ngrok/mantle/pull/439) [`1523118`](https://github.com/ngrok/mantle/commit/15231189ac7f5818fd963d4dc4162c5ca1cfebba) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Add Flag component
+
+## 0.19.17
+
+### Patch Changes
+
+- [#435](https://github.com/ngrok/mantle/pull/435) [`0aac02a`](https://github.com/ngrok/mantle/commit/0aac02a732b0c32c21c2183282a1c9fd0b7e5dc5) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - AlertDialog: actually export AlertDialogClose
+
+## 0.19.16
+
+### Patch Changes
+
+- [#433](https://github.com/ngrok/mantle/pull/433) [`4744706`](https://github.com/ngrok/mantle/commit/474470667d728a02615fb68b9fc5612635c96882) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - AlertDialog: export AlertDialogClose
+
+## 0.19.15
+
+### Patch Changes
+
+- [#431](https://github.com/ngrok/mantle/pull/431) [`7358307`](https://github.com/ngrok/mantle/commit/7358307706b78eb459803632df08547e588b5cca) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - DropdownMenuRadioItem: only take up space for the checkmark when an item is checked
+
+## 0.19.14
+
+### Patch Changes
+
+- [#430](https://github.com/ngrok/mantle/pull/430) [`ec4e2e4`](https://github.com/ngrok/mantle/commit/ec4e2e4867e7eecfd8571abc4092e83ad1e3c2fe) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - button: fix underline on group-hover bug of <Button appearance="link"> bug
+
+- [#427](https://github.com/ngrok/mantle/pull/427) [`7b9ef0b`](https://github.com/ngrok/mantle/commit/7b9ef0b44b0f16ff36bd2c9dcfc2d3a74915f1f7) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update dependencies
+
+- [#425](https://github.com/ngrok/mantle/pull/425) [`0dad7df`](https://github.com/ngrok/mantle/commit/0dad7df13a14b59be0c53605bc3fec471ead73e1) Thanks [@dependabot](https://github.com/apps/dependabot)! - update dependencies
+
+## 0.19.13
+
+### Patch Changes
+
+- [#422](https://github.com/ngrok/mantle/pull/422) [`e87acd6`](https://github.com/ngrok/mantle/commit/e87acd639bf7c5ad0826b0014733491400daa71f) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - types: export parseBooleanish
+
+## 0.19.12
+
+### Patch Changes
+
+- [#419](https://github.com/ngrok/mantle/pull/419) [`d78b2ce`](https://github.com/ngrok/mantle/commit/d78b2ceb6bea4beca93358d7732117d7e97fb1bb) Thanks [@melanieseltzer](https://github.com/melanieseltzer)! - Make the `className` arg on `anchorClassNames` optional
+
+## 0.19.11
+
+### Patch Changes
+
+- [#417](https://github.com/ngrok/mantle/pull/417) [`298b175`](https://github.com/ngrok/mantle/commit/298b1753231f89c8102d469d5d79b6492364a9d8) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - CodeBlock: adjust styles, add defensive css (for docs)
+
+## 0.19.10
+
+### Patch Changes
+
+- [#415](https://github.com/ngrok/mantle/pull/415) [`4275988`](https://github.com/ngrok/mantle/commit/427598893d974cdbd27fea55bfe322ab437d7a48) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - mantle.css: improve matching for css vars on root
+
+## 0.19.9
+
+### Patch Changes
+
+- [#413](https://github.com/ngrok/mantle/pull/413) [`d42bb6f`](https://github.com/ngrok/mantle/commit/d42bb6f7843060a84a363e5162b7d1cbedd59946) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - SelectItem: improve styling to fix hover bg color on selected items in docs use case
+
+## 0.19.8
+
+### Patch Changes
+
+- [#411](https://github.com/ngrok/mantle/pull/411) [`88727bd`](https://github.com/ngrok/mantle/commit/88727bd71171ef05ca83dbd43bad1b2449464c2e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - CodeBlock: add CodeBlockIcon component and fix some styling
+
+## 0.19.7
+
+### Patch Changes
+
+- [#408](https://github.com/ngrok/mantle/pull/408) [`0868adb`](https://github.com/ngrok/mantle/commit/0868adbcf65936e0377236d353610e063a6279f7) Thanks [@melanieseltzer](https://github.com/melanieseltzer)! - Revamp the readme and contributing guide
+
+- [#410](https://github.com/ngrok/mantle/pull/410) [`de54a95`](https://github.com/ngrok/mantle/commit/de54a953fcaf64344c652c5cc573515197e68555) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - add fade-in keyframes to tailwind preset
+
+## 0.19.6
+
+### Patch Changes
+
+- [`1d83e1d`](https://github.com/ngrok/mantle/commit/1d83e1df14d7848a7eb14de13699aac7d846dcc8) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Slack post will work this time for real i promise u 🦐
+
+## 0.19.5
+
+### Patch Changes
+
+- [`595e6c1`](https://github.com/ngrok/mantle/commit/595e6c1dc9758a68602492e270452891d3482f60) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Fixing the post to slack webhook on mantle release
+
+## 0.19.4
+
+### Patch Changes
+
+- [`cf2d8c2`](https://github.com/ngrok/mantle/commit/cf2d8c25e1f3525165e0510ae51dc9162a6439c8) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Debugging changesets release
+
+## 0.19.3
+
+### Patch Changes
+
+- [#399](https://github.com/ngrok/mantle/pull/399) [`cbeec74`](https://github.com/ngrok/mantle/commit/cbeec7482e7b19fba9202d80e842a6785018728e) Thanks [@cody-dot-js](https://github.com/cody-dot-js)! - Update patch dependencies of radix component packages https://github.com/ngrok/mantle/pull/396
+  Improve code quality (suggestions from trialing biomejs) https://github.com/ngrok/mantle/pull/398
+
+  For historical release notes prior to `v0.19.3`, please consult https://github.com/ngrok/mantle/releases

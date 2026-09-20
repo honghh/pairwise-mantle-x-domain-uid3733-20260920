@@ -1,0 +1,567 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+import { useLayoutEffect, useRef, useState } from "react";
+import { describe, expect, test, vi } from "vitest";
+import { $cssProperties } from "../../types/index.js";
+import { Alert, AlertContextProvider } from "./alert.js";
+
+function getAlertRoot(container: HTMLElement) {
+	return container.querySelector('[data-slot="alert"]');
+}
+
+/**
+ * The documented dismissal pattern: the consumer's `onClick` stops rendering
+ * the alert, which unmounts the button that holds focus.
+ */
+function DismissibleAlert() {
+	const [dismissed, setDismissed] = useState(false);
+	if (dismissed) {
+		return null;
+	}
+	return (
+		<Alert.Root intent="info">
+			<Alert.Content>
+				<Alert.Title>Trial ends soon</Alert.Title>
+				<Alert.DismissIconButton onClick={() => setDismissed(true)} />
+			</Alert.Content>
+		</Alert.Root>
+	);
+}
+
+describe("Alert", () => {
+	test("renders title and description", () => {
+		render(
+			<Alert.Root intent="info">
+				<Alert.Content>
+					<Alert.Title>Heads up</Alert.Title>
+					<Alert.Description>Something happened.</Alert.Description>
+				</Alert.Content>
+			</Alert.Root>,
+		);
+		expect(screen.getByText("Heads up")).toBeInTheDocument();
+		expect(screen.getByText("Something happened.")).toBeInTheDocument();
+	});
+
+	test("passes role through to the root element", () => {
+		render(
+			<Alert.Root intent="danger" role="alert">
+				<Alert.Content>
+					<Alert.Description>Invalid email or password.</Alert.Description>
+				</Alert.Content>
+			</Alert.Root>,
+		);
+		expect(screen.getByRole("alert")).toHaveTextContent("Invalid email or password.");
+	});
+
+	describe("intent", () => {
+		test.each([
+			["danger", "text-danger-700"],
+			["important", "text-important-700"],
+			["info", "text-info-700"],
+			["success", "text-success-700"],
+			["warning", "text-warning-700"],
+		] as const)(`renders intent="%s" with tone class %s`, (intent, toneClass) => {
+			const { container } = render(
+				<Alert.Root intent={intent}>
+					<Alert.Content>
+						<Alert.Title>Title</Alert.Title>
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			// Why the class: `Root` emits no `data-intent`, so the tone class is the only
+			// observable of the `intent` variant map. One case per key catches a permuted table.
+			expect(getAlertRoot(container)).toHaveClass(toneClass);
+		});
+	});
+
+	describe("Icon", () => {
+		test("renders a default icon for the intent", () => {
+			const { container } = render(
+				<Alert.Root intent="danger">
+					<Alert.Icon />
+					<Alert.Content>
+						<Alert.Title>Title</Alert.Title>
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			expect(container.querySelector('[data-slot="alert-icon"]')).toBeInTheDocument();
+		});
+
+		test("renders a custom svg in place of the default icon", () => {
+			const { container } = render(
+				<Alert.Root intent="info">
+					<Alert.Icon svg={<svg data-testid="custom-icon" />} />
+					<Alert.Content>
+						<Alert.Title>Title</Alert.Title>
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			expect(container.querySelector('[data-testid="custom-icon"]')).toBeInTheDocument();
+		});
+	});
+
+	describe("DismissIconButton", () => {
+		test("renders a neutral ghost icon button with an accessible label and fires onClick", async () => {
+			const onDismiss = vi.fn<() => void>();
+			render(
+				<Alert.Root intent="warning">
+					<Alert.Content>
+						<Alert.Title>Title</Alert.Title>
+						<Alert.DismissIconButton onClick={onDismiss} />
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			const button = screen.getByRole("button", { name: "Dismiss Alert" });
+			expect(button).toHaveAttribute("data-appearance", "ghost");
+			expect(button).toHaveAttribute("data-intent", "neutral");
+			await userEvent.click(button);
+			expect(onDismiss).toHaveBeenCalledOnce();
+		});
+
+		describe("focus after the dismissal unmounts the alert", () => {
+			test("moves focus to the next tabbable after the alert", async () => {
+				const user = userEvent.setup();
+				render(
+					<>
+						<button type="button">Before</button>
+						<DismissibleAlert />
+						<button type="button">After</button>
+					</>,
+				);
+
+				await user.tab();
+				await user.tab();
+				expect(screen.getByRole("button", { name: "Dismiss Alert" })).toHaveFocus();
+
+				await user.keyboard("{Enter}");
+
+				expect(screen.queryByRole("button", { name: "Dismiss Alert" })).not.toBeInTheDocument();
+				expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+			});
+
+			test("falls back to the previous tabbable when nothing follows the alert", async () => {
+				const user = userEvent.setup();
+				render(
+					<>
+						<button type="button">Before</button>
+						<DismissibleAlert />
+					</>,
+				);
+
+				await user.click(screen.getByRole("button", { name: "Dismiss Alert" }));
+
+				expect(screen.getByRole("button", { name: "Before" })).toHaveFocus();
+			});
+
+			test("skips a following element a Tab press cannot reach", async () => {
+				const user = userEvent.setup();
+				render(
+					<>
+						<button type="button">Before</button>
+						<DismissibleAlert />
+						<button type="button" disabled>
+							Disabled
+						</button>
+						<div tabIndex={-1}>Programmatic only</div>
+						<button type="button">After</button>
+					</>,
+				);
+
+				await user.click(screen.getByRole("button", { name: "Dismiss Alert" }));
+
+				expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+			});
+
+			test("lands on a neighbor that survives when the same unmount removes the nearest one", async () => {
+				function Card() {
+					const [open, setOpen] = useState(true);
+					if (!open) {
+						return null;
+					}
+					return (
+						<section>
+							<Alert.Root intent="info">
+								<Alert.Content>
+									<Alert.Title>Trial ends soon</Alert.Title>
+									<Alert.DismissIconButton onClick={() => setOpen(false)} />
+								</Alert.Content>
+							</Alert.Root>
+							<button type="button">Apply</button>
+						</section>
+					);
+				}
+				const user = userEvent.setup();
+				render(
+					<>
+						<button type="button">Before</button>
+						<Card />
+						<button type="button">After</button>
+					</>,
+				);
+
+				await user.click(screen.getByRole("button", { name: "Dismiss Alert" }));
+
+				expect(screen.queryByRole("button", { name: "Apply" })).not.toBeInTheDocument();
+				expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+			});
+
+			test("skips a neighbor the same commit disables", async () => {
+				// The layout cleanup records the neighbors before React commits the
+				// siblings' attribute updates, so a neighbor recorded as enabled can
+				// be disabled by the time the passive cleanup runs.
+				function Consumer() {
+					const [dismissed, setDismissed] = useState(false);
+					return (
+						<>
+							{!dismissed && (
+								<Alert.Root intent="info">
+									<Alert.Content>
+										<Alert.Title>Trial ends soon</Alert.Title>
+										<Alert.DismissIconButton onClick={() => setDismissed(true)} />
+									</Alert.Content>
+								</Alert.Root>
+							)}
+							<button type="button" disabled={dismissed}>
+								Apply
+							</button>
+							<button type="button">After</button>
+						</>
+					);
+				}
+				const user = userEvent.setup();
+				render(<Consumer />);
+
+				await user.click(screen.getByRole("button", { name: "Dismiss Alert" }));
+
+				expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+				expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+			});
+
+			test("tries the next neighbor when the engine refuses to focus the first", async () => {
+				// An engine without `checkVisibility` can pass a CSS-hidden control
+				// that `focus()` then ignores. The refusal is simulated on a plain
+				// button, because happy-dom has no such gap of its own.
+				const user = userEvent.setup();
+				render(
+					<>
+						<DismissibleAlert />
+						<button type="button">Refuses</button>
+						<button type="button">After</button>
+					</>,
+				);
+				const refusing = screen.getByRole("button", { name: "Refuses" });
+				const refusedFocus = vi.spyOn(refusing, "focus").mockImplementation(() => {});
+
+				await user.click(screen.getByRole("button", { name: "Dismiss Alert" }));
+
+				expect(refusedFocus).toHaveBeenCalledTimes(1);
+				expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+			});
+
+			test("leaves focus alone when the button does not hold it", () => {
+				render(
+					<>
+						<button type="button">Before</button>
+						<DismissibleAlert />
+						<button type="button">After</button>
+					</>,
+				);
+				const before = screen.getByRole("button", { name: "Before" });
+				before.focus();
+
+				// A synthetic click moves no focus, unlike a pointer or keyboard activation.
+				fireEvent.click(screen.getByRole("button", { name: "Dismiss Alert" }));
+
+				expect(screen.queryByRole("button", { name: "Dismiss Alert" })).not.toBeInTheDocument();
+				expect(before).toHaveFocus();
+			});
+
+			test("keeps focus where the consumer's handler put it", async () => {
+				function Consumer() {
+					const [dismissed, setDismissed] = useState(false);
+					const headingRef = useRef<HTMLHeadingElement>(null);
+					return (
+						<>
+							<h2 ref={headingRef} tabIndex={-1}>
+								Settings
+							</h2>
+							{!dismissed && (
+								<Alert.Root intent="info">
+									<Alert.Content>
+										<Alert.Title>Trial ends soon</Alert.Title>
+										<Alert.DismissIconButton
+											onClick={() => {
+												setDismissed(true);
+												headingRef.current?.focus();
+											}}
+										/>
+									</Alert.Content>
+								</Alert.Root>
+							)}
+							<button type="button">After</button>
+						</>
+					);
+				}
+				const user = userEvent.setup();
+				render(<Consumer />);
+
+				await user.click(screen.getByRole("button", { name: "Dismiss Alert" }));
+
+				expect(screen.getByRole("heading", { name: "Settings" })).toHaveFocus();
+			});
+
+			test("keeps focus a consumer layout effect places after the unmount", async () => {
+				function Consumer() {
+					const [dismissed, setDismissed] = useState(false);
+					const statusRef = useRef<HTMLParagraphElement>(null);
+					useLayoutEffect(() => {
+						if (dismissed) {
+							statusRef.current?.focus();
+						}
+					}, [dismissed]);
+					return (
+						<>
+							{!dismissed && (
+								<Alert.Root intent="info">
+									<Alert.Content>
+										<Alert.Title>Trial ends soon</Alert.Title>
+										<Alert.DismissIconButton onClick={() => setDismissed(true)} />
+									</Alert.Content>
+								</Alert.Root>
+							)}
+							<p ref={statusRef} tabIndex={-1}>
+								Alert dismissed
+							</p>
+							<button type="button">After</button>
+						</>
+					);
+				}
+				const user = userEvent.setup();
+				render(<Consumer />);
+
+				await user.click(screen.getByRole("button", { name: "Dismiss Alert" }));
+
+				expect(screen.getByText("Alert dismissed")).toHaveFocus();
+				expect(screen.getByRole("button", { name: "After" })).not.toHaveFocus();
+			});
+
+			test("stays put when the composing context opts out", async () => {
+				// `AlertCenter` projects the button under its own `AlertContextProvider`
+				// and owns focus after a dismissal, so the button must not move it.
+				function Projected() {
+					const [dismissed, setDismissed] = useState(false);
+					if (dismissed) {
+						return null;
+					}
+					return (
+						<AlertContextProvider intent="info" redirectDismissFocus={false}>
+							<div data-slot="alert">
+								<Alert.DismissIconButton onClick={() => setDismissed(true)} />
+							</div>
+						</AlertContextProvider>
+					);
+				}
+				const user = userEvent.setup();
+				render(
+					<>
+						<Projected />
+						<button type="button">After</button>
+					</>,
+				);
+
+				await user.click(screen.getByRole("button", { name: "Dismiss Alert" }));
+
+				expect(screen.queryByRole("button", { name: "Dismiss Alert" })).not.toBeInTheDocument();
+				expect(document.body).toHaveFocus();
+			});
+		});
+	});
+
+	describe("ExpandButton", () => {
+		test("reports the expanded state and names the collapse action", () => {
+			render(
+				<Alert.Root intent="warning">
+					<Alert.Content>
+						<Alert.Title>Usage limit approaching</Alert.Title>
+						<Alert.ExpandButton count={2} expanded />
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			expect(screen.getByRole("button", { name: "Collapse additional alerts" })).toHaveAttribute(
+				"aria-expanded",
+				"true",
+			);
+		});
+
+		test("names the hidden count in the plural", () => {
+			render(
+				<Alert.Root intent="warning">
+					<Alert.Content>
+						<Alert.Title>Usage limit approaching</Alert.Title>
+						<Alert.ExpandButton count={10} expanded={false} />
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			expect(screen.getByRole("button", { name: "Show 10 more alerts" })).toHaveTextContent("+10");
+		});
+
+		test("names one hidden alert in the singular", () => {
+			render(
+				<Alert.Root intent="warning">
+					<Alert.Content>
+						<Alert.Title>Usage limit approaching</Alert.Title>
+						<Alert.ExpandButton count={1} expanded={false} />
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			expect(screen.getByRole("button", { name: "Show 1 more alert" })).toHaveTextContent("+1");
+		});
+
+		test("renders the caret through Button's icon slot, outside the label", () => {
+			const { container } = render(
+				<Alert.Root intent="warning">
+					<Alert.Content>
+						<Alert.Title>Usage limit approaching</Alert.Title>
+						<Alert.ExpandButton count={3} expanded={false} />
+					</Alert.Content>
+				</Alert.Root>,
+			);
+
+			const button = container.querySelector('[data-slot="alert-expand-button"]');
+			const label = button?.querySelector('[data-slot="button-label"]');
+			const caret = button?.querySelector("svg");
+			expect(label).toHaveTextContent("+3");
+			// The caret is the label's sibling, not its descendant, so the button's
+			// `gap` falls between the two and `iconPlacement="end"` orders the caret
+			// last. Passing it as a child puts it inside the label instead.
+			expect(caret?.parentElement).toBe(button);
+			expect(label?.contains(caret ?? null)).toBe(false);
+		});
+
+		test("keeps the caret side tighter than the text side", () => {
+			const { container } = render(
+				<Alert.Root intent="warning">
+					<Alert.Content>
+						<Alert.Title>Usage limit approaching</Alert.Title>
+						<Alert.ExpandButton count={3} expanded={false} />
+					</Alert.Content>
+				</Alert.Root>,
+			);
+
+			// A tailwind-merge override contract. `Button` adds `pe-2` for the icon side
+			// whenever `icon` is set, and a `px-*` shorthand cannot beat that longhand:
+			// both survive the merge, and Tailwind emits `pe-*` last. Asserting the merge
+			// outcome is what catches the caret drifting 2px away from the edge.
+			const button = container.querySelector('[data-slot="alert-expand-button"]');
+			expect(button).toHaveClass("ps-1.5", "pe-1");
+			expect(button).not.toHaveClass("pe-2");
+		});
+
+		test("stamps the marker attribute Root's selectors read on each trailing control", () => {
+			const { container } = render(
+				<Alert.Root intent="warning">
+					<Alert.Content>
+						<Alert.Title>Usage limit approaching</Alert.Title>
+						<Alert.DismissIconButton />
+						<Alert.ExpandButton count={2} expanded={false} />
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			// Why the markers: `Root` reserves room with `has-data-alert-dismiss:` and
+			// `has-data-alert-expand:` selectors, so a renamed marker loses the layout
+			// with every other test green.
+			expect(container.querySelector('[data-slot="alert-dismiss-icon-button"]')).toHaveAttribute(
+				"data-alert-dismiss",
+			);
+			expect(container.querySelector('[data-slot="alert-expand-button"]')).toHaveAttribute(
+				"data-alert-expand",
+			);
+		});
+	});
+
+	describe("--alert-control-* variables", () => {
+		test("Root derives the --alert-control-* variables from its intent", () => {
+			const { container } = render(
+				<Alert.Root intent="warning">
+					<Alert.Content>
+						<Alert.Title>Usage limit approaching</Alert.Title>
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			const root = container.querySelector<HTMLElement>('[data-slot="alert"]');
+			expect(root?.style.getPropertyValue("--alert-control-color")).toBe(
+				"var(--color-warning-700)",
+			);
+			expect(root?.style.getPropertyValue("--alert-control-hover-color")).toBe(
+				"var(--color-warning-800)",
+			);
+			expect(root?.style.getPropertyValue("--alert-control-hover-bg")).toBe(
+				"color-mix(in oklab, var(--color-warning-500) 10%, transparent)",
+			);
+		});
+
+		test("a consumer style overrides one --alert-control-* default and keeps the rest", () => {
+			const { container } = render(
+				<Alert.Root
+					intent="warning"
+					style={$cssProperties({ "--alert-control-color": "var(--color-neutral-700)" })}
+				>
+					<Alert.Content>
+						<Alert.Title>Usage limit approaching</Alert.Title>
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			const root = container.querySelector<HTMLElement>('[data-slot="alert"]');
+			expect(root?.style.getPropertyValue("--alert-control-color")).toBe(
+				"var(--color-neutral-700)",
+			);
+			expect(root?.style.getPropertyValue("--alert-control-hover-color")).toBe(
+				"var(--color-warning-800)",
+			);
+		});
+	});
+
+	describe("appearance", () => {
+		test(`appearance="banner" removes the rounded corners`, () => {
+			const { container } = render(
+				<Alert.Root intent="info" appearance="banner">
+					<Alert.Content>
+						<Alert.Title>Title</Alert.Title>
+					</Alert.Content>
+				</Alert.Root>,
+			);
+			// Why the class: `Root` emits no `data-appearance`, so `rounded-none` is the
+			// only observable of the banner appearance.
+			expect(getAlertRoot(container)).toHaveClass("rounded-none");
+		});
+	});
+});
+
+/**
+ * Type-level contracts, owned by `pnpm typecheck` and not by a `test()`. A
+ * `@ts-expect-error` that compiles is the assertion; a runtime `expect` beside
+ * it reads as coverage the vitest run does not have.
+ *
+ * `intent` is required on `Alert.Root`, so no alert inherits a tone it did not
+ * state. `Alert.ExpandButton` omits `asChild`: it always renders two children,
+ * which would trip `Button`'s single-child invariant at runtime.
+ */
+export function typeLevelContracts() {
+	return (
+		<>
+			{/* @ts-expect-error -- intent is required on Alert.Root */}
+			<Alert.Root>
+				<Alert.Content>
+					<Alert.Title>Title</Alert.Title>
+				</Alert.Content>
+			</Alert.Root>
+			<Alert.Root intent="warning">
+				<Alert.Content>
+					<Alert.Title>Usage limit approaching</Alert.Title>
+					{/* @ts-expect-error -- asChild is omitted: ExpandButton renders multiple children */}
+					<Alert.ExpandButton count={2} expanded={false} asChild />
+				</Alert.Content>
+			</Alert.Root>
+		</>
+	);
+}

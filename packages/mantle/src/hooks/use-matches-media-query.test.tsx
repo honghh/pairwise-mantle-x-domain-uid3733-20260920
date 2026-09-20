@@ -1,0 +1,86 @@
+import { act, renderHook } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
+import { describe, expect, test } from "vitest";
+import { mockMatchMedia } from "../test-utils/mock-match-media.js";
+import { useMatchesMediaQuery } from "./use-matches-media-query.js";
+
+const query = "(min-width: 48rem)";
+
+function Probe() {
+	const matches = useMatchesMediaQuery(query);
+	return <span>{String(matches)}</span>;
+}
+
+describe("useMatchesMediaQuery", () => {
+	test("re-renders when the query result changes", () => {
+		const media = mockMatchMedia({ [query]: false });
+
+		const { result } = renderHook(() => useMatchesMediaQuery(query));
+		expect(result.current).toBe(false);
+
+		act(() => {
+			media.setMatches(query, true);
+		});
+		expect(result.current).toBe(true);
+
+		act(() => {
+			media.setMatches(query, false);
+		});
+		expect(result.current).toBe(false);
+	});
+
+	test("removes its change listener on unmount", () => {
+		const media = mockMatchMedia({ [query]: false });
+
+		const { unmount } = renderHook(() => useMatchesMediaQuery(query));
+		expect(media.listenerCount(query)).toBe(1);
+
+		unmount();
+
+		expect(media.listenerCount(query)).toBe(0);
+	});
+
+	test("resubscribes when the query changes", () => {
+		const narrow = "(max-width: 30rem)";
+		const media = mockMatchMedia({ [query]: true, [narrow]: false });
+
+		const { result, rerender } = renderHook(
+			({ activeQuery }) => useMatchesMediaQuery(activeQuery),
+			{ initialProps: { activeQuery: query } },
+		);
+		expect(result.current).toBe(true);
+
+		rerender({ activeQuery: narrow });
+
+		expect(result.current).toBe(false);
+		expect(media.listenerCount(query)).toBe(0);
+		expect(media.listenerCount(narrow)).toBe(1);
+
+		act(() => {
+			media.setMatches(narrow, true);
+		});
+		expect(result.current).toBe(true);
+	});
+
+	test("constructs one MediaQueryList per instance across re-renders", () => {
+		mockMatchMedia({ [query]: false });
+
+		const { rerender } = renderHook(() => useMatchesMediaQuery(query));
+		for (let renderCount = 0; renderCount < 5; renderCount += 1) {
+			rerender();
+		}
+
+		// The mount render constructs the list once; every later `getSnapshot` and
+		// the `subscribe` reuse it. A `getSnapshot` that calls `window.matchMedia`
+		// directly constructs one per call, at least six here.
+		expect(window.matchMedia).toHaveBeenCalledTimes(1);
+	});
+
+	test("returns false during server rendering even when the client query matches", () => {
+		mockMatchMedia({ [query]: true });
+
+		const html = renderToString(<Probe />);
+
+		expect(html).toContain("false");
+	});
+});

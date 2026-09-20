@@ -1,0 +1,56 @@
+---
+title: Typography
+description: Typography tokens for consistency and readability in the mantle design system
+---
+
+import { TypographyColors } from "~/features/typography-demo";
+
+# Typography
+
+Mantle ships typography tokens for consistency and readability.
+
+## Scale
+
+Mantle ships a general type scale for the headers throughout our products. Text styling is independent of the actual markup, so a Heading 1 can be styled as a Heading 2 or Heading 5 as appropriate.
+
+Headings do not set a font family. They inherit the body font, so keep `font-sans`, `font-family`, and
+`font-mono` off them.
+
+<p className="mt-4 text-5xl font-medium">Heading 1</p>
+<p className="mt-4 text-3xl font-medium">Heading 2</p>
+<p className="mt-4 text-2xl font-medium">Heading 3</p>
+<p className="mt-4 text-xl font-medium">Heading 4</p>
+<p className="mt-4 text-base font-medium">Heading 5</p>
+<p className="mt-4 text-xs font-medium uppercase tracking-widest">Heading 6</p>
+
+| Level     | Class       | Size        | Weight        | Additional                  |
+| --------- | ----------- | ----------- | ------------- | --------------------------- |
+| Heading 1 | `text-5xl`  | `text-5xl`  | `font-medium` | `-`                         |
+| Heading 2 | `text-3xl`  | `text-3xl`  | `font-medium` | `-`                         |
+| Heading 3 | `text-2xl`  | `text-2xl`  | `font-medium` | `-`                         |
+| Heading 4 | `text-xl`   | `text-xl`   | `font-medium` | `-`                         |
+| Heading 5 | `text-base` | `text-base` | `font-medium` | `-`                         |
+| Heading 6 | `text-xs`   | `text-xs`   | `font-medium` | `uppercase tracking-widest` |
+
+## Colors
+
+When possible, render text with the following tokens. They add hierarchy outside of font size, and keep type the correct color across themes.
+
+<TypographyColors />
+
+| Token       | Class               | Description                          |
+| ----------- | ------------------- | ------------------------------------ |
+| Strong      | `.text-strong`      | High emphasis text, primary content. |
+| Body        | `.text-body`        | Default body text.                   |
+| Muted       | `.text-muted`       | De-emphasized, secondary text.       |
+| Placeholder | `.text-placeholder` | Lowest emphasis, placeholder text.   |
+
+## Fonts
+
+Mantle specifies Roobert as the default font for UI and headings. We also use JetBrains Mono as a monospace typeface, and Family for longform prose.
+
+| Class         | Font Family                                                                                      | Description                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `font-sans`   | `"Roobert"`, `ui-sans-serif`, `system-ui`, `sans-serif`                                          | The default font for rendering UI and headings. Also applied by `default`.        |
+| `font-family` | `"Family"`, `"Georgia"`, `serif`                                                                 | Best when used in longform writing like prose documentation. Not for headings.    |
+| `font-mono`   | `"JetBrains Mono"`, `ui-monospace`, `SFMono-Regular`, `Menlo`, `Monaco`, `Consolas`, `monospace` | Used to render code and tokens. Adjust the size a step down in most applications. |

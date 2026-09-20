@@ -1,0 +1,12 @@
+/**
+ * @ngrok/mantle/source-all.css
+ *
+ * Import this alongside mantle.css to tell Tailwind to scan ALL mantle component
+ * dist files for utility class names. This is the supported way to register
+ * mantle's Tailwind sources.
+ *
+ * Usage:
+ *   @import "@ngrok/mantle/mantle.css";
+ *   @import "@ngrok/mantle/source-all.css";
+ */
+@source "../dist";

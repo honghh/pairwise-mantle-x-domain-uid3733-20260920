@@ -1,0 +1,22 @@
+{
+  "extends": "@cfg/tsconfig/tsconfig.web-app.json",
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mdx", ".react-router/types/**/*"],
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "~/*": ["./app/*"]
+    },
+    "types": [
+      "@react-router/node",
+      "vite/client",
+      "@cfg/tsconfig/css.d.ts",
+      "@cfg/tsconfig/reset.d.ts",
+      "@cfg/tsconfig/svg.d.ts"
+    ],
+    "customConditions": ["@ngrok/src-live-types"],
+    "rootDirs": [".", "./.react-router/types"]
+  },
+  "mdx": {
+    "checkMdx": true
+  }
+}

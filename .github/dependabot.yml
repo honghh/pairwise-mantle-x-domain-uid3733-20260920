@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    groups:
+      react-router:
+        patterns:
+          - "react-router"
+          - "react-router-*"
+          - "@react-router/*"
+      tailwindcss:
+        patterns:
+          - "tailwindcss"
+          - "tailwind-*"
+          - "@tailwindcss/*"
+      playwright:
+        patterns:
+          - "playwright"
+          - "playwright-*"
+          - "@playwright/*"
+          - "@vitest/browser-playwright"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"

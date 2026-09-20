@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@import "@ngrok/mantle/mantle.css";
+@import "@ngrok/mantle/source-all.css";
+
+@source "../../../packages/mantle/src";
+
+@theme {
+	--max-width-prose: 68ch;
+}

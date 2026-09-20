@@ -1,0 +1,314 @@
+import type { ComponentProps } from "react";
+import type { WithAsChild } from "../../types/index.js";
+import { cx } from "../../utils/cx/cx.js";
+import type { WithDataSlot } from "../../utils/data-slot.js";
+import { joinDataSlot } from "../../utils/data-slot.js";
+import { Slot } from "../slot/index.js";
+
+/**
+ * Props for `DescriptionList.Root`.
+ */
+type DescriptionListProps = ComponentProps<"dl"> & WithAsChild & WithDataSlot;
+
+/**
+ * A semantically correct description list built on the HTML `<dl>` element.
+ * Renders a list of label/value pairs with alternating row backgrounds,
+ * commonly used in detail views to display metadata about a resource.
+ *
+ * | Data Attribute | Value | Description |
+ * | --- | --- | --- |
+ * | `data-slot` | `"description-list"` | The `<dl>`. A consumer `data-slot` joins in front of it. |
+ *
+ * @see https://mantle.ngrok.com/components/data-display/description-list#descriptionlistroot
+ * @see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dl
+ *
+ * @example
+ * ```tsx
+ * <DescriptionList.Root>
+ *   <DescriptionList.Item>
+ *     <DescriptionList.Label>Name</DescriptionList.Label>
+ *     <DescriptionList.Value>my-api-key</DescriptionList.Value>
+ *   </DescriptionList.Item>
+ * </DescriptionList.Root>
+ * ```
+ */
+const Root = ({
+	asChild = false,
+	className,
+	children,
+	"data-slot": dataSlot,
+	ref,
+	...rest
+}: DescriptionListProps) => {
+	const Component = asChild ? Slot : "dl";
+
+	return (
+		<Component
+			ref={ref}
+			data-slot={joinDataSlot(dataSlot, "description-list")}
+			className={cx(
+				"relative scrollbar overflow-x-auto overscroll-x-none rounded-lg border border-card grid grid-cols-[auto_1fr] gap-x-4 [&>*:nth-child(odd)]:bg-neutral-500/5 p-1",
+				className,
+			)}
+			{...rest}
+		>
+			{children}
+		</Component>
+	);
+};
+
+/**
+ * Props for `DescriptionList.Item`.
+ */
+type DescriptionListItemProps = ComponentProps<"div"> & WithAsChild;
+
+/**
+ * A wrapper that groups a `DescriptionList.Label` and `DescriptionList.Value`
+ * pair. Renders as a `<div>` inside the `<dl>` with a subgrid layout that
+ * inherits column tracks from the root.
+ *
+ * | Data Attribute | Value | Description |
+ * | --- | --- | --- |
+ * | `data-slot` | `"description-list-item"` | The row wrapper. |
+ *
+ * @see https://mantle.ngrok.com/components/data-display/description-list#descriptionlistitem
+ *
+ * @example
+ * ```tsx
+ * <DescriptionList.Root>
+ *   <DescriptionList.Item>
+ *     <DescriptionList.Label>Name</DescriptionList.Label>
+ *     <DescriptionList.Value>my-api-key</DescriptionList.Value>
+ *   </DescriptionList.Item>
+ * </DescriptionList.Root>
+ * ```
+ */
+const Item = ({ asChild = false, className, children, ref, ...rest }: DescriptionListItemProps) => {
+	const Component = asChild ? Slot : "div";
+
+	return (
+		<Component
+			ref={ref}
+			data-slot="description-list-item"
+			className={cx("rounded-sm col-span-full grid grid-cols-subgrid items-center", className)}
+			{...rest}
+		>
+			{children}
+		</Component>
+	);
+};
+
+/**
+ * Props for `DescriptionList.Label`.
+ */
+type DescriptionListLabelProps = ComponentProps<"dt"> & WithAsChild;
+
+/**
+ * The label for a description list item. Renders as a `<dt>` element.
+ *
+ * | Data Attribute | Value | Description |
+ * | --- | --- | --- |
+ * | `data-slot` | `"description-list-label"` | The `<dt>`. |
+ *
+ * @see https://mantle.ngrok.com/components/data-display/description-list#descriptionlistlabel
+ *
+ * @example
+ * ```tsx
+ * <DescriptionList.Root>
+ *   <DescriptionList.Item>
+ *     <DescriptionList.Label>Name</DescriptionList.Label>
+ *     <DescriptionList.Value>my-api-key</DescriptionList.Value>
+ *   </DescriptionList.Item>
+ * </DescriptionList.Root>
+ * ```
+ */
+const Label = ({
+	asChild = false,
+	className,
+	children,
+	ref,
+	...rest
+}: DescriptionListLabelProps) => {
+	const Component = asChild ? Slot : "dt";
+
+	return (
+		<Component
+			ref={ref}
+			data-slot="description-list-label"
+			className={cx("text-muted text-sm font-sans font-medium min-w-36 p-2", className)}
+			{...rest}
+		>
+			{children}
+		</Component>
+	);
+};
+
+/**
+ * Props for `DescriptionList.Value`.
+ */
+type DescriptionListValueProps = ComponentProps<"dd"> & WithAsChild;
+
+/**
+ * The value for a description list item. Renders as a `<dd>` element.
+ * Compose any content inside: the component is intentionally "dumb" and
+ * imposes no layout on its children.
+ *
+ * | Data Attribute | Value | Description |
+ * | --- | --- | --- |
+ * | `data-slot` | `"description-list-value"` | The `<dd>`. |
+ *
+ * @see https://mantle.ngrok.com/components/data-display/description-list#descriptionlistvalue
+ *
+ * @example
+ * ```tsx
+ * <DescriptionList.Root>
+ *   <DescriptionList.Item>
+ *     <DescriptionList.Label>Name</DescriptionList.Label>
+ *     <DescriptionList.Value>my-api-key</DescriptionList.Value>
+ *   </DescriptionList.Item>
+ * </DescriptionList.Root>
+ * ```
+ */
+const Value = ({
+	asChild = false,
+	className,
+	children,
+	ref,
+	...rest
+}: DescriptionListValueProps) => {
+	const Component = asChild ? Slot : "dd";
+
+	return (
+		<Component
+			ref={ref}
+			data-slot="description-list-value"
+			className={cx("text-body font-mono text-mono py-2 px-3", className)}
+			{...rest}
+		>
+			{children}
+		</Component>
+	);
+};
+
+/**
+ * A semantically correct description list built on the HTML `<dl>` element.
+ * Renders a list of label/value pairs with alternating row backgrounds,
+ * commonly used in detail views to display metadata about a resource
+ * (e.g., API keys, secrets, domains).
+ *
+ * Compose with `DescriptionList.Item`, `DescriptionList.Label`, and
+ * `DescriptionList.Value` as direct children.
+ *
+ * @see https://mantle.ngrok.com/components/data-display/description-list
+ * @see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dl
+ *
+ * @example
+ * Composition:
+ * ```
+ * DescriptionList.Root
+ * └── DescriptionList.Item
+ *     ├── DescriptionList.Label
+ *     └── DescriptionList.Value
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <DescriptionList.Root>
+ *   <DescriptionList.Item>
+ *     <DescriptionList.Label>Name</DescriptionList.Label>
+ *     <DescriptionList.Value>my-api-key</DescriptionList.Value>
+ *   </DescriptionList.Item>
+ *   <DescriptionList.Item>
+ *     <DescriptionList.Label>ID</DescriptionList.Label>
+ *     <DescriptionList.Value>
+ *       aigk_2fKm9x8Hn3QpYT7zKlR0vW5
+ *     </DescriptionList.Value>
+ *   </DescriptionList.Item>
+ * </DescriptionList.Root>
+ * ```
+ */
+const DescriptionList = {
+	/**
+	 * A semantically correct description list built on the HTML `<dl>` element.
+	 * Renders a list of label/value pairs with alternating row backgrounds,
+	 * commonly used in detail views to display metadata about a resource.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/description-list#descriptionlistroot
+	 *
+	 * @example
+	 * ```tsx
+	 * <DescriptionList.Root>
+	 *   <DescriptionList.Item>
+	 *     <DescriptionList.Label>Name</DescriptionList.Label>
+	 *     <DescriptionList.Value>my-api-key</DescriptionList.Value>
+	 *   </DescriptionList.Item>
+	 * </DescriptionList.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * A wrapper that groups a `DescriptionList.Label` and `DescriptionList.Value`
+	 * pair. Renders as a `<div>` inside the `<dl>` with a subgrid layout that
+	 * inherits column tracks from the root.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/description-list#descriptionlistitem
+	 *
+	 * @example
+	 * ```tsx
+	 * <DescriptionList.Root>
+	 *   <DescriptionList.Item>
+	 *     <DescriptionList.Label>Name</DescriptionList.Label>
+	 *     <DescriptionList.Value>my-api-key</DescriptionList.Value>
+	 *   </DescriptionList.Item>
+	 * </DescriptionList.Root>
+	 * ```
+	 */
+	Item,
+	/**
+	 * The label for a description list item. Renders as a `<dt>` element.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/description-list#descriptionlistlabel
+	 *
+	 * @example
+	 * ```tsx
+	 * <DescriptionList.Root>
+	 *   <DescriptionList.Item>
+	 *     <DescriptionList.Label>Name</DescriptionList.Label>
+	 *     <DescriptionList.Value>my-api-key</DescriptionList.Value>
+	 *   </DescriptionList.Item>
+	 * </DescriptionList.Root>
+	 * ```
+	 */
+	Label,
+	/**
+	 * The value for a description list item. Renders as a `<dd>` element.
+	 * Compose any content inside: the component is intentionally "dumb" and
+	 * imposes no layout on its children.
+	 *
+	 * @see https://mantle.ngrok.com/components/data-display/description-list#descriptionlistvalue
+	 *
+	 * @example
+	 * ```tsx
+	 * <DescriptionList.Root>
+	 *   <DescriptionList.Item>
+	 *     <DescriptionList.Label>Name</DescriptionList.Label>
+	 *     <DescriptionList.Value>my-api-key</DescriptionList.Value>
+	 *   </DescriptionList.Item>
+	 * </DescriptionList.Root>
+	 * ```
+	 */
+	Value,
+} as const;
+
+export {
+	//,
+	DescriptionList,
+};
+
+export type {
+	//,
+	DescriptionListItemProps,
+	DescriptionListLabelProps,
+	DescriptionListProps,
+	DescriptionListValueProps,
+};

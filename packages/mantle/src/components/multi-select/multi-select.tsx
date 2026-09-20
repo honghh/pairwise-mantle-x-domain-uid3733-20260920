@@ -1,0 +1,1752 @@
+"use client";
+
+import {
+	Combobox as AriakitCombobox,
+	ComboboxGroup as AriakitComboboxGroup,
+	ComboboxGroupLabel as AriakitComboboxGroupLabel,
+	ComboboxItem as AriakitComboboxItem,
+	ComboboxItemCheck as AriakitComboboxItemCheck,
+	ComboboxPopover as AriakitComboboxPopover,
+	ComboboxProvider as AriakitComboboxProvider,
+	useComboboxContext as useAriakitComboboxContext,
+} from "@ariakit/react/combobox";
+import type {
+	ComboboxGroupLabelProps as AriakitComboboxGroupLabelProps,
+	ComboboxGroupProps as AriakitComboboxGroupProps,
+	ComboboxItemProps as AriakitComboboxItemProps,
+	ComboboxPopoverProps as AriakitComboboxPopoverProps,
+	ComboboxProps as AriakitComboboxProps,
+	ComboboxProviderProps as AriakitComboboxProviderProps,
+} from "@ariakit/react/combobox";
+import { useStoreState as useAriakitStoreState } from "@ariakit/react/store";
+import { CheckIcon } from "@phosphor-icons/react/Check";
+import { LockIcon } from "@phosphor-icons/react/Lock";
+import { XIcon } from "@phosphor-icons/react/X";
+import type {
+	ComponentProps,
+	Dispatch,
+	KeyboardEvent,
+	PropsWithChildren,
+	ReactNode,
+	RefObject,
+	SetStateAction,
+} from "react";
+import {
+	cloneElement,
+	createContext,
+	isValidElement,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import type { WithAsChild } from "../../types/as-child.js";
+import { useIsomorphicLayoutEffect } from "../../hooks/use-isomorphic-layout-effect.js";
+import { getPrefersReducedMotion } from "../../hooks/use-prefers-reduced-motion.js";
+import { composeRefs } from "../../utils/compose-refs/compose-refs.js";
+import { cx } from "../../utils/cx/cx.js";
+import { useLayerContainer } from "../../utils/layer-container/layer-container.js";
+import { FieldControlContext } from "../field/field-context.js";
+import { parseValidation, useFieldValidation } from "../field/validation.js";
+import type { WithValidation } from "../field/validation.js";
+import { Icon } from "../icon/icon.js";
+import { Separator } from "../separator/separator.js";
+import { Slot } from "../slot/index.js";
+import invariant from "tiny-invariant";
+
+/** Type guard to safely narrow Ariakit store state to `string[]` without `as` assertions. */
+const isStringArray = (value: unknown): value is string[] =>
+	Array.isArray(value) && value.every((item) => typeof item === "string");
+
+/** Stable empty array used as a fallback for `selectedValues` to avoid creating new arrays on every render. */
+const EMPTY_ARRAY: string[] = [];
+
+/** Whether two arrays hold the same items in the same order. */
+const haveSameItems = (first: readonly string[], second: readonly string[]): boolean =>
+	first.length === second.length && first.every((item, index) => item === second[index]);
+
+const TriggerRefContext = createContext<RefObject<HTMLDivElement | null>>({ current: null });
+
+/**
+ * The `lockedValues` that `TagValues` publishes, read by `Item` to keep a locked value
+ * selected when the user clicks it in the popover. `Root` owns the state, so a change
+ * re-renders every `Item`, even one whose element a memoized consumer keeps across renders.
+ */
+const LockedValuesContext = createContext<string[]>(EMPTY_ARRAY);
+
+/**
+ * Bridges `TagValues` with `Input` and `Item`. The three render in other branches of the
+ * tree, so none of them can provide the context: it must come from the shared ancestor
+ * (`Root`). One part writes each member, and another reads it:
+ *   - `onInputKeyDownRef`: `TagValues` writes it in a layout effect, `Input` calls it on keydown
+ *   - `inputRef`: `Input` registers its DOM node, `TagValues` reads it to focus the input
+ *   - `setLockedValues`: `TagValues` publishes its `lockedValues` prop into `LockedValuesContext`
+ */
+type TagBridgeContextValue = {
+	onInputKeyDownRef: { current: ((event: KeyboardEvent<HTMLInputElement>) => void) | undefined };
+	inputRef: { current: HTMLInputElement | null };
+	setLockedValues: Dispatch<SetStateAction<string[]>>;
+};
+
+const TagBridgeContext = createContext<TagBridgeContextValue>({
+	onInputKeyDownRef: { current: undefined },
+	inputRef: { current: null },
+	setLockedValues: () => {},
+});
+
+type MultiSelectProps = AriakitComboboxProviderProps<string[]>;
+
+/**
+ * Root component for a multi-select combobox. Owns the selected values and the
+ * typeahead query.
+ *
+ * Use MultiSelect when the user can choose multiple values from a list, with selected
+ * items rendered as removable tags/chips. For single selection, use Combobox (with search)
+ * or Select (without).
+ *
+ * When composing with `Field.Item`, wrap `MultiSelect.Root` in `Field.Control`.
+ * `Field.Control` flows the generated `id`, `aria-describedby`,
+ * `aria-errormessage`, and `aria-invalid` through to the focusable
+ * `MultiSelect.Input` via `FieldControlContext`. The field `name` flows through
+ * too, but lands on one hidden input per selected value rather than on the
+ * combobox input — so a native form submit sends the selected values, not the
+ * typeahead filter text.
+ *
+ * `MultiSelect.Content` renders at Tailwind `z-50` and portals into the closest
+ * `data-mantle-modal-content` element — an enclosing overlay's content — else
+ * the nearest overlay's positioner, else `document.body`. Inside an overlay it
+ * paints above the content that contains
+ * it. Outside one, an open overlay (`z-60`) covers it.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectroot
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *     <MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const Root = ({ children, defaultSelectedValue = EMPTY_ARRAY, ...props }: MultiSelectProps) => {
+	const triggerRef = useRef<HTMLDivElement | null>(null);
+	const onInputKeyDownRef = useRef<((event: KeyboardEvent<HTMLInputElement>) => void) | undefined>(
+		undefined,
+	);
+	const inputRef = useRef<HTMLInputElement | null>(null);
+	const [lockedValues, setLockedValues] = useState<string[]>(EMPTY_ARRAY);
+	const tagBridge = useMemo(() => ({ onInputKeyDownRef, inputRef, setLockedValues }), []);
+
+	return (
+		<TriggerRefContext.Provider value={triggerRef}>
+			<TagBridgeContext.Provider value={tagBridge}>
+				<LockedValuesContext.Provider value={lockedValues}>
+					<AriakitComboboxProvider<string[]> defaultSelectedValue={defaultSelectedValue} {...props}>
+						{children}
+					</AriakitComboboxProvider>
+				</LockedValuesContext.Provider>
+			</TagBridgeContext.Provider>
+		</TriggerRefContext.Provider>
+	);
+};
+
+type MultiSelectTriggerProps = ComponentProps<"div"> & WithValidation;
+
+/**
+ * The trigger container for the multi-select. Wraps the input and selected
+ * value tags in a styled container that looks like a form input. It is
+ * `role="presentation"`: the `MultiSelect.Input` combobox and the
+ * `MultiSelect.TagValues` list carry the semantics, and the input's label
+ * (`Field.Label` or `aria-label`) names the whole control.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselecttrigger
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const Trigger = ({
+	"aria-invalid": _ariaInvalid,
+	className,
+	children,
+	onKeyDown,
+	onMouseDown,
+	ref,
+	validation: _validation,
+	...props
+}: MultiSelectTriggerProps) => {
+	const triggerRef = useContext(TriggerRefContext);
+	const { inputRef } = useContext(TagBridgeContext);
+	const store = useAriakitComboboxContext();
+	const fieldValidation = useFieldValidation();
+	const { validation } = parseValidation({
+		"aria-invalid": _ariaInvalid,
+		validation: _validation ?? fieldValidation,
+	});
+
+	return (
+		<div
+			// Why presentation: the handlers below only forward focus to the input;
+			// the container itself is not a control, and the input and the tag list
+			// carry the semantics.
+			role="presentation"
+			data-slot="multi-select-trigger"
+			className={cx(
+				"cursor-text select-none font-sans text-sm",
+				"border-form bg-form text-strong flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border px-3 py-1 has-[[data-slot=multi-select-tag]]:px-1",
+				"has-focus:outline-hidden has-focus-within:ring-4 has-aria-expanded:ring-4",
+				"has-focus-within:border-accent-600 has-focus-within:ring-focus-accent has-aria-expanded:border-accent-600 has-aria-expanded:ring-focus-accent",
+				"data-validation-success:border-success-600 data-validation-success:has-focus-within:border-success-600 data-validation-success:has-focus-within:ring-focus-success data-validation-success:has-aria-expanded:border-success-600 data-validation-success:has-aria-expanded:ring-focus-success",
+				"data-validation-warning:border-warning-600 data-validation-warning:has-focus-within:border-warning-600 data-validation-warning:has-focus-within:ring-focus-warning data-validation-warning:has-aria-expanded:border-warning-600 data-validation-warning:has-aria-expanded:ring-focus-warning",
+				"data-validation-error:border-danger-600 data-validation-error:has-focus-within:border-danger-600 data-validation-error:has-focus-within:ring-focus-danger data-validation-error:has-aria-expanded:border-danger-600 data-validation-error:has-aria-expanded:ring-focus-danger",
+				className,
+			)}
+			data-validation={validation || undefined}
+			onKeyDown={(event) => {
+				if (event.key === "Escape" && store?.getState().open) {
+					event.preventDefault();
+					store.hide();
+				}
+				onKeyDown?.(event);
+			}}
+			onMouseDown={(event) => {
+				// When clicking on non-interactive areas (padding, flex gaps between tags), prevent the
+				// default mousedown behavior (which would cause text selection) and explicitly focus the
+				// input. Clicks on buttons, the input itself, or tag spans are handled by those elements.
+				if (
+					event.target instanceof HTMLElement &&
+					!event.target.closest("button, input, [data-slot='multi-select-tag']")
+				) {
+					event.preventDefault();
+					inputRef.current?.focus();
+				}
+				onMouseDown?.(event);
+			}}
+			ref={composeRefs(triggerRef, ref)}
+			{...props}
+		>
+			{children}
+		</div>
+	);
+};
+
+type TagProps = Omit<ComponentProps<"span">, "children"> & {
+	/**
+	 * The value to display in the tag label.
+	 */
+	value: string;
+	/**
+	 * Called when the remove button is clicked. `MultiSelect.TagValues` passes
+	 * one through its render props that removes the value from the selection.
+	 */
+	onRemove?: () => void;
+	/**
+	 * When true, the tag cannot be removed. The remove button is disabled and
+	 * Delete/Backspace key presses are ignored while the tag is focused.
+	 */
+	locked?: boolean;
+};
+
+/**
+ * The default tag rendered inside `MultiSelect.TagValues` for each selected value.
+ * Displays the value label with a remove button. Renders a `role="listitem"`
+ * inside the `role="list"` that `MultiSelect.TagValues` renders, and marks
+ * itself `data-active` while it has focus.
+ *
+ * Arrow-key navigation and Backspace/Delete removal come from the
+ * `MultiSelect.TagValues` render props; spread them onto the tag to get them.
+ * On its own, `Tag` only blocks Backspace and Delete on a locked tag.
+ *
+ * Use this when building a custom `TagValues`-like component and you want the
+ * default tag chrome with consistent styling.
+ *
+ * | Data Attribute | Value | Description |
+ * | --- | --- | --- |
+ * | `data-active` | present while focused | The tag that keyboard navigation is on. |
+ * | `data-locked` | present when `locked` | The tag cannot be removed. |
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselecttag
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues>
+ *       {(props) => <MultiSelect.Tag key={props.value} {...props} />}
+ *     </MultiSelect.TagValues>
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const Tag = ({
+	className,
+	value,
+	onRemove,
+	locked = false,
+	onBlur,
+	onFocus,
+	onKeyDown,
+	ref,
+	...props
+}: TagProps) => {
+	const internalRef = useRef<HTMLSpanElement | null>(null);
+	// Why local state: the tag list has no listbox, so `aria-selected` is not
+	// valid here, and `aria-current` names a current item, not focus. DOM focus
+	// exposes the active tag; `data-active` drives its styling.
+	const [isActive, setIsActive] = useState(false);
+
+	return (
+		<span
+			ref={composeRefs(internalRef, ref)}
+			role="listitem"
+			tabIndex={-1}
+			data-slot="multi-select-tag"
+			data-active={isActive || undefined}
+			data-locked={locked || undefined}
+			className={cx(
+				"cursor-default bg-neutral-500/10 border border-neutral-500/20 rounded-xs text-strong inline-flex items-center gap-1 pl-2 pr-0.5 py-0.5 text-sm font-normal",
+				"focus-visible:outline-hidden focus-visible:border-accent-600/50 focus-visible:ring-3 focus-visible:ring-focus-accent",
+				className,
+			)}
+			onBlur={(event) => {
+				setIsActive(false);
+				onBlur?.(event);
+			}}
+			onFocus={(event) => {
+				setIsActive(true);
+				onFocus?.(event);
+			}}
+			onKeyDown={(event) => {
+				if (locked && (event.key === "Backspace" || event.key === "Delete")) {
+					event.preventDefault();
+					shakeElement(event.currentTarget);
+					return;
+				}
+				onKeyDown?.(event);
+			}}
+			{...props}
+		>
+			{value}
+			<button
+				type="button"
+				aria-label={`Remove ${value}`}
+				tabIndex={-1}
+				aria-disabled={locked || undefined}
+				className={cx(
+					"cursor-pointer text-strong/40 hover:bg-neutral-500/15 hover:text-strong rounded-xs p-0.5",
+					"aria-disabled:cursor-default aria-disabled:hover:bg-transparent aria-disabled:hover:text-strong/40",
+				)}
+				onClick={(event) => {
+					// Prevent the click from bubbling to the trigger, which would reopen or refocus the combobox
+					event.stopPropagation();
+					if (locked) {
+						// Shake the tag to signal that removal is blocked
+						const tagElement = internalRef.current;
+						if (tagElement) {
+							shakeElement(tagElement);
+						}
+						return;
+					}
+					onRemove?.();
+				}}
+				onMouseDown={(event) => {
+					// Prevent the input from losing focus on click, which would close the popover before the remove fires
+					event.preventDefault();
+				}}
+			>
+				<Icon svg={locked ? <LockIcon /> : <XIcon weight="bold" />} className="size-4" />
+			</button>
+		</span>
+	);
+};
+
+/**
+ * Props passed to the children render function of `MultiSelect.TagValues`.
+ * Spread these onto `MultiSelect.Tag` (or your own tag component) to
+ * get the value, remove handler, locked state, and ref-based keyboard-nav
+ * registration all wired up automatically.
+ *
+ * Pre-wired handlers included:
+ * - `onKeyDown` — arrow-key nav between tags, Backspace/Delete to remove
+ * - `onClick` — focuses the tag and opens the popover, or keeps it open
+ */
+type TagRenderProps = TagProps & {
+	/** Ref callback — forward this to the tag element to enable keyboard navigation between tags. */
+	ref: (node: HTMLSpanElement | null) => void;
+};
+
+type TagRendererProps = TagRenderProps & {
+	/** The `TagValues` render function. */
+	render: (props: TagRenderProps) => ReactNode;
+};
+
+/**
+ * Calls the `TagValues` render function from a child component, so the ref callback and the
+ * handlers reach it as props. Why not a call inside `TagValues`: those closures read refs. A
+ * function that receives them during render could call them during render, so the React
+ * Compiler skips `TagValues` while the call is there.
+ */
+const TagRenderer = ({ render, ...props }: TagRendererProps) => render(props);
+
+type MultiSelectTagValuesProps = {
+	/**
+	 * The accessible name of the tag list.
+	 *
+	 * @default "Selected values"
+	 */
+	"aria-label"?: string;
+	/**
+	 * Values that cannot be removed. Locked tags have their remove button disabled,
+	 * respond to Backspace/Delete key presses with a shake animation, and shake when
+	 * Backspace is pressed on an empty input.
+	 *
+	 * The `locked` state is also forwarded to the render function via `props.locked`
+	 * so custom tag components receive it automatically.
+	 */
+	lockedValues?: string[];
+	/**
+	 * Optional render function for each tag. Receives `{ value, onRemove, locked, ref, onKeyDown, onClick }`.
+	 * Spread these onto `MultiSelect.Tag` (or your own element) for full keyboard-nav support.
+	 * When omitted, the default `MultiSelect.Tag` is rendered for each selected value.
+	 * A custom tag must be a `role="listitem"`: the tags render inside a `role="list"`.
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.TagValues lockedValues={["global"]}>
+	 *   {(props) => (
+	 *     <MultiSelect.Tag key={props.value} {...props} />
+	 *   )}
+	 * </MultiSelect.TagValues>
+	 * ```
+	 */
+	children?: (props: TagRenderProps) => ReactNode;
+};
+
+/**
+ * Renders the selected values as removable tags. Place this inside
+ * `MultiSelect.Trigger`, followed by `MultiSelect.Input`.
+ *
+ * The tags render inside a `role="list"` named "Selected values" (override it
+ * with `aria-label`), and each default tag is a `role="listitem"`. The list
+ * uses `display: contents`, so the tags keep the trigger's flex layout.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselecttagvalues
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const TagValues = ({
+	"aria-label": ariaLabel = "Selected values",
+	children,
+	lockedValues = EMPTY_ARRAY,
+}: MultiSelectTagValuesProps) => {
+	const store = useAriakitComboboxContext();
+	const rawSelectedValue = useAriakitStoreState(store, "selectedValue");
+	const selectedValues = isStringArray(rawSelectedValue) ? rawSelectedValue : undefined;
+	const selectedArray = selectedValues ?? EMPTY_ARRAY;
+	// Why a layout effect: the `requestAnimationFrame` callbacks below run after the
+	// removal commits and must read the committed array, not the one from the render
+	// that scheduled them.
+	const selectedArrayRef = useRef<string[]>(selectedArray);
+	useIsomorphicLayoutEffect(() => {
+		selectedArrayRef.current = selectedArray;
+	}, [selectedArray]);
+	const lockedValuesSet = useMemo(() => new Set(lockedValues), [lockedValues]);
+	const tagRefs = useRef<Map<string, HTMLSpanElement>>(new Map());
+	const { onInputKeyDownRef, inputRef, setLockedValues } = useContext(TagBridgeContext);
+	// Why publish through `Root` state: `lockedValues` is a prop of this part. `Item`
+	// renders in another branch of the tree, so only shared state reaches it. The updater
+	// keeps the previous array when the items match, so an inline `lockedValues` literal
+	// does not re-render every `Item` on each consumer render.
+	useIsomorphicLayoutEffect(() => {
+		setLockedValues((previous) =>
+			haveSameItems(previous, lockedValues) ? previous : lockedValues,
+		);
+	}, [lockedValues, setLockedValues]);
+	// Why its own effect: the locks leave with the tag list that owns them. A cleanup on
+	// the publish effect resets the state on every change and defeats the bail-out.
+	useIsomorphicLayoutEffect(
+		() => () => {
+			setLockedValues(EMPTY_ARRAY);
+		},
+		[setLockedValues],
+	);
+	// Track pending rAF IDs so we can cancel them on unmount and avoid calling
+	// focus() on detached DOM nodes if the component unmounts mid-frame.
+	const pendingRafsRef = useRef<Set<number>>(new Set());
+	useEffect(
+		() => () => {
+			pendingRafsRef.current.forEach(cancelAnimationFrame);
+		},
+		[],
+	);
+	const raf = (callback: () => void): void => {
+		const id = requestAnimationFrame(() => {
+			// Remove the id once the rAF has fired so the set doesn't grow unbounded.
+			pendingRafsRef.current.delete(id);
+			callback();
+		});
+		pendingRafsRef.current.add(id);
+	};
+
+	const removeValue = (value: string) => {
+		if (store) {
+			const selected = store.getState().selectedValue;
+			if (!isStringArray(selected)) {
+				return;
+			}
+			store.setSelectedValue(selected.filter((v) => v !== value));
+		}
+	};
+
+	const focusTag = (index: number) => {
+		const value = selectedArrayRef.current[index];
+		if (value == null) {
+			return;
+		}
+		const tagElement = tagRefs.current.get(value);
+		if (tagElement) {
+			tagElement.focus();
+			// Keep the popover open while a tag is focused. Ariakit closes the
+			// popover when the combobox input loses focus, so we reopen it here.
+			store?.show();
+		}
+	};
+
+	const focusInput = () => {
+		inputRef.current?.focus();
+	};
+
+	const handleTagKeyDown = (event: KeyboardEvent<HTMLSpanElement>, index: number) => {
+		const value = selectedArray[index];
+		switch (event.key) {
+			case "ArrowLeft": {
+				event.preventDefault();
+				if (index > 0) {
+					focusTag(index - 1);
+				}
+				break;
+			}
+			case "ArrowRight": {
+				event.preventDefault();
+				if (index < selectedArray.length - 1) {
+					focusTag(index + 1);
+				} else {
+					focusInput();
+				}
+				break;
+			}
+			case "Backspace":
+			case "Delete": {
+				event.preventDefault();
+				if (value != null) {
+					// Respect locked values: shake instead of removing when locked.
+					if (lockedValuesSet.has(value)) {
+						const tagElement = tagRefs.current.get(value);
+						if (tagElement) {
+							shakeElement(tagElement);
+						}
+						break;
+					}
+					removeValue(value);
+					// After removal, the array shifts. Focus the next logical tag or the input.
+					if (event.key === "Backspace") {
+						if (index > 0) {
+							// Why `raf`: focus lands on the previous tag only after React commits the removal.
+							const prevIndex = index - 1;
+							raf(() => focusTag(prevIndex));
+						} else {
+							raf(() => {
+								if (selectedArrayRef.current.length > 0) {
+									focusTag(0);
+								} else {
+									focusInput();
+								}
+							});
+						}
+					} else {
+						// Delete: move focus right
+						raf(() => {
+							// index stays the same since the item at `index` was removed and the next one slides in
+							if (index < selectedArrayRef.current.length) {
+								focusTag(index);
+							} else {
+								focusInput();
+							}
+						});
+					}
+				}
+				break;
+			}
+			case "ArrowUp":
+			case "ArrowDown": {
+				// Don't scroll the page. Instead, focus the input and forward the key
+				// to Ariakit so it navigates the popover list.
+				event.preventDefault();
+				focusInput();
+				inputRef.current?.dispatchEvent(
+					new KeyboardEvent("keydown", {
+						key: event.key,
+						bubbles: true,
+						cancelable: true,
+						shiftKey: event.shiftKey,
+						ctrlKey: event.ctrlKey,
+						metaKey: event.metaKey,
+						altKey: event.altKey,
+					}),
+				);
+				break;
+			}
+			default: {
+				// If a printable character is typed while a tag is focused, jump to input
+				if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+					focusInput();
+				}
+				break;
+			}
+		}
+	};
+
+	const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+		if (
+			event.key === "ArrowLeft" &&
+			event.currentTarget.selectionStart === 0 &&
+			event.currentTarget.selectionEnd === 0 &&
+			selectedArray.length > 0
+		) {
+			event.preventDefault();
+			focusTag(selectedArray.length - 1);
+			return;
+		}
+		if (event.key === "Backspace" && event.currentTarget.value === "" && selectedArray.length > 0) {
+			const lastValue = selectedArray[selectedArray.length - 1];
+			if (lastValue != null) {
+				if (lockedValuesSet.has(lastValue)) {
+					// The last tag is locked — shake it to signal that removal is blocked.
+					const tagElement = tagRefs.current.get(lastValue);
+					if (tagElement) {
+						shakeElement(tagElement);
+					}
+				} else {
+					removeValue(lastValue);
+				}
+			}
+		}
+	};
+
+	// Why a layout effect with a cleanup: the bridge must hold the latest handler before
+	// the next keydown. It must drop the handler when this part unmounts, so `Input` never
+	// calls a closure over a stale selection.
+	useIsomorphicLayoutEffect(() => {
+		onInputKeyDownRef.current = handleInputKeyDown;
+		return () => {
+			onInputKeyDownRef.current = undefined;
+		};
+	});
+
+	if (selectedArray.length === 0) {
+		return null;
+	}
+
+	return (
+		// Why `contents`: the list must not take the tags out of the trigger's
+		// flex `gap`; the element exists for the `role="list"` alone.
+		<span role="list" aria-label={ariaLabel} data-slot="multi-select-tag-list" className="contents">
+			{selectedArray.map((value, index) => {
+				const tagOptionProps: TagRenderProps = {
+					value,
+					locked: lockedValuesSet.has(value),
+					onRemove: () => {
+						// Respect locked values: shake instead of removing when locked.
+						// This guards custom tag renderers that call onRemove directly.
+						if (lockedValuesSet.has(value)) {
+							const tagElement = tagRefs.current.get(value);
+							if (tagElement) {
+								shakeElement(tagElement);
+							}
+							return;
+						}
+						removeValue(value);
+					},
+					ref: (node: HTMLSpanElement | null) => {
+						if (node) {
+							tagRefs.current.set(value, node);
+						} else {
+							tagRefs.current.delete(value);
+						}
+					},
+					onKeyDown: (event: KeyboardEvent<HTMLSpanElement>) => handleTagKeyDown(event, index),
+					// A tag click opens the popover, or keeps it open — including
+					// when the component was fully blurred before the click.
+					onClick: () => focusTag(index),
+				};
+
+				if (children) {
+					return <TagRenderer key={value} render={children} {...tagOptionProps} />;
+				}
+
+				return <Tag key={value} {...tagOptionProps} />;
+			})}
+		</span>
+	);
+};
+
+type MultiSelectInputProps = Omit<AriakitComboboxProps, "render"> & {
+	/**
+	 * Called with the raw string value whenever the input text changes.
+	 * Use this to drive external filtering (e.g. with matchSorter) without
+	 * having to unwrap the DOM event. A convenience alternative to `onChange`.
+	 */
+	onValueChange?: (value: string) => void;
+};
+
+/**
+ * The combobox input for filtering items. Place this inside `MultiSelect.Trigger`,
+ * after `MultiSelect.TagValues`.
+ *
+ * `MultiSelect.Input` is the focusable element of the multi-select. When the
+ * surrounding `MultiSelect.Root` is wrapped in `Field.Control`, the generated
+ * `id`, `aria-invalid`, `aria-describedby`, and `aria-errormessage` flow onto
+ * the input here via `FieldControlContext`.
+ *
+ * A `name` — passed directly or flowed from `Field.Control` — is not set on this
+ * input. Its value is the typeahead filter text, so naming it would submit what
+ * the user typed. The name is applied to one hidden input per selected value
+ * instead, which is what a native form submit sends.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectinput
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const Input = ({
+	className,
+	onBlur,
+	onChange,
+	onFocus,
+	onKeyDown,
+	onValueChange,
+	placeholder,
+	ref,
+	...props
+}: MultiSelectInputProps) => {
+	const store = useAriakitComboboxContext();
+	const { onInputKeyDownRef, inputRef } = useContext(TagBridgeContext);
+	const fieldControl = useContext(FieldControlContext);
+	const rawSelectedValue = useAriakitStoreState(store, "selectedValue");
+	const selectedValues = isStringArray(rawSelectedValue) ? rawSelectedValue : undefined;
+	const hasSelectedValues = (selectedValues?.length ?? 0) > 0;
+
+	return (
+		<AriakitCombobox
+			autoSelect
+			data-slot="multi-select-input"
+			className={cx(
+				"pointer-coarse:text-base min-w-20 flex-1 select-text border-0 bg-transparent text-sm outline-hidden",
+				"placeholder:select-none placeholder:text-placeholder",
+				className,
+			)}
+			onChange={(event) => {
+				onValueChange?.(event.target.value);
+				onChange?.(event);
+			}}
+			onKeyDown={(event) => {
+				onInputKeyDownRef.current?.(event);
+				onKeyDown?.(event);
+			}}
+			onBlur={(event) => {
+				// When focus moves from the input to a tag, Ariakit would normally
+				// close the popover because the combobox input lost focus. Keep it
+				// open so the user can see the list while navigating tags.
+				if (
+					event.relatedTarget instanceof HTMLElement &&
+					event.relatedTarget.closest('[data-slot="multi-select-tag"]')
+				) {
+					store?.show();
+				}
+				onBlur?.(event);
+			}}
+			onFocus={(event) => {
+				// Ariakit doesn't always open the popover on focus when the input is
+				// already mounted (e.g. returning focus from a tag). Force it open.
+				store?.show();
+				onFocus?.(event);
+			}}
+			placeholder={hasSelectedValues ? undefined : placeholder}
+			// Register the input's DOM node in the bridge so TagValues can focus it for keyboard nav.
+			ref={composeRefs(inputRef, ref)}
+			{...props}
+			{...(fieldControl
+				? {
+						"aria-describedby": fieldControl["aria-describedby"],
+						"aria-errormessage": fieldControl["aria-errormessage"],
+						"aria-invalid": fieldControl["aria-invalid"],
+						id: fieldControl.id,
+						name: fieldControl.name,
+					}
+				: undefined)}
+		/>
+	);
+};
+
+type MultiSelectContentProps = Omit<AriakitComboboxPopoverProps, "render"> & WithAsChild;
+
+/**
+ * Renders a popover that contains multi-select content, such as items, groups,
+ * and separators. Opens below the trigger.
+ *
+ * `MultiSelect.Content` renders at Tailwind `z-50` and portals into the closest
+ * `data-mantle-modal-content` element — an enclosing overlay's content — else
+ * the nearest overlay's positioner, else `document.body`. Inside an overlay it
+ * paints above the content that contains
+ * it. Outside one, an open overlay (`z-60`) covers it.
+ *
+ * By default, mantle disables Ariakit's body scroll lock when the trigger is
+ * inside a mantle modal (`Dialog`, `Sheet`, `AlertDialog`) — the modal already
+ * locks body scroll — and enables it otherwise. Pass `preventBodyScroll` to
+ * override.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectcontent
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *     <MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const Content = ({
+	asChild = false,
+	backdrop = false,
+	children,
+	className,
+	modal = true,
+	portalElement,
+	preventBodyScroll,
+	ref,
+	sameWidth = true,
+	unmountOnHide = true,
+	...props
+}: MultiSelectContentProps) => {
+	const triggerRef = useContext(TriggerRefContext);
+	const layerContainer = useLayerContainer();
+
+	// Why the layer container decides: every mantle overlay (`Dialog`, `Sheet`,
+	// `AlertDialog`) renders its content inside a `LayerContainer` and already
+	// locks body scroll. Ariakit's own lock must stay off inside one. It snapshots
+	// body's inline style, including the overlay's transient `pointer-events: none`,
+	// and re-applies that stale snapshot on an animation frame after unmount. That
+	// re-apply freezes the page (see the regression test in
+	// `multi-select.browser.test.tsx`).
+	const isInsideModal = layerContainer != null;
+
+	const getAnchorRect = useCallback(() => {
+		return triggerRef.current?.getBoundingClientRect() ?? null;
+	}, [triggerRef]);
+
+	const getPortalElement = useCallback(
+		(element: HTMLElement) => {
+			if (typeof portalElement === "function") {
+				return portalElement(element);
+			}
+
+			// Why the layer-container fallback: when the trigger sits in a float
+			// portaled into an overlay's positioner, `closest` cannot reach the
+			// overlay's content element — the popup would land on `document.body`
+			// at `z-50`, under the overlay tier.
+			return (
+				portalElement ??
+				triggerRef.current?.closest<HTMLElement>("[data-mantle-modal-content]") ??
+				(layerContainer instanceof HTMLElement ? layerContainer : null) ??
+				element.ownerDocument.body
+			);
+		},
+		[layerContainer, portalElement, triggerRef],
+	);
+
+	const hideOnInteractOutside = useCallback(
+		(event: Event) => {
+			// Keep the popover open when interacting with any part of the trigger
+			// (tags, buttons, input, padding). Ariakit would otherwise close on any
+			// mousedown outside the popover — including tag clicks.
+			if (event.target instanceof Node && triggerRef.current?.contains(event.target)) {
+				return false;
+			}
+			return true;
+		},
+		[triggerRef],
+	);
+
+	return (
+		<AriakitComboboxPopover
+			data-slot="multi-select-content"
+			className={cx(
+				"border-popover bg-popover relative z-50 max-h-96 min-w-32 scrollbar overflow-y-scroll overflow-x-hidden overscroll-y-none rounded-md border shadow-md pt-1 pb-1 has-data-content-footer:pb-0 font-sans flex flex-col gap-px focus:outline-hidden",
+				className,
+			)}
+			backdrop={backdrop}
+			getAnchorRect={getAnchorRect}
+			gutter={4}
+			hideOnInteractOutside={hideOnInteractOutside}
+			modal={modal}
+			portalElement={getPortalElement}
+			preventBodyScroll={preventBodyScroll ?? !isInsideModal}
+			ref={ref}
+			render={asChild ? ({ ref, ...childProps }) => <Slot ref={ref} {...childProps} /> : undefined}
+			sameWidth={sameWidth}
+			unmountOnHide={unmountOnHide}
+			{...props}
+		>
+			{children}
+		</AriakitComboboxPopover>
+	);
+};
+
+/**
+ * The label wrapper `MultiSelect.Item` renders around the consumer's children.
+ *
+ * Why the label div: decisions/2026-08-04-translation-safe-label-wrappers.md
+ * Why a div and not a span: the docs point a custom option layout at
+ * `MediaObject`, whose root is a `<div>`, which a `<span>` may not contain.
+ */
+const renderItemLabel = (label: ReactNode) => (
+	<div data-slot="multi-select-item-label" className="contents">
+		{label}
+	</div>
+);
+
+/**
+ * Props for `MultiSelect.Item`.
+ */
+type MultiSelectItemProps = Omit<AriakitComboboxItemProps, "render"> & WithAsChild;
+
+/**
+ * Renders a selectable item inside a `MultiSelect.Content` component.
+ * Items display a checkbox indicator when selected.
+ *
+ * **Structure.** `children` render inside a
+ * `<div data-slot="multi-select-item-label">`. The selected-state check is a
+ * permanent element sibling, so without the wrapper a bare text label is never a
+ * lone child: a browser translation engine reparents that text node, and the
+ * removal React runs when the label changes shape or goes away throws. The
+ * wrapper is a `<div>` because a custom option layout is often a `MediaObject`,
+ * whose root is a `<div>` that a `<span>` may not contain. It is
+ * `display: contents`, so a child of your own stays a flex item of the option
+ * and any `flex-1` on it still resolves.
+ *
+ * **`asChild`.** Your single child becomes the option element. The label div
+ * and the check move inside it, so the guarantee above holds on both paths.
+ *
+ * **Data attributes:**
+ *
+ * | Data Attribute | Value | Description |
+ * | --- | --- | --- |
+ * | `data-slot` | `"multi-select-item"` | On the option element. |
+ * | `data-slot` | `"multi-select-item-label"` | On the `<div>` wrapping `children`. |
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectitem
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *     <MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const Item = ({
+	asChild = false,
+	children,
+	className,
+	focusOnHover = true,
+	value,
+	onClick,
+	ref,
+	...props
+}: MultiSelectItemProps) => {
+	const lockedValues = useContext(LockedValuesContext);
+	const isLocked = value != null && lockedValues.includes(value);
+
+	const check = (
+		<AriakitComboboxItemCheck className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+			<Icon svg={<CheckIcon weight="bold" />} className="size-4 text-accent-600" />
+		</AriakitComboboxItemCheck>
+	);
+
+	let content: ReactNode;
+	if (asChild) {
+		// Why clone here and not in `render`: Ariakit hands `render` one element, and
+		// mantle's `Slot` takes one. The consumer's element becomes that one, with the
+		// label div and the check inside it, so both keep their places.
+		invariant(
+			isValidElement<PropsWithChildren>(children),
+			"When using `asChild`, MultiSelect.Item must be passed a single child as a JSX tag.",
+		);
+		content = cloneElement(
+			children,
+			{},
+			<>
+				{renderItemLabel(children.props.children)}
+				{check}
+			</>,
+		);
+	} else {
+		content = (
+			<>
+				{renderItemLabel(children)}
+				{check}
+			</>
+		);
+	}
+
+	return (
+		<AriakitComboboxItem
+			data-slot="multi-select-item"
+			className={cx(
+				"relative mx-1 cursor-pointer rounded-md pl-2 pr-8 py-1.5 text-strong text-sm font-normal flex min-w-0 items-center gap-2",
+				"[[role=option]+&]:mt-px",
+				"data-active-item:bg-active-menu-item",
+				"aria-disabled:opacity-50",
+				"aria-selected:bg-selected-menu-item aria-selected:data-active-item:bg-active-selected-menu-item",
+				className,
+			)}
+			focusOnHover={focusOnHover}
+			onClick={(event) => {
+				// Prevent Ariakit from toggling off a locked value.
+				// Ariakit checks event.defaultPrevented before executing its selection logic.
+				if (isLocked) {
+					event.preventDefault();
+					return;
+				}
+				onClick?.(event);
+			}}
+			ref={ref}
+			render={asChild ? ({ ref, ...childProps }) => <Slot ref={ref} {...childProps} /> : undefined}
+			resetValueOnSelect
+			value={value}
+			{...props}
+		>
+			{content}
+		</AriakitComboboxItem>
+	);
+};
+
+type MultiSelectGroupProps = Omit<AriakitComboboxGroupProps, "render"> & WithAsChild;
+
+/**
+ * Renders a group for MultiSelect.Item elements.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectgroup
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Group>
+ *       <MultiSelect.GroupLabel>Fruits</MultiSelect.GroupLabel>
+ *       <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *       <MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+ *     </MultiSelect.Group>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const Group = ({ asChild = false, children, ref, ...props }: MultiSelectGroupProps) => {
+	return (
+		<AriakitComboboxGroup
+			data-slot="multi-select-group"
+			className="mx-1"
+			ref={ref}
+			render={asChild ? ({ ref, ...childProps }) => <Slot ref={ref} {...childProps} /> : undefined}
+			{...props}
+		>
+			{children}
+		</AriakitComboboxGroup>
+	);
+};
+
+type MultiSelectGroupLabelProps = Omit<AriakitComboboxGroupLabelProps, "render"> & WithAsChild;
+
+/**
+ * Renders a label in a multi-select group.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectgrouplabel
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Group>
+ *       <MultiSelect.GroupLabel>Fruits</MultiSelect.GroupLabel>
+ *       <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *     </MultiSelect.Group>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const GroupLabel = ({
+	asChild = false,
+	children,
+	className,
+	ref,
+	...props
+}: MultiSelectGroupLabelProps) => {
+	return (
+		<AriakitComboboxGroupLabel
+			data-slot="multi-select-group-label"
+			className={cx("text-muted px-2 py-1 text-xs font-medium", className)}
+			ref={ref}
+			render={asChild ? ({ ref, ...childProps }) => <Slot ref={ref} {...childProps} /> : undefined}
+			{...props}
+		>
+			{children}
+		</AriakitComboboxGroupLabel>
+	);
+};
+
+type MultiSelectGroupDescriptionProps = ComponentProps<"p">;
+
+/**
+ * Renders a description below a `MultiSelect.GroupLabel` inside a `MultiSelect.Group`.
+ * States the group's purpose or constraints.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectgroupdescription
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select regions..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Group>
+ *       <MultiSelect.GroupLabel>Regional Aliases</MultiSelect.GroupLabel>
+ *       <MultiSelect.GroupDescription>
+ *         Include all points of presence that are geographically within the region.
+ *       </MultiSelect.GroupDescription>
+ *       <MultiSelect.Item value="global">global</MultiSelect.Item>
+ *     </MultiSelect.Group>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const GroupDescription = ({
+	className,
+	children,
+	ref,
+	...props
+}: MultiSelectGroupDescriptionProps) => {
+	return (
+		<p
+			data-slot="multi-select-group-description"
+			className={cx("text-muted px-2 pb-1 text-xs", className)}
+			ref={ref}
+			{...props}
+		>
+			{children}
+		</p>
+	);
+};
+
+/**
+ * Renders a separator between MultiSelect.Items or MultiSelect.Groups.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectseparator
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Group>
+ *       <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *     </MultiSelect.Group>
+ *     <MultiSelect.Separator />
+ *     <MultiSelect.Group>
+ *       <MultiSelect.Item value="carrot">Carrot</MultiSelect.Item>
+ *     </MultiSelect.Group>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const MultiSelectSeparatorComponent = ({
+	className,
+	ref,
+	...props
+}: ComponentProps<typeof Separator>) => (
+	<Separator
+		data-slot="multi-select-separator"
+		ref={ref}
+		className={cx("my-1 w-auto", className)}
+		{...props}
+	/>
+);
+
+type MultiSelectEmptyProps = ComponentProps<"div">;
+
+/**
+ * Renders a message when no items match the current filter.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectempty
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     {matches.length === 0 && (
+ *       <MultiSelect.Empty>No results found</MultiSelect.Empty>
+ *     )}
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const Empty = ({ className, children, ref, ...props }: MultiSelectEmptyProps) => {
+	return (
+		<div
+			data-slot="multi-select-empty"
+			className={cx("mx-1 text-muted px-2 py-6 text-center text-sm", className)}
+			ref={ref}
+			role="presentation"
+			{...props}
+		>
+			{children}
+		</div>
+	);
+};
+
+type MultiSelectContentFooterProps = ComponentProps<"div">;
+
+/**
+ * Renders a sticky footer pinned to the bottom inside `MultiSelect.Content`,
+ * with a separator border at the top.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectcontentfooter
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *     <MultiSelect.ContentFooter>
+ *       <p>Upgrade to unlock more options.</p>
+ *       <Button appearance="filled" intent="accent">Upgrade</Button>
+ *     </MultiSelect.ContentFooter>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const ContentFooter = ({ className, children, ref, ...props }: MultiSelectContentFooterProps) => {
+	return (
+		<div
+			ref={ref}
+			data-slot="multi-select-content-footer"
+			data-content-footer
+			className={cx("bg-popover sticky bottom-0 border-t border-popover", className)}
+			{...props}
+		>
+			{children}
+		</div>
+	);
+};
+
+/**
+ * A multi-select combobox that allows users to select multiple values with
+ * typeahead filtering. Selected values are displayed as removable tags.
+ *
+ * Built on top of Ariakit's Combobox primitives with full keyboard support
+ * and WAI-ARIA compliance.
+ *
+ * Use MultiSelect when the user can choose multiple values from a list, with selected
+ * items rendered as removable tags/chips. For single selection, use Combobox (with search)
+ * or Select (without).
+ *
+ * `MultiSelect.Content` renders at Tailwind `z-50` and portals into the closest
+ * `data-mantle-modal-content` element — an enclosing overlay's content — else
+ * the nearest overlay's positioner, else `document.body`. Inside an overlay it
+ * paints above the content that contains
+ * it. Outside one, an open overlay (`z-60`) covers it.
+ *
+ * @see https://mantle.ngrok.com/components/forms/multi-select
+ * @see https://www.w3.org/WAI/ARIA/apg/patterns/combobox/
+ * @see https://ariakit.org/components/combobox
+ *
+ * @example
+ * Composition:
+ * ```
+ * MultiSelect.Root
+ * ├── MultiSelect.Trigger
+ * │   ├── MultiSelect.TagValues
+ * │   └── MultiSelect.Input
+ * └── MultiSelect.Content
+ *     ├── MultiSelect.Group
+ *     │   ├── MultiSelect.GroupLabel
+ *     │   ├── MultiSelect.GroupDescription
+ *     │   └── MultiSelect.Item
+ *     ├── MultiSelect.Separator
+ *     ├── MultiSelect.Empty
+ *     └── MultiSelect.ContentFooter
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <MultiSelect.Root>
+ *   <MultiSelect.Trigger>
+ *     <MultiSelect.TagValues />
+ *     <MultiSelect.Input placeholder="Select items..." />
+ *   </MultiSelect.Trigger>
+ *   <MultiSelect.Content>
+ *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+ *     <MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+ *     <MultiSelect.Item value="cherry">Cherry</MultiSelect.Item>
+ *   </MultiSelect.Content>
+ * </MultiSelect.Root>
+ * ```
+ */
+const MultiSelect = {
+	/**
+	 * Root component for a multi-select combobox. Owns the selected values and
+	 * the typeahead query.
+	 *
+	 * Use MultiSelect when the user can choose multiple values from a list, with selected
+	 * items rendered as removable tags/chips. For single selection, use Combobox (with search)
+	 * or Select (without).
+	 *
+	 * `MultiSelect.Content` renders at Tailwind `z-50` and portals into the
+	 * closest `data-mantle-modal-content` element — an enclosing overlay's content
+	 * — else the nearest overlay's positioner, else `document.body`. Inside an
+	 * overlay it paints above the content that contains it. Outside one, an open
+	 * overlay (`z-60`) covers it.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectroot
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * The trigger container for the multi-select. Wraps the input and selected
+	 * value tags in a styled container that looks like a form input. It is
+	 * `role="presentation"`: the `MultiSelect.Input` combobox and the
+	 * `MultiSelect.TagValues` list carry the semantics, and the input's label
+	 * (`Field.Label` or `aria-label`) names the whole control.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselecttrigger
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	Trigger,
+	/**
+	 * Renders the selected values as removable tags. Place this inside
+	 * `MultiSelect.Trigger`, followed by `MultiSelect.Input`.
+	 *
+	 * The tags render inside a `role="list"` named "Selected values" (override it
+	 * with `aria-label`), and each default tag is a `role="listitem"`. The list
+	 * uses `display: contents`, so the tags keep the trigger's flex layout.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselecttagvalues
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues lockedValues={["global"]} />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 *
+	 * @example
+	 * Custom tags via children render function — `locked` is forwarded via props.
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues lockedValues={["global"]}>
+	 *       {(props) => <MultiSelect.Tag key={props.value} {...props} />}
+	 *     </MultiSelect.TagValues>
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	TagValues,
+	/**
+	 * The combobox input for filtering items. Place this inside
+	 * `MultiSelect.Trigger`, after `MultiSelect.TagValues`.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectinput
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	Input,
+	/**
+	 * The default tag rendered inside `MultiSelect.TagValues` for each selected value.
+	 * Displays the value label with a remove button. Renders a `role="listitem"`
+	 * inside the `role="list"` that `MultiSelect.TagValues` renders, and marks
+	 * itself `data-active` while it has focus.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselecttag
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues>
+	 *       {(props) => <MultiSelect.Tag key={props.value} {...props} />}
+	 *     </MultiSelect.TagValues>
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	Tag,
+	/**
+	 * Renders a popover that contains multi-select content.
+	 *
+	 * `MultiSelect.Content` renders at Tailwind `z-50` and portals into the
+	 * closest `data-mantle-modal-content` element — an enclosing overlay's content
+	 * — else the nearest overlay's positioner, else `document.body`. Inside an
+	 * overlay it paints above the content that contains it. Outside one, an open
+	 * overlay (`z-60`) covers it.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectcontent
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *     <MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	Content,
+	/**
+	 * Renders a sticky footer pinned to the bottom inside `MultiSelect.Content`,
+	 * with a separator border at the top.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectcontentfooter
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *     <MultiSelect.ContentFooter>
+	 *       <p>Upgrade to unlock more options.</p>
+	 *     </MultiSelect.ContentFooter>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	ContentFooter,
+	/**
+	 * Renders a selectable item with a checkbox indicator inside a `MultiSelect.Content`.
+	 *
+	 * **Structure.** `children` render inside a
+	 * `<div data-slot="multi-select-item-label">`. The selected-state check is a
+	 * permanent element sibling, so without the wrapper a bare text label is never a
+	 * lone child: a browser translation engine reparents that text node, and the
+	 * removal React runs when the label changes shape or goes away throws. The
+	 * wrapper is a `<div>` because a custom option layout is often a `MediaObject`,
+	 * whose root is a `<div>` that a `<span>` may not contain. It is
+	 * `display: contents`, so a child of your own stays a flex item of the option
+	 * and any `flex-1` on it still resolves.
+	 *
+	 * **`asChild`.** Your single child becomes the option element. The label div
+	 * and the check move inside it, so the guarantee above holds on both paths.
+	 *
+	 * **Data attributes:**
+	 *
+	 * | Data Attribute | Value | Description |
+	 * | --- | --- | --- |
+	 * | `data-slot` | `"multi-select-item"` | On the option element. |
+	 * | `data-slot` | `"multi-select-item-label"` | On the `<div>` wrapping `children`. |
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectitem
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *     <MultiSelect.Item value="banana">Banana</MultiSelect.Item>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	Item,
+	/**
+	 * Renders a group for MultiSelect.Item elements.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectgroup
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Group>
+	 *       <MultiSelect.GroupLabel>Fruits</MultiSelect.GroupLabel>
+	 *       <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *     </MultiSelect.Group>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	Group,
+	/**
+	 * Renders a label in a multi-select group.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectgrouplabel
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Group>
+	 *       <MultiSelect.GroupLabel>Fruits</MultiSelect.GroupLabel>
+	 *       <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *     </MultiSelect.Group>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	GroupLabel,
+	/**
+	 * Renders a description below a `MultiSelect.GroupLabel` inside a `MultiSelect.Group`.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectgroupdescription
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select regions..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Group>
+	 *       <MultiSelect.GroupLabel>Regional Aliases</MultiSelect.GroupLabel>
+	 *       <MultiSelect.GroupDescription>
+	 *         Include all points of presence within the region.
+	 *       </MultiSelect.GroupDescription>
+	 *       <MultiSelect.Item value="global">global</MultiSelect.Item>
+	 *     </MultiSelect.Group>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	GroupDescription,
+	/**
+	 * Renders a separator between items or groups.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectseparator
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     <MultiSelect.Group>
+	 *       <MultiSelect.Item value="apple">Apple</MultiSelect.Item>
+	 *     </MultiSelect.Group>
+	 *     <MultiSelect.Separator />
+	 *     <MultiSelect.Group>
+	 *       <MultiSelect.Item value="carrot">Carrot</MultiSelect.Item>
+	 *     </MultiSelect.Group>
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	Separator: MultiSelectSeparatorComponent,
+	/**
+	 * Renders a message when no items match the current filter.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/multi-select#multiselectempty
+	 *
+	 * @example
+	 * ```tsx
+	 * <MultiSelect.Root>
+	 *   <MultiSelect.Trigger>
+	 *     <MultiSelect.TagValues />
+	 *     <MultiSelect.Input placeholder="Select items..." />
+	 *   </MultiSelect.Trigger>
+	 *   <MultiSelect.Content>
+	 *     {matches.length === 0 && (
+	 *       <MultiSelect.Empty>No results found</MultiSelect.Empty>
+	 *     )}
+	 *   </MultiSelect.Content>
+	 * </MultiSelect.Root>
+	 * ```
+	 */
+	Empty,
+} as const;
+
+export {
+	//,
+	MultiSelect,
+};
+
+/**
+ * Shakes an element left-right to signal that an action was blocked
+ * (e.g. pressing Backspace/Delete on a locked tag). No-ops when the user
+ * has enabled reduced motion in their OS/browser accessibility settings.
+ */
+function shakeElement(element: HTMLElement): void {
+	// Skip the animation when the user has opted into reduced motion.
+	// Called from event handlers only, so reading the media query imperatively
+	// is safe and gives the freshest value without any hook plumbing.
+	if (getPrefersReducedMotion()) {
+		return;
+	}
+
+	element.animate(
+		[
+			{ transform: "translateX(0)" },
+			{ transform: "translateX(-4px)" },
+			{ transform: "translateX(4px)" },
+			{ transform: "translateX(-4px)" },
+			{ transform: "translateX(4px)" },
+			{ transform: "translateX(0)" },
+		],
+		{ duration: 300, easing: "ease-in-out" },
+	);
+}

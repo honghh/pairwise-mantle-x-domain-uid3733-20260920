@@ -1,0 +1,43 @@
+{
+  "name": "mantle",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "serve": "turbo run serve",
+    "clean": "turbo run clean",
+    "clean:node_modules": "node ./scripts/clean-node-modules.js",
+    "fmt:check": "oxfmt --check",
+    "fmt": "oxfmt --write",
+    "lint:fix": "oxlint --fix",
+    "lint": "oxlint",
+    "install:playwright": "node ./scripts/install-playwright.js",
+    "kill:dev-servers": "node ./scripts/kill-dev-servers.ts",
+    "test": "turbo run test",
+    "test:scripts": "vitest run --config ./scripts/vitest.config.ts",
+    "test:watch": "turbo run test:watch",
+    "typecheck": "turbo run typecheck",
+    "prepare": "husky",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "turbo run build --filter=@ngrok/mantle --filter=@ngrok/mantle-vite-plugins --filter=@ngrok/mantle-server-syntax-highlighter && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "1.0.1",
+    "@changesets/cli": "3.0.3",
+    "@types/node": "catalog:",
+    "husky": "9.1.7",
+    "lint-staged": "17.5.1",
+    "oxfmt": "catalog:",
+    "oxlint": "1.83.0",
+    "tsx": "catalog:",
+    "turbo": "2.10.13",
+    "vitest": "5.0.1"
+  },
+  "engines": {
+    "node": "^24.0.0"
+  },
+  "packageManager": "pnpm@12.4.2"
+}

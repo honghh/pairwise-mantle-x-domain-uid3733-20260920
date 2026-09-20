@@ -1,0 +1,572 @@
+import { CaretDownIcon } from "@phosphor-icons/react/CaretDown";
+import { PlusIcon } from "@phosphor-icons/react/Plus";
+import { render, screen } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+import { act, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
+import { describe, expect, test, vi } from "vitest";
+import { translateTextNodes } from "../../test-utils/translate-text-nodes.js";
+import { Button } from "./button.js";
+
+describe("Button", () => {
+	test("renders a button, without `asChild`", () => {
+		render(
+			<Button appearance="outlined" intent="accent" type="button">
+				click me
+			</Button>,
+		);
+		expect(screen.getByRole("button")).toHaveTextContent("click me");
+	});
+
+	test("renders a button, with `asChild`", () => {
+		render(
+			<Button appearance="outlined" intent="accent" asChild type="button">
+				{/* oxlint-disable-next-line button-has-type */}
+				<button>click me</button>
+			</Button>,
+		);
+		expect(screen.getByRole("button")).toHaveTextContent("click me");
+	});
+
+	test("renders an anchor with `asChild`, doesn't pass `type` to anchor", () => {
+		render(
+			<Button appearance="outlined" intent="accent" type="button" asChild>
+				<a href="#yolo">click me</a>
+			</Button>,
+		);
+		expect(screen.getByRole("link")).toHaveTextContent("click me");
+
+		// The `type` attribute must never reach the anchor element.
+		expect(screen.getByRole("link")).not.toHaveAttribute("type");
+	});
+
+	describe("intent", () => {
+		test.each([
+			["accent", "text-accent-600"],
+			["danger", "text-danger-600"],
+			["neutral", "text-strong"],
+		] as const)(`renders intent="%s" with data-intent and tone class %s`, (intent, toneClass) => {
+			render(
+				<Button appearance="outlined" intent={intent}>
+					click me
+				</Button>,
+			);
+			const button = screen.getByRole("button");
+			expect(button).toHaveAttribute("data-intent", intent);
+			// Why the class assertion: `data-intent` echoes the prop. The tone class is the only
+			// observable of the tone that `intent` and `appearance` select together.
+			expect(button).toHaveClass(toneClass);
+		});
+
+		test(`renders filled danger with the danger fill`, () => {
+			render(
+				<Button appearance="filled" intent="danger">
+					delete
+				</Button>,
+			);
+			// Why the class assertion: the filled+danger compound variant emits no data attribute,
+			// so the fill class is its only observable.
+			expect(screen.getByRole("button")).toHaveClass("bg-filled-danger");
+		});
+
+		test("forwards data-intent to an `asChild` anchor", () => {
+			render(
+				<Button appearance="outlined" intent="danger" asChild>
+					<a href="#yolo">click me</a>
+				</Button>,
+			);
+			expect(screen.getByRole("link")).toHaveAttribute("data-intent", "danger");
+		});
+	});
+
+	describe("size", () => {
+		test(`defaults to size="md" when \`size\` is omitted`, () => {
+			render(
+				<Button appearance="outlined" intent="accent">
+					click me
+				</Button>,
+			);
+			expect(screen.getByRole("button")).toHaveAttribute("data-size", "md");
+		});
+
+		test.each([
+			["xs", "h-6", "px-2"],
+			["sm", "h-7", "px-2.5"],
+			["md", "h-9", "px-3"],
+			["lg", "h-10", "px-3.5"],
+			["xl", "h-12", "px-4"],
+		] as const)(
+			`renders size="%s" with box height %s and padding %s`,
+			(size, heightClass, paddingClass) => {
+				render(
+					<Button appearance="outlined" intent="accent" size={size}>
+						click me
+					</Button>,
+				);
+				const button = screen.getByRole("button");
+				expect(button).toHaveAttribute("data-size", size);
+				// Why the class assertion: `data-size` echoes the prop. The box classes are the only
+				// observable of the compound variant each size selects.
+				expect(button).toHaveClass(heightClass, paddingClass);
+			},
+		);
+
+		test.each([
+			["filled", "h-6"],
+			["ghost", "h-6"],
+		] as const)(`sizes appearance="%s" buttons`, (appearance, heightClass) => {
+			render(
+				<Button appearance={appearance} intent="accent" size="xs">
+					click me
+				</Button>,
+			);
+			// Why the class assertion: the compound variant lists each appearance by name. The
+			// box class is the only observable of that membership.
+			expect(screen.getByRole("button")).toHaveClass(heightClass);
+		});
+
+		test(`omits data-size when appearance="link"`, () => {
+			render(
+				<Button appearance="link" intent="accent" size="xl">
+					click me
+				</Button>,
+			);
+			expect(screen.getByRole("button")).not.toHaveAttribute("data-size");
+		});
+
+		test("reduces the icon-side padding for the size when an icon is present", () => {
+			render(
+				<Button appearance="outlined" intent="accent" size="sm" icon={<svg aria-hidden />}>
+					click me
+				</Button>,
+			);
+			// Why the class assertion: the icon padding lookup emits no data attribute, so the
+			// class is its only observable.
+			expect(screen.getByRole("button")).toHaveClass("ps-2");
+		});
+
+		test(`uses the md icon padding when \`size\` is omitted`, () => {
+			render(
+				<Button appearance="outlined" intent="accent" icon={<svg aria-hidden />}>
+					click me
+				</Button>,
+			);
+			// Why the class assertion: the icon padding lookup emits no data attribute, so the
+			// class is its only observable.
+			expect(screen.getByRole("button")).toHaveClass("ps-2.5");
+		});
+
+		test(`applies the end-side icon padding for the size when iconPlacement="end"`, () => {
+			render(
+				<Button
+					appearance="outlined"
+					intent="accent"
+					size="xl"
+					icon={<svg aria-hidden />}
+					iconPlacement="end"
+				>
+					click me
+				</Button>,
+			);
+			// Why the class assertion: the end-side icon padding lookup emits no data attribute,
+			// so the class is its only observable.
+			expect(screen.getByRole("button")).toHaveClass("pe-3.5");
+		});
+
+		test("a consumer className height override still beats the size classes", () => {
+			render(
+				<Button appearance="outlined" intent="accent" className="h-14">
+					click me
+				</Button>,
+			);
+			const button = screen.getByRole("button");
+			// Why the class assertion: the tailwind-merge override contract, where the consumer's
+			// `className` height replaces the size default.
+			expect(button).toHaveClass("h-14");
+			expect(button).not.toHaveClass("h-9");
+		});
+	});
+
+	describe("type", () => {
+		test(`defaults to type="button" when \`type\` is omitted`, () => {
+			render(
+				<Button appearance="outlined" intent="accent">
+					click me
+				</Button>,
+			);
+			expect(screen.getByRole("button")).toHaveAttribute("type", "button");
+		});
+
+		test(`renders an explicit type="submit"`, () => {
+			render(
+				<Button appearance="outlined" intent="accent" type="submit">
+					submit
+				</Button>,
+			);
+			expect(screen.getByRole("button")).toHaveAttribute("type", "submit");
+		});
+	});
+
+	test("when isLoading={false}, allows click and submit events to propagate", async () => {
+		const Subject = () => {
+			const [submitState, setSubmitState] = useState<"submitting" | "idle">("idle");
+			const [clickState, setClickState] = useState<"clicked" | "idle">("idle");
+
+			return (
+				<div>
+					<form
+						onSubmit={(event) => {
+							event.preventDefault();
+							setSubmitState("submitting");
+						}}
+					>
+						<Button
+							appearance="outlined"
+							intent="accent"
+							isLoading={false}
+							type="submit"
+							onClick={() => {
+								setClickState("clicked");
+							}}
+						>
+							submit
+						</Button>
+					</form>
+					<span data-testid="submit-state">{submitState}</span>
+					<span data-testid="click-state">{clickState}</span>
+				</div>
+			);
+		};
+
+		render(<Subject />);
+		await act(() => userEvent.click(screen.getByRole("button")));
+		expect(screen.getByTestId("submit-state")).toHaveTextContent("submitting");
+		expect(screen.getByTestId("click-state")).toHaveTextContent("clicked");
+	});
+
+	describe("disabled", () => {
+		test("disabled={false} keeps a loading button enabled and focusable", () => {
+			render(
+				<Button appearance="filled" intent="neutral" disabled={false} isLoading>
+					Save
+				</Button>,
+			);
+			const button = screen.getByRole("button", { name: "Save" });
+			expect(button).not.toBeDisabled();
+			expect(button).toHaveAttribute("aria-disabled", "false");
+			expect(button).toHaveAttribute("data-loading", "true");
+		});
+
+		test("isLoading sets the native disabled attribute and aria-disabled", () => {
+			render(
+				<Button appearance="filled" intent="neutral" isLoading>
+					Save
+				</Button>,
+			);
+			const button = screen.getByRole("button", { name: "Save" });
+			expect(button).toBeDisabled();
+			expect(button).toHaveAttribute("aria-disabled", "true");
+			expect(button).toHaveAttribute("data-disabled", "true");
+		});
+
+		test("aria-disabled={false} cannot re-enable a disabled button", () => {
+			render(
+				<Button appearance="filled" intent="neutral" disabled aria-disabled={false}>
+					Save
+				</Button>,
+			);
+			const button = screen.getByRole("button", { name: "Save" });
+			expect(button).toBeDisabled();
+			expect(button).toHaveAttribute("aria-disabled", "true");
+		});
+
+		test("an enabled button carries no disabled attribute", () => {
+			render(
+				<Button appearance="filled" intent="neutral">
+					Save
+				</Button>,
+			);
+			const button = screen.getByRole("button", { name: "Save" });
+			expect(button).toBeEnabled();
+			expect(button).toHaveAttribute("aria-disabled", "false");
+		});
+
+		test("a disabled asChild anchor is inert: aria-disabled, out of the tab order, click cancelled", async () => {
+			const user = userEvent.setup();
+			const handleClick = vi.fn<() => void>();
+			render(
+				<Button appearance="filled" intent="neutral" asChild disabled>
+					<a href="#yolo" onClick={handleClick}>
+						Open
+					</a>
+				</Button>,
+			);
+			const link = screen.getByRole("link", { name: "Open" });
+			// The native attribute is inert on an anchor, so it must not leak.
+			expect(link).not.toHaveAttribute("disabled");
+			expect(link).toHaveAttribute("aria-disabled", "true");
+			expect(link).toHaveAttribute("tabindex", "-1");
+
+			await user.click(link);
+			expect(handleClick).toHaveBeenCalledTimes(0);
+			expect(window.location.hash).toBe("");
+		});
+
+		test("a disabled asChild anchor drops its own onClickCapture, which Radix would run first", async () => {
+			const user = userEvent.setup();
+			const handleClickCapture = vi.fn<() => void>();
+			render(
+				<Button appearance="filled" intent="neutral" asChild disabled>
+					<a href="#yolo" onClickCapture={handleClickCapture}>
+						Open
+					</a>
+				</Button>,
+			);
+
+			await user.click(screen.getByRole("link", { name: "Open" }));
+
+			expect(handleClickCapture).toHaveBeenCalledTimes(0);
+			expect(window.location.hash).toBe("");
+		});
+
+		test("an enabled asChild anchor keeps its tab stop and runs its own click handlers", async () => {
+			const user = userEvent.setup();
+			const handleClick = vi.fn<(event: ReactMouseEvent<HTMLAnchorElement>) => void>((event) => {
+				event.preventDefault();
+			});
+			const handleClickCapture = vi.fn<() => void>();
+			render(
+				<Button appearance="filled" intent="neutral" asChild>
+					<a href="#yolo" onClick={handleClick} onClickCapture={handleClickCapture}>
+						Open
+					</a>
+				</Button>,
+			);
+			const link = screen.getByRole("link", { name: "Open" });
+			expect(link).not.toHaveAttribute("disabled");
+			expect(link).toHaveAttribute("aria-disabled", "false");
+			expect(link).not.toHaveAttribute("tabindex");
+
+			await user.click(link);
+			expect(handleClick).toHaveBeenCalledTimes(1);
+			expect(handleClickCapture).toHaveBeenCalledTimes(1);
+		});
+
+		test("the loading spinner is hidden from assistive technology", () => {
+			render(
+				<Button appearance="filled" intent="neutral" asChild isLoading>
+					<a href="#yolo">Open</a>
+				</Button>,
+			);
+			const spinner = screen.getByRole("link").querySelector("svg");
+			expect(spinner).toHaveAttribute("aria-hidden", "true");
+		});
+	});
+
+	test(`when isLoading={true}, doesn't allow click or submit events to propagate`, async () => {
+		const Subject = () => {
+			const [submitState, setSubmitState] = useState<"submitting" | "idle">("idle");
+			const [clickState, setClickState] = useState<"clicked" | "idle">("idle");
+
+			return (
+				<div>
+					<form
+						onSubmit={(event) => {
+							event.preventDefault();
+							setSubmitState("submitting");
+						}}
+					>
+						<Button
+							appearance="outlined"
+							intent="accent"
+							isLoading
+							type="submit"
+							onClick={() => {
+								setClickState("clicked");
+							}}
+						>
+							submit
+						</Button>
+					</form>
+					<span data-testid="submit-state">{submitState}</span>
+					<span data-testid="click-state">{clickState}</span>
+				</div>
+			);
+		};
+
+		render(<Subject />);
+		await act(() => userEvent.click(screen.getByRole("button")));
+		expect(screen.getByRole("button")).toHaveAttribute("data-loading", "true");
+		expect(screen.getByTestId("submit-state")).toHaveTextContent("idle");
+		expect(screen.getByTestId("click-state")).toHaveTextContent("idle");
+	});
+
+	describe("on a browser-translated page", () => {
+		test("keeps rendering when `isLoading` turns on", () => {
+			const { rerender } = render(
+				<Button appearance="filled" intent="neutral">
+					Save changes
+				</Button>,
+			);
+			translateTextNodes(screen.getByRole("button"));
+
+			rerender(
+				<Button appearance="filled" intent="neutral" isLoading>
+					Save changes
+				</Button>,
+			);
+
+			const button = screen.getByRole("button");
+			expect(button).toHaveAttribute("data-loading", "true");
+			// The label span takes the spinner's `insertBefore`, so the translated
+			// text node stays where the translation engine put it.
+			expect(button).toHaveTextContent("[Save changes-es]");
+			expect(button.querySelector("svg")).toBeInTheDocument();
+		});
+
+		test("keeps rendering when an `icon` appears", () => {
+			const { rerender } = render(
+				<Button appearance="outlined" intent="neutral">
+					Deploy
+				</Button>,
+			);
+			translateTextNodes(screen.getByRole("button"));
+
+			rerender(
+				<Button appearance="outlined" intent="neutral" icon={<PlusIcon />}>
+					Deploy
+				</Button>,
+			);
+
+			const button = screen.getByRole("button");
+			expect(button).toHaveTextContent("[Deploy-es]");
+			expect(button.querySelector("svg")).toBeInTheDocument();
+		});
+
+		test(`keeps rendering when \`isLoading\` turns on with iconPlacement="end"`, () => {
+			const { rerender } = render(
+				<Button appearance="outlined" intent="neutral" iconPlacement="end">
+					Continue
+				</Button>,
+			);
+			translateTextNodes(screen.getByRole("button"));
+
+			rerender(
+				<Button appearance="outlined" intent="neutral" iconPlacement="end" isLoading>
+					Continue
+				</Button>,
+			);
+
+			const button = screen.getByRole("button");
+			expect(button).toHaveAttribute("data-loading", "true");
+			expect(button).toHaveTextContent("[Continue-es]");
+		});
+
+		test("keeps rendering when `isLoading` turns on with `asChild`", () => {
+			const { rerender } = render(
+				<Button appearance="filled" intent="neutral" asChild>
+					<a href="#yolo">Save changes</a>
+				</Button>,
+			);
+			translateTextNodes(screen.getByRole("link"));
+
+			rerender(
+				<Button appearance="filled" intent="neutral" asChild isLoading>
+					<a href="#yolo">Save changes</a>
+				</Button>,
+			);
+
+			const link = screen.getByRole("link");
+			expect(link).toHaveAttribute("data-loading", "true");
+			expect(link).toHaveTextContent("[Save changes-es]");
+		});
+
+		test("keeps rendering when the button carries a second icon as a child", () => {
+			const { rerender } = render(
+				<Button appearance="outlined" intent="neutral" icon={<PlusIcon />}>
+					Create endpoint
+					<CaretDownIcon data-testid="trailing" />
+				</Button>,
+			);
+			translateTextNodes(screen.getByRole("button"));
+
+			// The spinner replaces the `icon` slot, which is the label span's sibling —
+			// so the swap never aims an insert at a child of the label.
+			rerender(
+				<Button appearance="outlined" intent="neutral" icon={<PlusIcon />} isLoading>
+					Create endpoint
+					<CaretDownIcon data-testid="trailing" />
+				</Button>,
+			);
+
+			const button = screen.getByRole("button");
+			expect(button).toHaveTextContent("[Create endpoint-es]");
+			expect(screen.getByTestId("trailing")).toBeInTheDocument();
+		});
+
+		test("the label span does not protect a child element that mounts before bare text", () => {
+			const subject = (showLeading: boolean) => (
+				<Button appearance="outlined" intent="neutral">
+					{showLeading && <CaretDownIcon />}
+					Create endpoint
+				</Button>
+			);
+			const { rerender } = render(subject(false));
+			translateTextNodes(screen.getByRole("button"));
+
+			// The boundary of the guard, pinned on purpose: the span protects the
+			// `icon` slot's insert, because that insert names the span. It cannot
+			// protect an insert a call site aims *inside* the span. React inserts the
+			// icon before the reparented text node, and the DOM throws.
+			expect(() => {
+				rerender(subject(true));
+			}).toThrow(/not a child of this node/);
+		});
+	});
+
+	test(`wraps children in a span carrying data-slot="button-label"`, () => {
+		render(
+			<Button appearance="filled" intent="neutral">
+				Save changes
+			</Button>,
+		);
+
+		const label = screen.getByRole("button").querySelector("[data-slot='button-label']");
+		expect(label?.tagName).toBe("SPAN");
+		expect(label).toHaveTextContent("Save changes");
+	});
+
+	test("lays out the label slot as contents so it adds no box of its own", () => {
+		render(
+			<Button appearance="filled" intent="neutral" icon={<PlusIcon />}>
+				Create endpoint
+			</Button>,
+		);
+
+		// The class is the only observable form of this contract: the slot generates
+		// no box, so every child stays a flex item of the button and the button's
+		// `gap` still falls between them. Drop it and multiple children collapse
+		// into one gapless item. See decisions/2026-08-04-translation-safe-label-wrappers.md.
+		const label = screen.getByRole("button").querySelector("[data-slot='button-label']");
+		expect(label).toHaveClass("contents");
+	});
+});
+
+/**
+ * Type-level contracts, owned by `pnpm typecheck` rather than by a `test()`: a
+ * `@ts-expect-error` that compiles is the assertion, and a runtime `expect` beside
+ * it reads as coverage the vitest run does not have.
+ *
+ * `appearance` and `intent` are both required, so no call site inherits a weight
+ * or a tone it did not state.
+ */
+export function typeLevelContracts() {
+	return (
+		<>
+			{/* @ts-expect-error -- appearance is required on Button */}
+			<Button intent="accent">click me</Button>
+			{/* @ts-expect-error -- intent is required on Button */}
+			<Button appearance="outlined">click me</Button>
+		</>
+	);
+}

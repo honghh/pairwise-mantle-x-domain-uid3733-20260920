@@ -1,0 +1,50 @@
+"use client";
+
+import type { ComponentProps } from "react";
+import { cx } from "../../utils/cx/cx.js";
+import { Kbd } from "../kbd/kbd.js";
+import { useIsApplePlatform } from "../../hooks/use-is-apple-platform.js";
+
+type Props = Omit<ComponentProps<"kbd">, "children">;
+
+type Mod = "⌘" | "⌃";
+
+/**
+ * Renders the platform-appropriate meta key kbd (⌘ or ⌃).
+ *
+ * - Renders `"⌃"` in the server HTML and the hydration render, because the
+ *   server cannot know the platform. React re-renders it once after hydration.
+ * - A client mount after hydration renders the host's glyph in its first
+ *   render, through {@link useIsApplePlatform}.
+ *
+ * @see https://mantle.ngrok.com/components/navigation/command#metakey
+ *
+ * @example
+ * ```tsx
+ * <Command.Shortcut>
+ *   <MetaKey /> S
+ * </Command.Shortcut>
+ * ```
+ */
+function MetaKey({ className, ...props }: Props) {
+	const isApple = useIsApplePlatform();
+	const glyph: Mod = isApple ? "⌘" : "⌃";
+	const label = isApple ? "Command" : "Control";
+
+	return (
+		<Kbd
+			{...props}
+			suppressHydrationWarning
+			data-slot="meta-key"
+			className={cx(glyph === "⌃" && "font-medium", className)}
+		>
+			<span className="sr-only">{label}</span>
+			<span aria-hidden>{glyph}</span>
+		</Kbd>
+	);
+}
+
+export {
+	//,
+	MetaKey,
+};

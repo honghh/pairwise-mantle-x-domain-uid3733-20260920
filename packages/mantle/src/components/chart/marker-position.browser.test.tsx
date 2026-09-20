@@ -1,0 +1,515 @@
+"use client";
+
+import { render, waitFor } from "@testing-library/react";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { AreaChart } from "../area-chart/index.js";
+import { BarChart } from "../bar-chart/index.js";
+import { LineChart } from "../line-chart/index.js";
+import { ScatterPlot } from "../scatter-plot/index.js";
+import { POINT_SHAPE_CLIP_PATHS } from "./engine.js";
+
+/**
+ * Real-browser marker tests: the active-point dots are DOM overlay elements
+ * the engine positions from real plot layout, which happy-dom does not model
+ * (degenerate geometry collapses every y to the same pixel). The canvas
+ * markers need the same layout — the engine skips them until the plot is wide
+ * enough per row — plus a real 2d context to read the painted glyph back.
+ *
+ * Regression suite for the stacked-area bug where dots rendered at each
+ * series' RAW value near the plot bottom instead of on the painted (stacked)
+ * band edges.
+ */
+const STYLE = `
+:root {
+	--color-chart-1: #3e6ff4;
+	--color-chart-2: #008138;
+	--color-chart-3: #f6339a;
+	--color-chart-4: #7f22fe;
+	--color-chart-5: #d08700;
+	--color-chart-6: #009689;
+	--color-chart-7: #ff6900;
+	--color-chart-8: #4f39f6;
+	--color-chart-other: #737373;
+	--border-color-card-muted: #e5e5e5;
+	--border-color-card: #d4d4d4;
+	--text-color-muted: #717171;
+	--color-neutral-500: #737373;
+	--background-color-card: #ffffff;
+	--background-color-popover: #ffffff;
+	--border-color-popover: #d4d4d4;
+}
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border-width: 0;
+}
+/* Browser tests load no Tailwind build; mirror the chart's structural layout
+   classes so the plot geometry is realistic. */
+[data-slot="area-chart"],
+[data-slot="bar-chart"],
+[data-slot="line-chart"],
+[data-slot="scatter-plot"] {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100%;
+}
+[data-slot$="-plot"] {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	width: 100%;
+}
+[data-slot$="-plot"] > canvas,
+[data-slot$="-plot"] > [tabindex] {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+}
+[data-slot$="-tooltip"] {
+	position: absolute;
+	left: 0;
+	top: 0;
+}
+`;
+
+let styleElement: HTMLStyleElement;
+
+beforeAll(() => {
+	styleElement = document.createElement("style");
+	styleElement.textContent = STYLE;
+	document.head.appendChild(styleElement);
+});
+
+afterAll(() => {
+	styleElement.remove();
+});
+
+/**
+ * Narrow a queried element to the expected type, failing the test loudly when
+ * the chart did not render its structure.
+ */
+const mustBe = <T extends Element>(
+	element: Element | null,
+	constructor: new () => T,
+	what: string,
+): T => {
+	if (element instanceof constructor) {
+		return element;
+	}
+	throw new Error(`expected ${what} to render`);
+};
+
+/** The engine's clip-path table, keyed by the string a `data-shape` carries. */
+const clipPathByShape = new Map<string, string>(Object.entries(POINT_SHAPE_CLIP_PATHS));
+
+/** The engine-managed active-point dots, in series registration order. */
+const activeDots = (container: HTMLElement): HTMLElement[] =>
+	[...container.querySelectorAll('[data-slot="chart-active-point"]')].filter(
+		(element): element is HTMLElement => element instanceof HTMLElement,
+	);
+
+/** Parse `translate3d(Xpx, Ypx, 0)` into plot-space coordinates. */
+const dotPosition = (dot: HTMLElement): { x: number; y: number } => {
+	const match = /translate3d\((-?[\d.]+)px,\s*(-?[\d.]+)px/.exec(dot.style.transform);
+	if (match?.[1] == null || match[2] == null) {
+		throw new Error(`expected a positioned dot, got transform "${dot.style.transform}"`);
+	}
+	return { x: Number(match[1]), y: Number(match[2]) };
+};
+
+/**
+ * Wait for the first paint, then drive the keyboard point cursor with `key`
+ * and retry `assertGeometry` until the overlay reflects settled layout. The
+ * first key event can race the first layout commit and the engine re-syncs
+ * dots on later frames, so both the dispatch (Home/End are idempotent per
+ * position) and the geometry assertions must live inside the retry loop:
+ * a single read after a visibility check returns pre-layout values.
+ * Resolves with the value `assertGeometry` returns on the pass that settles.
+ */
+const assertDatumGeometry = async <T,>(
+	container: HTMLElement,
+	key: "Home" | "End",
+	assertGeometry: () => T,
+): Promise<T> => {
+	const canvas = mustBe(container.querySelector("canvas"), HTMLCanvasElement, "the chart canvas");
+	const overlay = mustBe(container.querySelector('[role="application"]'), HTMLElement, "overlay");
+	await waitFor(() => {
+		expect(canvas.width).toBeGreaterThan(0);
+	});
+	overlay.focus();
+	return waitFor(() => {
+		overlay.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+		const visibleDots = activeDots(container).filter((dot) => dot.style.opacity === "1");
+		expect(visibleDots.length).toBeGreaterThan(0);
+		return assertGeometry();
+	});
+};
+
+// One row is enough to pin geometry; values are far apart so ordering
+// assertions cannot flip on sub-pixel differences. At the first datum:
+// http=100, tcp=40, tls=20 → stacked band edges 100 / 140 / 160.
+const protocolData = [
+	{ day: "Mon", http: 100, tcp: 40, tls: 20 },
+	{ day: "Tue", http: 120, tcp: 50, tls: 25 },
+	{ day: "Wed", http: 90, tcp: 45, tls: 30 },
+];
+
+describe("hover marker geometry", () => {
+	test("stacked area dots sit on the stacked band edges, not at raw values", async () => {
+		// Regression: dots used each series' raw value, so tcp/tls rendered near
+		// the plot bottom, detached from their painted bands.
+		const { container } = render(
+			<div style={{ width: 600, height: 300 }}>
+				<AreaChart.Root data={protocolData} xKey="day" stacked animate={false} aria-label="Traffic">
+					<AreaChart.Area dataKey="http" label="HTTP" />
+					<AreaChart.Area dataKey="tcp" label="TCP" />
+					<AreaChart.Area dataKey="tls" label="TLS" />
+				</AreaChart.Root>
+			</div>,
+		);
+		await assertDatumGeometry(container, "Home", () => {
+			const [http, tcp, tls] = activeDots(container).map(dotPosition);
+			if (http == null || tcp == null || tls == null) {
+				throw new Error("expected one dot per series");
+			}
+			// Screen y grows downward: stacked edges 160 (tls) > 140 (tcp) > 100
+			// (http) must paint top-to-bottom as tls, tcp, http.
+			expect(tls.y).toBeLessThan(tcp.y);
+			expect(tcp.y).toBeLessThan(http.y);
+			// All three share the crosshair x.
+			expect(tcp.x).toBeCloseTo(http.x, 1);
+			expect(tls.x).toBeCloseTo(http.x, 1);
+		});
+	});
+
+	test("unstacked area dots sit at raw value heights", async () => {
+		const { container } = render(
+			<div style={{ width: 600, height: 300 }}>
+				<AreaChart.Root data={protocolData} xKey="day" animate={false} aria-label="Traffic">
+					<AreaChart.Area dataKey="http" label="HTTP" />
+					<AreaChart.Area dataKey="tcp" label="TCP" />
+					<AreaChart.Area dataKey="tls" label="TLS" />
+				</AreaChart.Root>
+			</div>,
+		);
+		await assertDatumGeometry(container, "Home", () => {
+			const [http, tcp, tls] = activeDots(container).map(dotPosition);
+			if (http == null || tcp == null || tls == null) {
+				throw new Error("expected one dot per series");
+			}
+			// Overlapping (unstacked) areas: raw 100 > 40 > 20 top-to-bottom.
+			expect(http.y).toBeLessThan(tcp.y);
+			expect(tcp.y).toBeLessThan(tls.y);
+		});
+	});
+
+	test("line dots sit at each series' value height", async () => {
+		const { container } = render(
+			<div style={{ width: 600, height: 300 }}>
+				<LineChart.Root
+					data={[
+						{ t: 1, p50: 10, p99: 90 },
+						{ t: 2, p50: 12, p99: 95 },
+					]}
+					xKey="t"
+					animate={false}
+					aria-label="Latency"
+				>
+					<LineChart.Line dataKey="p50" label="p50" />
+					<LineChart.Line dataKey="p99" label="p99" />
+				</LineChart.Root>
+			</div>,
+		);
+		await assertDatumGeometry(container, "Home", () => {
+			const [p50, p99] = activeDots(container).map(dotPosition);
+			if (p50 == null || p99 == null) {
+				throw new Error("expected one dot per series");
+			}
+			expect(p99.y).toBeLessThan(p50.y);
+		});
+	});
+
+	test("hover dots wear each series' configured shape", async () => {
+		const { container } = render(
+			<div style={{ width: 600, height: 300 }}>
+				<LineChart.Root
+					data={[
+						{ t: 1, p50: 10, p99: 90 },
+						{ t: 2, p50: 12, p99: 95 },
+					]}
+					xKey="t"
+					animate={false}
+					aria-label="Latency"
+				>
+					<LineChart.Line dataKey="p50" label="p50" shape="triangle" />
+					<LineChart.Line dataKey="p99" label="p99" shape="diamond" />
+				</LineChart.Root>
+			</div>,
+		);
+		await assertDatumGeometry(container, "Home", () => {
+			const [p50, p99] = activeDots(container);
+			if (p50 == null || p99 == null) {
+				throw new Error("expected one dot per series");
+			}
+			expect(p50.getAttribute("data-shape")).toBe("triangle");
+			expect(p99.getAttribute("data-shape")).toBe("diamond");
+			// The glyph is cut with a clip-path on the fill layer.
+			const fill = p50.lastElementChild;
+			if (!(fill instanceof HTMLElement)) {
+				throw new Error("expected the dot's fill layer");
+			}
+			expect(fill.style.clipPath).toContain("polygon");
+		});
+	});
+
+	test("hover dots wear the glyph paired to each series slot", async () => {
+		// A consumer who sets no `shape` still gets a distinct dot per series.
+		// "p999" fixes slot 6, so its plus can only come from the slot, never from
+		// the order it registered in.
+		const { container } = render(
+			<div style={{ width: 600, height: 300 }}>
+				<LineChart.Root
+					data={[
+						{ t: 1, p50: 10, p99: 50, p999: 90 },
+						{ t: 2, p50: 12, p99: 55, p999: 95 },
+					]}
+					xKey="t"
+					animate={false}
+					aria-label="Latency"
+				>
+					<LineChart.Line dataKey="p50" label="p50" />
+					<LineChart.Line dataKey="p99" label="p99" />
+					<LineChart.Line dataKey="p999" label="p999" seriesSlot={6} />
+				</LineChart.Root>
+			</div>,
+		);
+		await assertDatumGeometry(container, "Home", () => {
+			expect(activeDots(container).map((dot) => dot.getAttribute("data-shape"))).toEqual([
+				"circle",
+				"square",
+				"plus",
+			]);
+		});
+	});
+
+	test("each hover dot clips both of its layers to the glyph data-shape names", async () => {
+		// The ring is faked by stacking two same-clipped layers, so a dot whose
+		// layers disagree paints a ring that is not the glyph's outline. Pin the
+		// pair against the engine's table, which the legend key reads too.
+		const { container } = render(
+			<div style={{ width: 600, height: 300 }}>
+				<LineChart.Root
+					data={[
+						{ t: 1, p50: 10, p99: 90 },
+						{ t: 2, p50: 12, p99: 95 },
+					]}
+					xKey="t"
+					animate={false}
+					aria-label="Latency"
+				>
+					<LineChart.Line dataKey="p50" label="p50" shape="star" />
+					<LineChart.Line dataKey="p99" label="p99" />
+				</LineChart.Root>
+			</div>,
+		);
+		await assertDatumGeometry(container, "Home", () => {
+			const dots = activeDots(container);
+			expect(dots.map((dot) => dot.getAttribute("data-shape"))).toEqual(["star", "square"]);
+			for (const dot of dots) {
+				const shape = dot.getAttribute("data-shape");
+				const clip = shape == null ? undefined : clipPathByShape.get(shape);
+				if (clip == null) {
+					throw new Error(`hover dot carries no known data-shape, got "${shape}"`);
+				}
+				const layers = [...dot.children].filter(
+					(child): child is HTMLElement => child instanceof HTMLElement,
+				);
+				expect(layers).toHaveLength(2);
+				for (const layer of layers) {
+					expect(layer.style.clipPath).toBe(clip);
+				}
+			}
+		});
+	});
+
+	test("the scatter hover dot mirrors the active series' shape", async () => {
+		const { container } = render(
+			<div style={{ width: 600, height: 300 }}>
+				<ScatterPlot.Root
+					data={[
+						{ x: 1, y: 10 },
+						{ x: 2, y: 90 },
+					]}
+					xKey="x"
+					animate={false}
+					aria-label="Correlation"
+				>
+					<ScatterPlot.Point dataKey="y" label="y" shape="square" />
+				</ScatterPlot.Root>
+			</div>,
+		);
+		await assertDatumGeometry(container, "Home", () => {
+			const [dot] = activeDots(container);
+			if (dot == null) {
+				throw new Error("expected the active-point dot");
+			}
+			expect(dot.getAttribute("data-shape")).toBe("square");
+		});
+	});
+
+	test("bar charts never render dots — the category band is the hover affordance", async () => {
+		const { container } = render(
+			<div style={{ width: 600, height: 300 }}>
+				<BarChart.Root
+					data={[
+						{ month: "Jan", desktop: 186 },
+						{ month: "Feb", desktop: 305 },
+					]}
+					xKey="month"
+					animate={false}
+					aria-label="Visitors"
+				>
+					<BarChart.Bar dataKey="desktop" label="Desktop" />
+				</BarChart.Root>
+			</div>,
+		);
+		const canvas = mustBe(container.querySelector("canvas"), HTMLCanvasElement, "the chart canvas");
+		const overlay = mustBe(container.querySelector('[role="application"]'), HTMLElement, "overlay");
+		await waitFor(() => {
+			expect(canvas.width).toBeGreaterThan(0);
+		});
+		overlay.focus();
+		await waitFor(() => {
+			overlay.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+			const tooltip = container.querySelector('[data-slot="bar-chart-tooltip"]');
+			expect(tooltip?.textContent).toContain("186");
+		});
+		expect(activeDots(container)).toHaveLength(0);
+	});
+
+	test("the scatter dot tracks the active point's projected position", async () => {
+		const { container } = render(
+			<div style={{ width: 600, height: 300 }}>
+				<ScatterPlot.Root
+					data={[
+						{ x: 1, y: 10 },
+						{ x: 2, y: 90 },
+					]}
+					xKey="x"
+					animate={false}
+					aria-label="Correlation"
+				>
+					<ScatterPlot.Point dataKey="y" label="y" />
+				</ScatterPlot.Root>
+			</div>,
+		);
+		const first = await assertDatumGeometry(container, "Home", () => {
+			const tooltip = container.querySelector('[data-slot="scatter-plot-tooltip"]');
+			expect(tooltip?.textContent).toContain("10");
+			const [dot] = activeDots(container).map(dotPosition);
+			if (dot == null) {
+				throw new Error("expected the active-point dot");
+			}
+			// Only trust the position once layout has settled: the low point (1, 10)
+			// must map into the 300px wrapper's lower half, not the pre-layout
+			// margin position near the top.
+			expect(dot.y).toBeGreaterThan(150);
+			return dot;
+		});
+		await assertDatumGeometry(container, "End", () => {
+			const tooltip = container.querySelector('[data-slot="scatter-plot-tooltip"]');
+			expect(tooltip?.textContent).toContain("90");
+			const [last] = activeDots(container).map(dotPosition);
+			if (last == null) {
+				throw new Error("expected the active-point dot");
+			}
+			// (2, 90) sits to the right of and above (1, 10) in screen space.
+			expect(last.x).toBeGreaterThan(first.x);
+			expect(last.y).toBeLessThan(first.y);
+		});
+	});
+});
+
+/** Every painted byte of a canvas, for pixel-exact comparison between frames. */
+const framePixels = (canvas: HTMLCanvasElement): Uint8ClampedArray => {
+	const context = canvas.getContext("2d");
+	if (context == null || canvas.width === 0 || canvas.height === 0) {
+		throw new Error("expected a sized canvas with a 2d context");
+	}
+	return context.getImageData(0, 0, canvas.width, canvas.height).data;
+};
+
+/** How many bytes two equally sized frames disagree on. */
+const differingBytes = (left: Uint8ClampedArray, right: Uint8ClampedArray): number => {
+	if (left.length !== right.length) {
+		throw new Error("expected two frames of the same size");
+	}
+	let count = 0;
+	for (let offset = 0; offset < left.length; offset++) {
+		if (left[offset] !== right[offset]) {
+			count += 1;
+		}
+	}
+	return count;
+};
+
+describe("line canvas markers", () => {
+	const latency = Array.from({ length: 8 }, (_unused, index) => ({
+		t: index,
+		p50: 20 + Math.sin(index) * 15,
+	}));
+
+	test("a line series that sets no shape paints its slot's glyph, not the circle", async () => {
+		// The canvas markers resolve their glyph through the store, exactly as the
+		// legend key and the hover dot do. Reading the raw `shape` prop here would
+		// paint circles under star-shaped legend keys. Only pixels can see that.
+		// All three lines fix slot 8, so one color and one layout hold across
+		// them: a differing byte is a differing marker path and nothing else.
+		const { container } = render(
+			<div style={{ display: "flex" }}>
+				{(
+					[
+						["paired", undefined],
+						["star", "star"],
+						["circle", "circle"],
+					] as const
+				).map(([name, shape]) => (
+					<div key={name} data-line={name} style={{ width: 400, height: 240 }}>
+						<LineChart.Root data={latency} xKey="t" animate={false} aria-label={`${name} line`}>
+							<LineChart.Line dataKey="p50" label="p50" seriesSlot={8} markers shape={shape} />
+						</LineChart.Root>
+					</div>
+				))}
+			</div>,
+		);
+		const canvasFor = (name: string) =>
+			mustBe(
+				container.querySelector(`[data-line="${name}"] canvas`),
+				HTMLCanvasElement,
+				`the ${name} canvas`,
+			);
+		await waitFor(() => {
+			for (const name of ["paired", "star", "circle"]) {
+				expect(canvasFor(name).width).toBeGreaterThan(0);
+			}
+			// Slot 8 pairs with the star, so the unset series must paint the same
+			// frame as the one that asked for a star by name.
+			expect(differingBytes(framePixels(canvasFor("paired")), framePixels(canvasFor("star")))).toBe(
+				0,
+			);
+			// And a different frame from the circle it used to fall back to.
+			expect(
+				differingBytes(framePixels(canvasFor("paired")), framePixels(canvasFor("circle"))),
+			).toBeGreaterThan(500);
+		});
+	});
+});

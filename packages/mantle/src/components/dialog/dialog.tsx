@@ -1,0 +1,1177 @@
+import { XIcon } from "@phosphor-icons/react/X";
+import type { ComponentProps } from "react";
+import { cx } from "../../utils/cx/cx.js";
+import { LayerContainer } from "../../utils/layer-container/layer-container.js";
+import {
+	IconButton,
+	type IconButtonAppearance,
+	type IconButtonIntent,
+	type IconButtonProps,
+} from "../button/icon-button.js";
+import {
+	Close as DialogPrimitiveClose,
+	Content as DialogPrimitiveContent,
+	Description as DialogPrimitiveDescription,
+	Overlay as DialogPrimitiveOverlay,
+	Portal as DialogPrimitivePortal,
+	Root as DialogPrimitiveRoot,
+	Title as DialogPrimitiveTitle,
+	Trigger as DialogPrimitiveTrigger,
+} from "./primitive.js";
+
+/**
+ * A window overlaid on either the primary window or another dialog window.
+ * The root stateful component for the Dialog.
+ *
+ * `Dialog` renders its floating layer at Tailwind `z-60`, Mantle's overlay
+ * tier, above every float (`z-50`). Floats composed inside the content portal
+ * into the positioner (`data-slot="dialog-positioner"`) and paint above the
+ * content. When multiple overlays are open, the most recently mounted overlay
+ * renders on top.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#dialogroot
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const Root = DialogPrimitiveRoot;
+
+/**
+ * A button that opens the dialog.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#dialogtrigger
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const Trigger = (props: ComponentProps<typeof DialogPrimitiveTrigger>) => (
+	<DialogPrimitiveTrigger data-slot="dialog-trigger" {...props} />
+);
+
+/**
+ * The portal container for the dialog. Renders the overlay and content into a
+ * portal so the dialog escapes its parent's stacking context.
+ *
+ * Most consumers should not need to use this directly — `Dialog.Content`
+ * already wraps its children in a portal. Use this only when you need to
+ * customize the portal target or render the overlay yourself.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#api-reference
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Portal>
+ *     <Dialog.Overlay />
+ *     <Dialog.Content>
+ *       <Dialog.Header>
+ *         <Dialog.Title>Dialog Title</Dialog.Title>
+ *         <Dialog.Description>This is an optional description.</Dialog.Description>
+ *         <Dialog.CloseIconButton />
+ *       </Dialog.Header>
+ *       <Dialog.Body>
+ *         <p>This is the dialog content.</p>
+ *       </Dialog.Body>
+ *       <Dialog.Footer>
+ *         <Dialog.Close asChild>
+ *           <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *         </Dialog.Close>
+ *         <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *       </Dialog.Footer>
+ *     </Dialog.Content>
+ *   </Dialog.Portal>
+ * </Dialog.Root>
+ * ```
+ */
+const Portal = DialogPrimitivePortal;
+
+/**
+ * A button that closes the dialog when clicked. Wrap an interactive element
+ * with `asChild` to delegate the close behavior to your own button.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#dialogclose
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const Close = (props: ComponentProps<typeof DialogPrimitiveClose>) => (
+	<DialogPrimitiveClose data-slot="dialog-close" {...props} />
+);
+
+/**
+ * The backdrop overlay for the dialog. Sits between the page and the dialog
+ * content and applies a blur and dim effect.
+ *
+ * Most consumers should not need to use this directly — `Dialog.Content`
+ * renders an overlay automatically. Use this only when composing a custom
+ * `Dialog.Portal` tree.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#api-reference
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Portal>
+ *     <Dialog.Overlay />
+ *     <Dialog.Content>
+ *       <Dialog.Header>
+ *         <Dialog.Title>Dialog Title</Dialog.Title>
+ *         <Dialog.Description>This is an optional description.</Dialog.Description>
+ *         <Dialog.CloseIconButton />
+ *       </Dialog.Header>
+ *       <Dialog.Body>
+ *         <p>This is the dialog content.</p>
+ *       </Dialog.Body>
+ *       <Dialog.Footer>
+ *         <Dialog.Close asChild>
+ *           <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *         </Dialog.Close>
+ *         <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *       </Dialog.Footer>
+ *     </Dialog.Content>
+ *   </Dialog.Portal>
+ * </Dialog.Root>
+ * ```
+ */
+const Overlay = ({ className, ref, ...props }: ComponentProps<typeof DialogPrimitiveOverlay>) => (
+	<DialogPrimitiveOverlay
+		ref={ref}
+		data-slot="dialog-overlay"
+		className={cx(
+			"bg-overlay data-state-closed:animate-out data-state-closed:fade-out-0 data-state-open:animate-in data-state-open:fade-in-0 fixed inset-0 z-60 backdrop-blur-xs",
+			className,
+		)}
+		{...props}
+	/>
+);
+
+/**
+ * How much of the viewport a `Dialog.Content` claims, and what it looks like
+ * there. The three values move together as one decision, because a dialog that
+ * fills the viewport has no width to cap and no corner left to round.
+ *
+ * - `"centered"` — a card capped at `preferredWidth`, inset 16px from every
+ *   viewport edge, rounded and bordered.
+ * - `"full-page"` — fills that same 16px-inset box, still rounded and bordered.
+ * - `"full-bleed"` — fills the whole viewport, square and unbordered.
+ */
+type DialogAppearance = "centered" | "full-page" | "full-bleed";
+
+/**
+ * The viewport inset each {@link DialogAppearance} positions its content in. A
+ * complete `Record` (not cva) so adding an appearance without its classes is a
+ * compile error.
+ */
+const wrapperClassName: Record<DialogAppearance, string> = {
+	centered: "inset-4",
+	"full-page": "inset-4",
+	"full-bleed": "inset-0",
+};
+
+/**
+ * The box each {@link DialogAppearance} paints inside that inset. `"centered"`
+ * takes its width from `preferredWidth` instead, so it sets none here.
+ */
+const contentClassName: Record<DialogAppearance, string> = {
+	centered: "border-dialog rounded-xl border",
+	"full-page": "border-dialog h-full max-w-none rounded-xl border",
+	"full-bleed": "h-full max-w-none",
+};
+
+type ContentProps = ComponentProps<typeof DialogPrimitiveContent> &
+	(
+		| {
+				/**
+				 * How much of the viewport the dialog claims. `"centered"` is a card
+				 * capped at `preferredWidth`; `"full-page"` fills the 16px-inset box
+				 * `Dialog.Content` already positions itself in; `"full-bleed"` fills the
+				 * viewport edge to edge, square and unbordered.
+				 *
+				 * Reflected as `data-appearance`.
+				 *
+				 * @default "centered"
+				 */
+				appearance?: "centered";
+				/**
+				 * The maximum width of a `"centered"` dialog, as a Tailwind `max-w-`
+				 * class. The dialog stays responsive below it.
+				 *
+				 * @default "max-w-lg"
+				 */
+				preferredWidth?: `max-w-${string}`;
+		  }
+		| {
+				/**
+				 * How much of the viewport the dialog claims. `"full-page"` fills the
+				 * 16px-inset box `Dialog.Content` already positions itself in;
+				 * `"full-bleed"` fills the whole viewport, square and unbordered.
+				 *
+				 * Reflected as `data-appearance`.
+				 */
+				appearance: "full-page" | "full-bleed";
+				/**
+				 * Never set here. A `"full-page"` or `"full-bleed"` dialog fills its box,
+				 * so it has no width to cap — pass `appearance="centered"` to cap it.
+				 */
+				preferredWidth?: never;
+		  }
+	);
+
+/**
+ * The container for the dialog content.
+ * Renders on top of the overlay and is centered in the viewport.
+ *
+ * `Dialog.Content` renders its floating layer at Tailwind `z-60`, Mantle's
+ * overlay tier, above every float (`z-50`). Floats composed inside the content
+ * portal into the positioner (`data-slot="dialog-positioner"`) and paint above
+ * the content. When multiple overlays are open, the most recently mounted
+ * overlay renders on top.
+ *
+ * `appearance` decides how much of the viewport the dialog claims. `"centered"`
+ * caps it at `preferredWidth`, `"full-page"` fills the 16px-inset box, and
+ * `"full-bleed"` fills the whole viewport.
+ *
+ * | Data Attribute    | Value                                            | Description                                                          |
+ * | ----------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
+ * | `data-appearance` | `"centered"` \| `"full-page"` \| `"full-bleed"`   | Reflects the resolved `appearance`.                                  |
+ * | `data-state`      | `"open"` \| `"closed"`                           | Stamped by Radix; drives the open and close animation.               |
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#dialogcontent
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ *
+ * @example
+ * Full bleed, for content that needs the whole viewport:
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content appearance="full-bleed">
+ *     <Dialog.Header>
+ *       <Dialog.Title>Request log</Dialog.Title>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Close</Button>
+ *       </Dialog.Close>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const Content = ({
+	appearance = "centered",
+	children,
+	className,
+	preferredWidth,
+	ref,
+	...props
+}: ContentProps) => (
+	<Portal>
+		{/* Why the overlay stays at full bleed: the content opens at `zoom-in-95`,
+		    so a sliver of viewport edge is uncovered for the length of the
+		    animation and would otherwise show the raw page. */}
+		<Overlay />
+		{/* Why the positioner is the layer container: floats composed inside the
+		    dialog portal into it, after the content, so they paint above the
+		    content inside the dialog's own stacking context. It stays free of
+		    transforms — the open animation lives on the content — so a portaled
+		    float's `position: fixed` still resolves against the viewport. */}
+		<LayerContainer
+			data-slot="dialog-positioner"
+			className={cx("fixed z-60 flex items-center justify-center", wrapperClassName[appearance])}
+		>
+			<DialogPrimitiveContent
+				data-appearance={appearance}
+				data-mantle-modal-content
+				data-slot="dialog-content"
+				className={cx(
+					"flex max-h-full w-full flex-1 flex-col",
+					"outline-hidden focus-within:outline-hidden",
+					"bg-dialog shadow-lg transition-transform duration-200",
+					"data-state-closed:animate-out data-state-closed:fade-out-0 data-state-closed:zoom-out-95 data-state-open:animate-in data-state-open:fade-in-0 data-state-open:zoom-in-95",
+					contentClassName[appearance],
+					appearance === "centered" && (preferredWidth ?? "max-w-lg"),
+					className,
+				)}
+				ref={ref}
+				{...props}
+			>
+				{children}
+			</DialogPrimitiveContent>
+		</LayerContainer>
+	</Portal>
+);
+
+/**
+ * Contains the header content of the dialog, including the title and close button.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#dialogheader
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const Header = ({ className, children, ...props }: ComponentProps<"div">) => (
+	<div
+		data-slot="dialog-header"
+		className={cx(
+			"border-dialog-muted text-strong relative flex shrink-0 items-center justify-between gap-2 border-b px-6 py-4",
+			"has-[.icon-button]:pr-4", // when there are actions in the header, shorten the padding
+			className,
+		)}
+		{...props}
+	>
+		{children}
+	</div>
+);
+
+type CloseIconButtonProps = Partial<Omit<IconButtonProps, "appearance" | "icon" | "intent">> & {
+	/**
+	 * The visual style of the close icon button. Optional here —
+	 * `Dialog.CloseIconButton` defaults to `"ghost"` so the close affordance
+	 * stays visually quiet in the dialog header.
+	 *
+	 * @default "ghost"
+	 */
+	appearance?: IconButtonAppearance;
+	/**
+	 * The tone of the close icon button. Optional here —
+	 * `Dialog.CloseIconButton` defaults to `"neutral"`, the workhorse tone for
+	 * routine actions like dismissing a dialog, and the only tone `IconButton`
+	 * draws.
+	 *
+	 * @default "neutral"
+	 */
+	intent?: IconButtonIntent;
+};
+
+/**
+ * An icon button that closes the dialog when clicked.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#dialogcloseiconbutton
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const CloseIconButton = ({
+	size = "md",
+	type = "button",
+	label = "Close Dialog",
+	appearance = "ghost",
+	intent = "neutral",
+	...props
+}: CloseIconButtonProps) => (
+	<DialogPrimitiveClose asChild>
+		<IconButton
+			appearance={appearance}
+			data-slot="dialog-close-icon-button"
+			icon={<XIcon />}
+			intent={intent}
+			label={label}
+			size={size}
+			type={type}
+			{...props}
+		/>
+	</DialogPrimitiveClose>
+);
+
+/**
+ * Contains the main content of the dialog.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#dialogbody
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const Body = ({ className, ...props }: ComponentProps<"div">) => (
+	<div
+		data-slot="dialog-body"
+		className={cx(
+			"scrollbar scrollbar-gutter-stable text-body flex-1 overflow-y-auto p-6",
+			className,
+		)}
+		{...props}
+	/>
+);
+
+/**
+ * Contains the footer content of the dialog, including action buttons.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#dialogfooter
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const Footer = ({ className, ...props }: ComponentProps<"div">) => (
+	<div
+		data-slot="dialog-footer"
+		className={cx(
+			"border-dialog-muted flex shrink-0 justify-end gap-2 border-t px-6 py-4",
+			className,
+		)}
+		{...props}
+	/>
+);
+
+/**
+ * An accessible name to be announced when the dialog is opened.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#dialogtitle
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const Title = ({ className, ref, ...props }: ComponentProps<typeof DialogPrimitiveTitle>) => (
+	<DialogPrimitiveTitle
+		ref={ref}
+		data-slot="dialog-title"
+		className={cx("text-strong truncate text-lg font-medium", className)}
+		{...props}
+	/>
+);
+
+/**
+ * An accessible description to be announced when the dialog is opened.
+ * Renders as a `div` by default, but can be changed to any other element using
+ * the `asChild` prop.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog#dialogdescription
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const Description = ({
+	className,
+	ref,
+	...props
+}: ComponentProps<typeof DialogPrimitiveDescription>) => (
+	<DialogPrimitiveDescription
+		ref={ref}
+		data-slot="dialog-description"
+		className={cx("text-muted", className)}
+		{...props}
+	/>
+);
+
+/**
+ * A window overlaid on either the primary window or another dialog window. Use
+ * Dialog for a focused modal that interrupts the user to gather input or
+ * confirm a non-destructive choice. For destructive or irreversible
+ * confirmations (delete, sign out, leave without saving), prefer `AlertDialog`.
+ * For side-panel content that slides in from an edge (filter panels, detail
+ * views, navigation drawers), prefer `Sheet`.
+ *
+ * `Dialog` renders its floating layer at Tailwind `z-60`, Mantle's overlay
+ * tier, above every float (`z-50`). Floats composed inside the content portal
+ * into the positioner (`data-slot="dialog-positioner"`) and paint above the
+ * content. When multiple overlays are open, the most recently mounted overlay
+ * renders on top.
+ *
+ * @see https://mantle.ngrok.com/components/overlays/dialog
+ *
+ * @example
+ * Composition:
+ * ```
+ * Dialog.Root
+ * ├── Dialog.Trigger
+ * └── Dialog.Content
+ *     ├── Dialog.Header
+ *     │   ├── Dialog.Title
+ *     │   ├── Dialog.Description
+ *     │   └── Dialog.CloseIconButton
+ *     ├── Dialog.Body
+ *     └── Dialog.Footer
+ *         └── Dialog.Close
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <Dialog.Root>
+ *   <Dialog.Trigger asChild>
+ *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+ *   </Dialog.Trigger>
+ *   <Dialog.Content>
+ *     <Dialog.Header>
+ *       <Dialog.Title>Dialog Title</Dialog.Title>
+ *       <Dialog.Description>This is an optional description.</Dialog.Description>
+ *       <Dialog.CloseIconButton />
+ *     </Dialog.Header>
+ *     <Dialog.Body>
+ *       <p>This is the dialog content.</p>
+ *     </Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close asChild>
+ *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+ *       </Dialog.Close>
+ *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+ *     </Dialog.Footer>
+ *   </Dialog.Content>
+ * </Dialog.Root>
+ * ```
+ */
+const Dialog = {
+	/**
+	 * A window overlaid on either the primary window or another dialog window.
+	 * The root stateful component for the Dialog.
+	 *
+	 * `Dialog` renders its floating layer at Tailwind `z-60`, Mantle's overlay
+	 * tier, above every float (`z-50`). Floats composed inside the content portal
+	 * into the positioner (`data-slot="dialog-positioner"`) and paint above the
+	 * content. When multiple overlays are open, the most recently mounted overlay
+	 * renders on top.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#dialogroot
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content>
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Dialog Title</Dialog.Title>
+	 *       <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *       </Dialog.Close>
+	 *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * Contains the main content of the dialog.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#dialogbody
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content>
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Dialog Title</Dialog.Title>
+	 *       <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *       </Dialog.Close>
+	 *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Body,
+	/**
+	 * A button that closes the dialog when clicked.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#dialogclose
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content>
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Dialog Title</Dialog.Title>
+	 *       <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *       </Dialog.Close>
+	 *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Close,
+	/**
+	 * An icon button that closes the dialog when clicked.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#dialogcloseiconbutton
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content>
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Dialog Title</Dialog.Title>
+	 *       <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *       </Dialog.Close>
+	 *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	CloseIconButton,
+	/**
+	 * The container for the dialog content.
+	 * Renders on top of the overlay and is centered in the viewport.
+	 *
+	 * `Dialog.Content` renders its floating layer at Tailwind `z-60`, Mantle's
+	 * overlay tier, above every float (`z-50`). Floats composed inside the content
+	 * portal into the positioner (`data-slot="dialog-positioner"`) and paint above
+	 * the content. When multiple overlays are open, the most recently mounted
+	 * overlay renders on top.
+	 *
+	 * `appearance` decides how much of the viewport the dialog claims. `"centered"`
+	 * caps it at `preferredWidth`, `"full-page"` fills the 16px-inset box, and
+	 * `"full-bleed"` fills the whole viewport.
+	 *
+	 * | Data Attribute    | Value                                            | Description                                                          |
+	 * | ----------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
+	 * | `data-appearance` | `"centered"` \| `"full-page"` \| `"full-bleed"`   | Reflects the resolved `appearance`.                                  |
+	 * | `data-state`      | `"open"` \| `"closed"`                           | Stamped by Radix; drives the open and close animation.               |
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#dialogcontent
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content>
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Dialog Title</Dialog.Title>
+	 *       <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *       </Dialog.Close>
+	 *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 *
+	 * @example
+	 * Full bleed, for content that needs the whole viewport:
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content appearance="full-bleed">
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Request log</Dialog.Title>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Close</Button>
+	 *       </Dialog.Close>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Content,
+	/**
+	 * An accessible description to be announced when the dialog is opened.
+	 * Renders as a `div` by default, but can be changed to any other element using
+	 * the `asChild` prop.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#dialogdescription
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content>
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Dialog Title</Dialog.Title>
+	 *       <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *       </Dialog.Close>
+	 *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Description,
+	/**
+	 * Contains the footer content of the dialog, including action buttons.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#dialogfooter
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content>
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Dialog Title</Dialog.Title>
+	 *       <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *       </Dialog.Close>
+	 *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Footer,
+	/**
+	 * Contains the header content of the dialog, including the title and close button.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#dialogheader
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content>
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Dialog Title</Dialog.Title>
+	 *       <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *       </Dialog.Close>
+	 *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Header,
+	/**
+	 * The overlay backdrop for the dialog.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#api-reference
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Portal>
+	 *     <Dialog.Overlay />
+	 *     <Dialog.Content>
+	 *       <Dialog.Header>
+	 *         <Dialog.Title>Dialog Title</Dialog.Title>
+	 *         <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *         <Dialog.CloseIconButton />
+	 *       </Dialog.Header>
+	 *       <Dialog.Body>
+	 *         <p>This is the dialog content.</p>
+	 *       </Dialog.Body>
+	 *       <Dialog.Footer>
+	 *         <Dialog.Close asChild>
+	 *           <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *         </Dialog.Close>
+	 *         <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *       </Dialog.Footer>
+	 *     </Dialog.Content>
+	 *   </Dialog.Portal>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Overlay,
+	/**
+	 * The portal container for the dialog.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#api-reference
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Portal>
+	 *     <Dialog.Overlay />
+	 *     <Dialog.Content>
+	 *       <Dialog.Header>
+	 *         <Dialog.Title>Dialog Title</Dialog.Title>
+	 *         <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *         <Dialog.CloseIconButton />
+	 *       </Dialog.Header>
+	 *       <Dialog.Body>
+	 *         <p>This is the dialog content.</p>
+	 *       </Dialog.Body>
+	 *       <Dialog.Footer>
+	 *         <Dialog.Close asChild>
+	 *           <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *         </Dialog.Close>
+	 *         <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *       </Dialog.Footer>
+	 *     </Dialog.Content>
+	 *   </Dialog.Portal>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Portal,
+	/**
+	 * An accessible name to be announced when the dialog is opened.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#dialogtitle
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content>
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Dialog Title</Dialog.Title>
+	 *       <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *       </Dialog.Close>
+	 *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Title,
+	/**
+	 * A button that opens the dialog.
+	 *
+	 * @see https://mantle.ngrok.com/components/overlays/dialog#dialogtrigger
+	 *
+	 * @example
+	 * ```tsx
+	 * <Dialog.Root>
+	 *   <Dialog.Trigger asChild>
+	 *     <Button type="button" appearance="filled" intent="neutral">Open Dialog</Button>
+	 *   </Dialog.Trigger>
+	 *   <Dialog.Content>
+	 *     <Dialog.Header>
+	 *       <Dialog.Title>Dialog Title</Dialog.Title>
+	 *       <Dialog.Description>This is an optional description.</Dialog.Description>
+	 *       <Dialog.CloseIconButton />
+	 *     </Dialog.Header>
+	 *     <Dialog.Body>
+	 *       <p>This is the dialog content.</p>
+	 *     </Dialog.Body>
+	 *     <Dialog.Footer>
+	 *       <Dialog.Close asChild>
+	 *         <Button type="button" appearance="outlined" intent="neutral">Cancel</Button>
+	 *       </Dialog.Close>
+	 *       <Button type="button" appearance="filled" intent="neutral">Save</Button>
+	 *     </Dialog.Footer>
+	 *   </Dialog.Content>
+	 * </Dialog.Root>
+	 * ```
+	 */
+	Trigger,
+} as const;
+
+export {
+	//,
+	Dialog,
+};

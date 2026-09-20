@@ -1,0 +1,1250 @@
+"use client";
+
+import { CaretDownIcon } from "@phosphor-icons/react/CaretDown";
+import { CaretUpIcon } from "@phosphor-icons/react/CaretUp";
+import { CheckIcon } from "@phosphor-icons/react/Check";
+import {
+	Content as SelectPrimitiveContent,
+	Group as SelectPrimitiveGroup,
+	Icon as SelectPrimitiveIcon,
+	Item as SelectPrimitiveItem,
+	ItemIndicator as SelectPrimitiveItemIndicator,
+	ItemText as SelectPrimitiveItemText,
+	Label as SelectPrimitiveLabel,
+	Portal as SelectPrimitivePortal,
+	Root as SelectPrimitiveRoot,
+	ScrollDownButton as SelectPrimitiveScrollDownButton,
+	ScrollUpButton as SelectPrimitiveScrollUpButton,
+	Trigger as SelectPrimitiveTrigger,
+	Value as SelectPrimitiveValue,
+	Viewport as SelectPrimitiveViewport,
+} from "@radix-ui/react-select";
+import { Slottable } from "@radix-ui/react-slot";
+import type {
+	ComponentProps,
+	FocusEvent,
+	PropsWithChildren,
+	ReactNode,
+	Ref,
+	SelectHTMLAttributes,
+} from "react";
+import { createContext, useContext, useMemo } from "react";
+import { useComposedRefs } from "../../utils/compose-refs/compose-refs.js";
+import { cx } from "../../utils/cx/cx.js";
+import { joinDataSlot } from "../../utils/data-slot.js";
+import type { WithDataSlot } from "../../utils/data-slot.js";
+import { useLayerContainer } from "../../utils/layer-container/layer-container.js";
+import { FieldControlContext } from "../field/field-context.js";
+import { parseValidation, useFieldValidation } from "../field/validation.js";
+import type { WithValidation } from "../field/validation.js";
+import { Icon } from "../icon/icon.js";
+import { Separator } from "../separator/separator.js";
+
+type WithAriaInvalid = Pick<SelectHTMLAttributes<HTMLSelectElement>, "aria-invalid">;
+type SelectContextType = WithValidation &
+	WithAriaInvalid & {
+		/**
+		 * Ref for the trigger button.
+		 */
+		ref?: Ref<HTMLButtonElement>;
+		/**
+		 * Event handler called when the trigger button blurs.
+		 */
+		onBlur?: (event: FocusEvent<HTMLButtonElement>) => void;
+	} & Pick<ComponentProps<"button">, "id">;
+
+const SelectContext = createContext<SelectContextType>({});
+
+type SelectProps = PropsWithChildren & {
+	/**
+	 * The `autocomplete` attribute of the hidden native select.
+	 */
+	autoComplete?: string;
+	/**
+	 * Whether the list is open on first render. Use for an uncontrolled open state.
+	 * @default false
+	 */
+	defaultOpen?: boolean;
+	/**
+	 * The value on first render. Use for an uncontrolled value.
+	 */
+	defaultValue?: string;
+	/**
+	 * The reading direction. When omitted, inherits from `DirectionProvider`.
+	 */
+	dir?: "ltr" | "rtl";
+	/**
+	 * Whether the whole select is inert. The trigger stamps `data-disabled`.
+	 * @default false
+	 */
+	disabled?: boolean;
+	/**
+	 * The `id` of the form the hidden native select belongs to, when it sits
+	 * outside that form.
+	 */
+	form?: string;
+	/**
+	 * The `id` of the trigger button. `Field.Control` sets it for you.
+	 */
+	id?: string;
+	/**
+	 * The name of the hidden native select, submitted with its owning form.
+	 */
+	name?: string;
+	/**
+	 * Event handler called when the trigger button blurs. Runs after any
+	 * `onBlur` passed on `Select.Trigger`.
+	 */
+	onBlur?: (event: FocusEvent<HTMLButtonElement>) => void;
+	/**
+	 * Event handler called when the value changes.
+	 * @deprecated Use `onValueChange` instead.
+	 */
+	onChange?: (value: string) => void;
+	/**
+	 * Event handler called when the open state changes.
+	 */
+	onOpenChange?(open: boolean): void;
+	/**
+	 * Event handler called when the value changes.
+	 */
+	onValueChange?(value: string): void;
+	/**
+	 * The controlled open state. Pair with `onOpenChange`.
+	 */
+	open?: boolean;
+	/**
+	 * Ref for the trigger button.
+	 */
+	ref?: Ref<HTMLButtonElement>;
+	/**
+	 * Whether a value is required before the owning form submits.
+	 * @default false
+	 */
+	required?: boolean;
+	/**
+	 * The controlled value. Pair with `onValueChange`.
+	 */
+	value?: string;
+} & WithValidation &
+	WithAriaInvalid;
+
+/**
+ * Displays a list of options for the user to pick from—triggered by a button.
+ *
+ * Use Select for a small, finite list of options (~2-15) where the user picks exactly one
+ * and search/filtering is unnecessary. For larger lists or async/searchable data, use
+ * Combobox. For picking multiple options, use MultiSelect.
+ *
+ * Pass `validation` here when the entire select has an explicit state. That
+ * root state is forwarded to `Select.Trigger` and takes precedence over the
+ * ambient `validation` from `Field.Item`. Note: rendered `Field.Errors` /
+ * `Field.ErrorList` set `aria-invalid="true"` on the trigger via
+ * `Field.Control`'s wiring, which still forces the trigger into the error
+ * state; suppress the inferred error by passing `validation` on `Field.Item`
+ * if a non-error `Select.Root` state needs to win in that case.
+ *
+ * `Select.Content` renders at Tailwind `z-50`, Mantle's float tier. When
+ * composed inside an open `Dialog`, `AlertDialog`, or `Sheet`, it portals into
+ * that overlay's positioner and paints above the overlay that owns it. Outside
+ * every overlay, it portals to `document.body`, below the overlay tier
+ * (`z-60`). When sibling floats share a container, the most recently mounted
+ * float paints on top.
+ *
+ * @see https://mantle.ngrok.com/components/forms/select#selectroot
+ *
+ * @example
+ * ```tsx
+ * <Select.Root>
+ *   <Select.Trigger>
+ *     <Select.Value placeholder="Select a fruit" />
+ *   </Select.Trigger>
+ *   <Select.Content>
+ *     <Select.Group>
+ *       <Select.Label>Fruits</Select.Label>
+ *       <Select.Item value="apple">Apple</Select.Item>
+ *       <Select.Item value="banana">Banana</Select.Item>
+ *       <Select.Item value="cherry">Cherry</Select.Item>
+ *     </Select.Group>
+ *     <Select.Separator />
+ *     <Select.Group>
+ *       <Select.Label>Veggies</Select.Label>
+ *       <Select.Item value="carrot">Carrot</Select.Item>
+ *       <Select.Item value="cucumber">Cucumber</Select.Item>
+ *     </Select.Group>
+ *   </Select.Content>
+ * </Select.Root>
+ * ```
+ */
+const Root = ({
+	"aria-invalid": _ariaInvalid,
+	children,
+	id,
+	validation,
+	onBlur,
+	onValueChange,
+	onChange,
+	ref,
+	...props
+}: SelectProps) => {
+	const contextValue = useMemo(
+		() => ({
+			"aria-invalid": _ariaInvalid,
+			id,
+			validation,
+			onBlur,
+			ref,
+		}),
+		[_ariaInvalid, id, validation, onBlur, ref],
+	);
+	return (
+		<SelectPrimitiveRoot
+			{...props}
+			onValueChange={(value) => {
+				onChange?.(value);
+				onValueChange?.(value);
+			}}
+		>
+			<SelectContext.Provider value={contextValue}>{children}</SelectContext.Provider>
+		</SelectPrimitiveRoot>
+	);
+};
+
+/**
+ * A group of related options within a select menu. Similar to an html `<optgroup>` element.
+ * Pair it with `Select.Label`, which gives the group its accessible name.
+ *
+ * | Data Attribute | Value            | Description           |
+ * | -------------- | ---------------- | --------------------- |
+ * | `data-slot`    | `"select-group"` | On the group element. |
+ *
+ * @see https://mantle.ngrok.com/components/forms/select#selectgroup
+ *
+ * @example
+ * ```tsx
+ * <Select.Root>
+ *   <Select.Trigger>
+ *     <Select.Value placeholder="Select a fruit" />
+ *   </Select.Trigger>
+ *   <Select.Content>
+ *     <Select.Group>
+ *       <Select.Label>Fruits</Select.Label>
+ *       <Select.Item value="apple">Apple</Select.Item>
+ *       <Select.Item value="banana">Banana</Select.Item>
+ *       <Select.Item value="cherry">Cherry</Select.Item>
+ *     </Select.Group>
+ *     <Select.Separator />
+ *     <Select.Group>
+ *       <Select.Label>Veggies</Select.Label>
+ *       <Select.Item value="carrot">Carrot</Select.Item>
+ *       <Select.Item value="cucumber">Cucumber</Select.Item>
+ *     </Select.Group>
+ *   </Select.Content>
+ * </Select.Root>
+ * ```
+ */
+const Group = ({
+	className,
+	"data-slot": dataSlot,
+	ref,
+	...props
+}: ComponentProps<typeof SelectPrimitiveGroup> & WithDataSlot) => (
+	<SelectPrimitiveGroup
+		ref={ref}
+		data-slot={joinDataSlot(dataSlot, "select-group")}
+		className={cx("space-y-px", className)}
+		{...props}
+	/>
+);
+
+type SelectValueProps = ComponentProps<typeof SelectPrimitiveValue> & WithDataSlot;
+
+/**
+ * The part that reflects the selected value. Renders the selected item's text
+ * by default. For more control, control the select and pass your own children.
+ * Do not style this part: under `Select.Content position="item-aligned"`, Radix
+ * measures its box to align the open list over the selected item. Pass
+ * `placeholder` for the text to show when the select has no value.
+ *
+ * **Structure.** `placeholder` renders inside a
+ * `<span data-slot="select-placeholder">`, your own `children` inside a
+ * `<span data-slot="select-value-label">`, and the selected item's text arrives
+ * inside the `select-item-label` span that `Select.Item` renders. Each span is
+ * `display: contents`, so it lays out nothing of its own. React removes one of
+ * those spans whenever the value changes, and an element removal cannot throw:
+ * a browser translation engine reparents text nodes, and a removal aimed at a
+ * reparented text node does.
+ *
+ * **`asChild` is not supported.** Radix hands its `Slot` a keyed Fragment, so
+ * your element receives none of the value's props and React warns. Pass
+ * `children` instead.
+ *
+ * | Data Attribute | Value                  | Description                                                                   |
+ * | -------------- | ---------------------- | ----------------------------------------------------------------------------- |
+ * | `data-slot`    | `"select-value"`       | On the value element.                                                         |
+ * | `data-slot`    | `"select-placeholder"` | On the `<span>` wrapping `placeholder`. Present only while there is no value. |
+ * | `data-slot`    | `"select-value-label"` | On the `<span>` wrapping your `children`. Absent under `asChild`.             |
+ *
+ * @see https://mantle.ngrok.com/components/forms/select#selectvalue
+ *
+ * @example
+ * ```tsx
+ * <Select.Root>
+ *   <Select.Trigger>
+ *     <Select.Value placeholder="Select a fruit" />
+ *   </Select.Trigger>
+ *   <Select.Content>
+ *     <Select.Group>
+ *       <Select.Label>Fruits</Select.Label>
+ *       <Select.Item value="apple">Apple</Select.Item>
+ *       <Select.Item value="banana">Banana</Select.Item>
+ *       <Select.Item value="cherry">Cherry</Select.Item>
+ *     </Select.Group>
+ *     <Select.Separator />
+ *     <Select.Group>
+ *       <Select.Label>Veggies</Select.Label>
+ *       <Select.Item value="carrot">Carrot</Select.Item>
+ *       <Select.Item value="cucumber">Cucumber</Select.Item>
+ *     </Select.Group>
+ *   </Select.Content>
+ * </Select.Root>
+ * ```
+ */
+const Value = ({
+	asChild,
+	children,
+	"data-slot": dataSlot,
+	placeholder,
+	ref,
+	...props
+}: SelectValueProps) => (
+	<SelectPrimitiveValue
+		ref={ref}
+		asChild={asChild}
+		data-slot={joinDataSlot(dataSlot, "select-value")}
+		// Why the spans: decisions/2026-08-04-translation-safe-label-wrappers.md
+		placeholder={
+			placeholder != null && (
+				<span data-slot="select-placeholder" className="contents">
+					{placeholder}
+				</span>
+			)
+		}
+		{...props}
+	>
+		{/* Why `== null` passes through: Radix reads `children !== undefined` to decide whether to portal the item text, so `undefined` must stay `undefined`. */}
+		{asChild || children == null ? (
+			children
+		) : (
+			<span data-slot="select-value-label" className="contents">
+				{children}
+			</span>
+		)}
+	</SelectPrimitiveValue>
+);
+
+/**
+ * Props for `Select.Trigger`.
+ */
+type SelectTriggerProps = ComponentProps<typeof SelectPrimitiveTrigger> &
+	WithAriaInvalid &
+	WithDataSlot &
+	WithValidation;
+
+/**
+ * The button that toggles the select. The Select.Content will position itself adjacent to the trigger.
+ * When composing with `Field.Item`, wrap `Select.Root` in `Field.Control`:
+ * the generated `id`, `name`, and `aria-invalid` flow onto `Select.Root` (so
+ * the hidden form input gets the field name), and the trigger reads
+ * `aria-describedby` / `aria-errormessage` from `FieldControlContext`.
+ *
+ * **Structure.** `children` render inside a
+ * `<span data-slot="select-trigger-label">`. The caret is a permanent element
+ * sibling, so without the span a bare text child is never a lone child: a
+ * browser translation engine reparents that text node, and the removal React
+ * runs when the child changes shape or goes away throws. The span is
+ * `display: contents`, so `Select.Value` stays a flex item of the trigger and
+ * keeps its `gap`. A `[&>span]` class of your own now reaches the wrapper, not
+ * `Select.Value`. Match the part's own variant instead:
+ * `[&>[data-slot=select-trigger-label]>span]:line-clamp-none`.
+ *
+ * **`asChild`.** Radix clones your single child as the trigger element. The label
+ * span and the caret move inside it, so the guarantee above holds on both paths.
+ *
+ * | Data Attribute     | Value                                   | Description                                                          |
+ * | ------------------ | --------------------------------------- | -------------------------------------------------------------------- |
+ * | `data-slot`        | `"select-trigger"`                      | On the trigger button.                                               |
+ * | `data-slot`        | `"select-trigger-label"`                | On the `<span>` wrapping `children`.                                 |
+ * | `data-state`       | `"open"` \| `"closed"`                  | Whether the list is open.                                            |
+ * | `data-placeholder` | present when there is no value          | Presence-only. Style the placeholder text with `data-placeholder:`.  |
+ * | `data-disabled`    | present when disabled                   | Presence-only. The `disabled` prop on `Select.Root`.                 |
+ * | `data-validation`  | `"success"` \| `"warning"` \| `"error"` | The resolved `validation` state. Omitted when there is none.         |
+ *
+ * @see https://mantle.ngrok.com/components/forms/select#selecttrigger
+ *
+ * @example
+ * ```tsx
+ * <Select.Root>
+ *   <Select.Trigger>
+ *     <Select.Value placeholder="Select a fruit" />
+ *   </Select.Trigger>
+ *   <Select.Content>
+ *     <Select.Group>
+ *       <Select.Label>Fruits</Select.Label>
+ *       <Select.Item value="apple">Apple</Select.Item>
+ *       <Select.Item value="banana">Banana</Select.Item>
+ *       <Select.Item value="cherry">Cherry</Select.Item>
+ *     </Select.Group>
+ *     <Select.Separator />
+ *     <Select.Group>
+ *       <Select.Label>Veggies</Select.Label>
+ *       <Select.Item value="carrot">Carrot</Select.Item>
+ *       <Select.Item value="cucumber">Cucumber</Select.Item>
+ *     </Select.Group>
+ *   </Select.Content>
+ * </Select.Root>
+ * ```
+ */
+const Trigger = ({
+	"aria-invalid": ariaInValidProp,
+	className,
+	children,
+	"data-slot": dataSlot,
+	id: propId,
+	onBlur,
+	ref,
+	validation: propValidation,
+	...props
+}: SelectTriggerProps) => {
+	const ctx = useContext(SelectContext);
+	const fieldControl = useContext(FieldControlContext);
+	const triggerRef = useComposedRefs(ref, ctx.ref);
+	const fieldValidation = useFieldValidation();
+	const rawAriaInvalid = fieldControl
+		? fieldControl["aria-invalid"]
+		: (ctx["aria-invalid"] ?? ariaInValidProp);
+	// Explicit Select props win over ambient Field validation. This lets
+	// Field.Control override Field.Item while preserving Select.Root as the
+	// highest-precedence select-level state.
+	const rawValidation = ctx.validation ?? propValidation ?? fieldValidation;
+	const { ariaInvalid, validation } = parseValidation({
+		"aria-invalid": rawAriaInvalid,
+		validation: rawValidation,
+	});
+	const id = fieldControl ? fieldControl.id : (ctx.id ?? propId);
+
+	return (
+		<SelectPrimitiveTrigger
+			data-slot={joinDataSlot(dataSlot, "select-trigger")}
+			className={cx(
+				"h-9 text-sm",
+				"border-form bg-form text-strong font-sans placeholder:text-placeholder hover:bg-form-hover hover:text-strong flex w-full items-center justify-between gap-1.5 rounded-md border px-3 py-2 disabled:pointer-events-none disabled:opacity-50",
+				// Why slot-scoped: the label span is itself a `<span>`, so a bare `[&>span]`
+				// would reach the wrapper. `line-clamp` sets `display`, which would undo
+				// the wrapper's `contents` and give it a box.
+				"[&>[data-slot=select-trigger-label]>span]:line-clamp-1 [&>[data-slot=select-trigger-label]>span]:text-left",
+				"hover:border-neutral-400",
+				"focus:outline-hidden focus:ring-4 aria-expanded:ring-4",
+				"focus:border-accent-600 focus:ring-focus-accent aria-expanded:border-accent-600 aria-expanded:ring-focus-accent",
+				"data-validation-success:border-success-600 data-validation-success:focus:border-success-600 data-validation-success:focus:ring-focus-success data-validation-success:aria-expanded:border-success-600 data-validation-success:aria-expanded:ring-focus-success",
+				"data-validation-warning:border-warning-600 data-validation-warning:focus:border-warning-600 data-validation-warning:focus:ring-focus-warning data-validation-warning:aria-expanded:border-warning-600 data-validation-warning:aria-expanded:ring-focus-warning",
+				"data-validation-error:border-danger-600 data-validation-error:focus:border-danger-600 data-validation-error:focus:ring-focus-danger data-validation-error:aria-expanded:border-danger-600 data-validation-error:aria-expanded:ring-focus-danger",
+				className,
+			)}
+			data-validation={validation || undefined}
+			id={id}
+			ref={triggerRef}
+			{...props}
+			onBlur={(event) => {
+				onBlur?.(event);
+				ctx.onBlur?.(event);
+			}}
+			{...(fieldControl
+				? {
+						"aria-describedby": fieldControl["aria-describedby"],
+						"aria-errormessage": fieldControl["aria-errormessage"],
+					}
+				: undefined)}
+			aria-invalid={ariaInvalid}
+		>
+			{/* Why the label span: decisions/2026-08-04-translation-safe-label-wrappers.md
+			    Why `Slottable`: under `asChild` Radix clones the consumer's element and
+			    moves every sibling inside it, so the span and the caret keep their places. */}
+			<Slottable child={children}>
+				{(label) => (
+					<span data-slot="select-trigger-label" className="contents">
+						{label}
+					</span>
+				)}
+			</Slottable>
+			<SelectPrimitiveIcon asChild>
+				<Icon svg={<CaretDownIcon weight="bold" />} className="size-4" />
+			</SelectPrimitiveIcon>
+		</SelectPrimitiveTrigger>
+	);
+};
+
+/**
+ * The button that scrolls the select content up.
+ * @private
+ */
+const SelectScrollUpButton = ({
+	className,
+	ref,
+	...props
+}: ComponentProps<typeof SelectPrimitiveScrollUpButton>) => (
+	<SelectPrimitiveScrollUpButton
+		ref={ref}
+		className={cx("flex cursor-default items-center justify-center py-1", className)}
+		{...props}
+	>
+		<Icon svg={<CaretUpIcon weight="bold" />} className="size-4" />
+	</SelectPrimitiveScrollUpButton>
+);
+
+/**
+ * The button that scrolls the select content down.
+ * @private
+ */
+const SelectScrollDownButton = ({
+	className,
+	ref,
+	...props
+}: ComponentProps<typeof SelectPrimitiveScrollDownButton>) => (
+	<SelectPrimitiveScrollDownButton
+		ref={ref}
+		className={cx("flex cursor-default items-center justify-center py-1", className)}
+		{...props}
+	>
+		<Icon svg={<CaretDownIcon weight="bold" />} className="size-4" />
+	</SelectPrimitiveScrollDownButton>
+);
+
+/**
+ * Props for `Select.Content`. `asChild` is omitted: the content renders its
+ * scroll buttons and viewport around `children`, so a slot would receive more
+ * than one element and throw.
+ */
+type SelectContentProps = Omit<ComponentProps<typeof SelectPrimitiveContent>, "asChild"> &
+	WithDataSlot & {
+		/**
+		 * The width of the content. Defaults to the width of the trigger.
+		 * If set to "content", the content takes its intrinsic width: the width of the widest item.
+		 * @default "trigger"
+		 */
+		width?: "trigger" | "content";
+	};
+
+/**
+ * The component that pops out when the select is open as a portal adjacent to the trigger button.
+ * It contains a scrolling viewport of the select items. `position` defaults to
+ * `"popper"`, so the list opens below the trigger instead of over the selected
+ * item.
+ *
+ * `Select.Content` renders at Tailwind `z-50`, Mantle's float tier. When
+ * composed inside an open `Dialog`, `AlertDialog`, or `Sheet`, it portals into
+ * that overlay's positioner and paints above the overlay that owns it. Outside
+ * every overlay, it portals to `document.body`, below the overlay tier
+ * (`z-60`). When sibling floats share a container, the most recently mounted
+ * float paints on top.
+ *
+ * **Why no `asChild`:** the scroll buttons and the viewport sit around
+ * `children`, so `Slot` would receive more than one element and throw. The
+ * prop is omitted from the props type.
+ *
+ * | Data Attribute | Value                                          | Description                                                            |
+ * | -------------- | ---------------------------------------------- | ---------------------------------------------------------------------- |
+ * | `data-slot`    | `"select-content"`                             | On the content element.                                                |
+ * | `data-state`   | `"open"` \| `"closed"`                         | Drives the open and close animations.                                  |
+ * | `data-side`    | `"top"` \| `"right"` \| `"bottom"` \| `"left"` | The side of the trigger the list opened on. `position="popper"` only.  |
+ * | `data-align`   | `"start"` \| `"center"` \| `"end"`             | The alignment against the trigger. `position="popper"` only.           |
+ *
+ * @see https://mantle.ngrok.com/components/forms/select#selectcontent
+ *
+ * @example
+ * ```tsx
+ * <Select.Root>
+ *   <Select.Trigger>
+ *     <Select.Value placeholder="Select a fruit" />
+ *   </Select.Trigger>
+ *   <Select.Content>
+ *     <Select.Group>
+ *       <Select.Label>Fruits</Select.Label>
+ *       <Select.Item value="apple">Apple</Select.Item>
+ *       <Select.Item value="banana">Banana</Select.Item>
+ *       <Select.Item value="cherry">Cherry</Select.Item>
+ *     </Select.Group>
+ *     <Select.Separator />
+ *     <Select.Group>
+ *       <Select.Label>Veggies</Select.Label>
+ *       <Select.Item value="carrot">Carrot</Select.Item>
+ *       <Select.Item value="cucumber">Cucumber</Select.Item>
+ *     </Select.Group>
+ *   </Select.Content>
+ * </Select.Root>
+ * ```
+ */
+const Content = ({
+	className,
+	children,
+	"data-slot": dataSlot,
+	position = "popper",
+	ref,
+	width = "trigger",
+	...props
+}: SelectContentProps) => {
+	const layerContainer = useLayerContainer();
+
+	return (
+		<SelectPrimitivePortal container={layerContainer}>
+			<SelectPrimitiveContent
+				ref={ref}
+				data-slot={joinDataSlot(dataSlot, "select-content")}
+				className={cx(
+					"border-popover data-side-bottom:slide-in-from-top-2 data-side-left:slide-in-from-right-2 data-side-right:slide-in-from-left-2 data-side-top:slide-in-from-bottom-2 data-state-closed:animate-out data-state-closed:fade-out-0 data-state-closed:zoom-out-95 data-state-open:animate-in data-state-open:fade-in-0 data-state-open:zoom-in-95 motion-reduce:animate-none relative z-50 max-h-96 min-w-32 overflow-hidden rounded-md border shadow-md",
+					"bg-popover font-sans",
+					position === "popper" &&
+						"data-side-bottom:translate-y-2 data-side-left:-translate-x-2 data-side-right:translate-x-2 data-side-top:-translate-y-2 max-h-(--radix-select-content-available-height)",
+					width === "trigger" && "w-(--radix-select-trigger-width)",
+					className,
+				)}
+				position={position}
+				{...props}
+			>
+				<SelectScrollUpButton />
+				<SelectPrimitiveViewport
+					className={cx(
+						"p-1 space-y-px",
+						position === "popper" && "h-(--radix-select-trigger-height) w-full",
+					)}
+				>
+					{children}
+				</SelectPrimitiveViewport>
+				<SelectScrollDownButton />
+			</SelectPrimitiveContent>
+		</SelectPrimitivePortal>
+	);
+};
+
+/**
+ * Used to render the label of a group. It won't be focusable using arrow keys.
+ *
+ * | Data Attribute | Value            | Description                 |
+ * | -------------- | ---------------- | --------------------------- |
+ * | `data-slot`    | `"select-label"` | On the group label element. |
+ *
+ * @see https://mantle.ngrok.com/components/forms/select#selectlabel
+ *
+ * @example
+ * ```tsx
+ * <Select.Root>
+ *   <Select.Trigger>
+ *     <Select.Value placeholder="Select a fruit" />
+ *   </Select.Trigger>
+ *   <Select.Content>
+ *     <Select.Group>
+ *       <Select.Label>Fruits</Select.Label>
+ *       <Select.Item value="apple">Apple</Select.Item>
+ *       <Select.Item value="banana">Banana</Select.Item>
+ *       <Select.Item value="cherry">Cherry</Select.Item>
+ *     </Select.Group>
+ *     <Select.Separator />
+ *     <Select.Group>
+ *       <Select.Label>Veggies</Select.Label>
+ *       <Select.Item value="carrot">Carrot</Select.Item>
+ *       <Select.Item value="cucumber">Cucumber</Select.Item>
+ *     </Select.Group>
+ *   </Select.Content>
+ * </Select.Root>
+ * ```
+ */
+const Label = ({
+	className,
+	"data-slot": dataSlot,
+	ref,
+	...props
+}: ComponentProps<typeof SelectPrimitiveLabel> & WithDataSlot) => (
+	<SelectPrimitiveLabel
+		ref={ref}
+		data-slot={joinDataSlot(dataSlot, "select-label")}
+		className={cx("px-2 py-1.5 text-sm font-medium", className)}
+		{...props}
+	/>
+);
+
+/**
+ * Props for `Select.Item`.
+ */
+type SelectItemProps = ComponentProps<typeof SelectPrimitiveItem> &
+	WithDataSlot & {
+		/**
+		 * An optional icon rendered before the item text.
+		 */
+		icon?: ReactNode;
+	};
+
+/**
+ * An option within a select menu. Similar to an html `<option>` element.
+ * Has a required `value` prop. When a user selects this item, `Select.Root`
+ * passes that value to its `onValueChange` handler.
+ * Displays the children as the option's text. Pass `icon` to render an icon
+ * before the text.
+ *
+ * **Structure.** `children` render inside a `<span data-slot="select-item-label">`.
+ * Radix portals that span into `Select.Value` while the item is selected and
+ * removes it when the selection changes. The span exists so the node React
+ * removes is an element: a browser translation engine reparents text nodes,
+ * and a removal aimed at one throws. The span is `display: contents`, so it
+ * lays out nothing of its own in the list or in the trigger. To style it as a
+ * box, set a display of your own on it first.
+ *
+ * **Untranslatable labels.** When the label is an ID, a path, a filename, or a
+ * key, set `translate="no"` on the item. The attribute also rides on the label
+ * span, so the copy the trigger shows stays untranslated too.
+ *
+ * **`asChild`.** Radix clones your single child as the option element. The label
+ * span and the indicator move inside it, so the guarantee above holds on both paths.
+ *
+ * | Data Attribute     | Value                        | Description                                                          |
+ * | ------------------ | ---------------------------- | -------------------------------------------------------------------- |
+ * | `data-slot`        | `"select-item"`              | On the option element.                                               |
+ * | `data-slot`        | `"select-item-label"`        | On the `<span>` wrapping `children`, in the list and in the trigger. |
+ * | `data-state`       | `"checked"` \| `"unchecked"` | Whether this item is the selected value.                             |
+ * | `data-highlighted` | present when highlighted     | Presence-only. The item under the pointer or the keyboard focus.     |
+ * | `data-disabled`    | present when disabled        | Presence-only. The `disabled` prop.                                  |
+ *
+ * @see https://mantle.ngrok.com/components/forms/select#selectitem
+ *
+ * @example
+ * ```tsx
+ * <Select.Root>
+ *   <Select.Trigger>
+ *     <Select.Value placeholder="Select a fruit" />
+ *   </Select.Trigger>
+ *   <Select.Content>
+ *     <Select.Group>
+ *       <Select.Label>Fruits</Select.Label>
+ *       <Select.Item value="apple">Apple</Select.Item>
+ *       <Select.Item value="banana">Banana</Select.Item>
+ *       <Select.Item value="cherry">Cherry</Select.Item>
+ *     </Select.Group>
+ *     <Select.Separator />
+ *     <Select.Group>
+ *       <Select.Label>Veggies</Select.Label>
+ *       <Select.Item value="carrot">Carrot</Select.Item>
+ *       <Select.Item value="cucumber">Cucumber</Select.Item>
+ *     </Select.Group>
+ *   </Select.Content>
+ * </Select.Root>
+ * ```
+ */
+const Item = ({
+	className,
+	children,
+	"data-slot": dataSlot,
+	icon,
+	ref,
+	translate,
+	...props
+}: SelectItemProps) => (
+	<SelectPrimitiveItem
+		ref={ref}
+		data-slot={joinDataSlot(dataSlot, "select-item")}
+		translate={translate}
+		className={cx(
+			"relative flex gap-2 w-full cursor-pointer select-none items-center rounded-md py-1.5 pl-2 pr-8 text-strong text-sm outline-hidden",
+			"focus:bg-active-menu-item",
+			"data-disabled:pointer-events-none data-disabled:opacity-50",
+			"data-state-checked:bg-selected-menu-item",
+			"focus:data-state-checked:bg-active-selected-menu-item",
+			className,
+		)}
+		{...props}
+	>
+		{icon && <Icon svg={icon} />}
+		{/* Why `Slottable`: under `asChild` Radix clones the consumer's element and
+		    moves every sibling inside it. `ItemText` rides inside the render function
+		    because Radix only finds a `Slottable` among the item's direct children. */}
+		<Slottable child={children}>
+			{(label) => (
+				<SelectPrimitiveItemText>
+					{/* Why the label span: decisions/2026-08-04-translation-safe-label-wrappers.md */}
+					{/* Why `translate` repeats: Radix portals this span into the trigger, out of the item's subtree, so the item's attribute never reaches that copy. */}
+					<span data-slot="select-item-label" className="contents" translate={translate}>
+						{label}
+					</span>
+				</SelectPrimitiveItemText>
+			)}
+		</Slottable>
+		<SelectPrimitiveItemIndicator className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+			<Icon svg={<CheckIcon weight="bold" />} className="size-4 text-accent-600" />
+		</SelectPrimitiveItemIndicator>
+	</SelectPrimitiveItem>
+);
+
+/**
+ * Used to visually separate items or groups of items in the select content.
+ *
+ * | Data Attribute | Value                | Description               |
+ * | -------------- | -------------------- | ------------------------- |
+ * | `data-slot`    | `"select-separator"` | On the separator element. |
+ *
+ * @see https://mantle.ngrok.com/components/forms/select#selectseparator
+ *
+ * @example
+ * ```tsx
+ * <Select.Root>
+ *   <Select.Trigger>
+ *     <Select.Value placeholder="Select a fruit" />
+ *   </Select.Trigger>
+ *   <Select.Content>
+ *     <Select.Group>
+ *       <Select.Label>Fruits</Select.Label>
+ *       <Select.Item value="apple">Apple</Select.Item>
+ *       <Select.Item value="banana">Banana</Select.Item>
+ *       <Select.Item value="cherry">Cherry</Select.Item>
+ *     </Select.Group>
+ *     <Select.Separator />
+ *     <Select.Group>
+ *       <Select.Label>Veggies</Select.Label>
+ *       <Select.Item value="carrot">Carrot</Select.Item>
+ *       <Select.Item value="cucumber">Cucumber</Select.Item>
+ *     </Select.Group>
+ *   </Select.Content>
+ * </Select.Root>
+ * ```
+ */
+const SelectSeparatorComponent = ({
+	className,
+	"data-slot": dataSlot,
+	ref,
+	...props
+}: ComponentProps<typeof Separator> & WithDataSlot) => (
+	<Separator
+		ref={ref}
+		data-slot={joinDataSlot(dataSlot, "select-separator")}
+		className={cx("-mx-1 my-1 h-px w-auto", className)}
+		{...props}
+	/>
+);
+
+/**
+ * Displays a list of options for the user to pick from—triggered by a button.
+ *
+ * Use Select for a small, finite list of options (~2-15) where the user picks exactly one
+ * and search/filtering is unnecessary. For larger lists or async/searchable data, use
+ * Combobox. For picking multiple options, use MultiSelect.
+ *
+ * `Select.Content` renders at Tailwind `z-50`, Mantle's float tier. When
+ * composed inside an open `Dialog`, `AlertDialog`, or `Sheet`, it portals into
+ * that overlay's positioner and paints above the overlay that owns it. Outside
+ * every overlay, it portals to `document.body`, below the overlay tier
+ * (`z-60`). When sibling floats share a container, the most recently mounted
+ * float paints on top.
+ *
+ * @see https://mantle.ngrok.com/components/forms/select
+ *
+ * @example
+ * Composition:
+ * ```
+ * Select.Root
+ * ├── Select.Trigger
+ * │   └── Select.Value
+ * └── Select.Content
+ *     ├── Select.Group
+ *     │   ├── Select.Label
+ *     │   └── Select.Item
+ *     └── Select.Separator
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <Select.Root>
+ *   <Select.Trigger>
+ *     <Select.Value placeholder="Select a fruit" />
+ *   </Select.Trigger>
+ *   <Select.Content>
+ *     <Select.Group>
+ *       <Select.Label>Fruits</Select.Label>
+ *       <Select.Item value="apple">Apple</Select.Item>
+ *       <Select.Item value="banana">Banana</Select.Item>
+ *       <Select.Item value="cherry">Cherry</Select.Item>
+ *     </Select.Group>
+ *     <Select.Separator />
+ *     <Select.Group>
+ *       <Select.Label>Veggies</Select.Label>
+ *       <Select.Item value="carrot">Carrot</Select.Item>
+ *       <Select.Item value="cucumber">Cucumber</Select.Item>
+ *     </Select.Group>
+ *   </Select.Content>
+ * </Select.Root>
+ * ```
+ */
+const Select = {
+	/**
+	 * Displays a list of options for the user to pick from—triggered by a button.
+	 *
+	 * Use Select for a small, finite list of options (~2-15) where the user picks exactly one
+	 * and search/filtering is unnecessary. For larger lists or async/searchable data, use
+	 * Combobox. For picking multiple options, use MultiSelect.
+	 *
+	 * Pass `validation` here when the entire select has an explicit state. That
+	 * root state is forwarded to `Select.Trigger` and takes precedence over the
+	 * ambient `validation` from `Field.Item`. Note: rendered `Field.Errors` /
+	 * `Field.ErrorList` set `aria-invalid="true"` on the trigger via
+	 * `Field.Control`'s wiring, which still forces the trigger into the error
+	 * state; suppress the inferred error by passing `validation` on `Field.Item`
+	 * if a non-error `Select.Root` state needs to win in that case.
+	 *
+	 * `Select.Content` renders at Tailwind `z-50`, Mantle's float tier. When
+	 * composed inside an open `Dialog`, `AlertDialog`, or `Sheet`, it portals into
+	 * that overlay's positioner and paints above the overlay that owns it. Outside
+	 * every overlay, it portals to `document.body`, below the overlay tier
+	 * (`z-60`). When sibling floats share a container, the most recently mounted
+	 * float paints on top.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/select#selectroot
+	 *
+	 * @example
+	 * ```tsx
+	 * <Select.Root>
+	 *   <Select.Trigger>
+	 *     <Select.Value placeholder="Select a fruit" />
+	 *   </Select.Trigger>
+	 *   <Select.Content>
+	 *     <Select.Group>
+	 *       <Select.Label>Fruits</Select.Label>
+	 *       <Select.Item value="apple">Apple</Select.Item>
+	 *       <Select.Item value="banana">Banana</Select.Item>
+	 *       <Select.Item value="cherry">Cherry</Select.Item>
+	 *     </Select.Group>
+	 *     <Select.Separator />
+	 *     <Select.Group>
+	 *       <Select.Label>Veggies</Select.Label>
+	 *       <Select.Item value="carrot">Carrot</Select.Item>
+	 *       <Select.Item value="cucumber">Cucumber</Select.Item>
+	 *     </Select.Group>
+	 *   </Select.Content>
+	 * </Select.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * The component that pops out when the select is open as a portal adjacent to the trigger button.
+	 * It contains a scrolling viewport of the select items. `position` defaults to
+	 * `"popper"`, so the list opens below the trigger instead of over the selected
+	 * item.
+	 *
+	 * `Select.Content` renders at Tailwind `z-50`, Mantle's float tier. When
+	 * composed inside an open `Dialog`, `AlertDialog`, or `Sheet`, it portals into
+	 * that overlay's positioner and paints above the overlay that owns it. Outside
+	 * every overlay, it portals to `document.body`, below the overlay tier
+	 * (`z-60`). When sibling floats share a container, the most recently mounted
+	 * float paints on top.
+	 *
+	 * **Why no `asChild`:** the scroll buttons and the viewport sit around
+	 * `children`, so `Slot` would receive more than one element and throw. The
+	 * prop is omitted from the props type.
+	 *
+	 * | Data Attribute | Value                                          | Description                                                            |
+	 * | -------------- | ---------------------------------------------- | ---------------------------------------------------------------------- |
+	 * | `data-slot`    | `"select-content"`                             | On the content element.                                                |
+	 * | `data-state`   | `"open"` \| `"closed"`                         | Drives the open and close animations.                                  |
+	 * | `data-side`    | `"top"` \| `"right"` \| `"bottom"` \| `"left"` | The side of the trigger the list opened on. `position="popper"` only.  |
+	 * | `data-align`   | `"start"` \| `"center"` \| `"end"`             | The alignment against the trigger. `position="popper"` only.           |
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/select#selectcontent
+	 *
+	 * @example
+	 * ```tsx
+	 * <Select.Root>
+	 *   <Select.Trigger>
+	 *     <Select.Value placeholder="Select a fruit" />
+	 *   </Select.Trigger>
+	 *   <Select.Content>
+	 *     <Select.Group>
+	 *       <Select.Label>Fruits</Select.Label>
+	 *       <Select.Item value="apple">Apple</Select.Item>
+	 *       <Select.Item value="banana">Banana</Select.Item>
+	 *       <Select.Item value="cherry">Cherry</Select.Item>
+	 *     </Select.Group>
+	 *     <Select.Separator />
+	 *     <Select.Group>
+	 *       <Select.Label>Veggies</Select.Label>
+	 *       <Select.Item value="carrot">Carrot</Select.Item>
+	 *       <Select.Item value="cucumber">Cucumber</Select.Item>
+	 *     </Select.Group>
+	 *   </Select.Content>
+	 * </Select.Root>
+	 * ```
+	 */
+	Content,
+	/**
+	 * A group of related options within a select menu. Similar to an html `<optgroup>` element.
+	 * Pair it with `Select.Label`, which gives the group its accessible name.
+	 *
+	 * | Data Attribute | Value            | Description           |
+	 * | -------------- | ---------------- | --------------------- |
+	 * | `data-slot`    | `"select-group"` | On the group element. |
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/select#selectgroup
+	 *
+	 * @example
+	 * ```tsx
+	 * <Select.Root>
+	 *   <Select.Trigger>
+	 *     <Select.Value placeholder="Select a fruit" />
+	 *   </Select.Trigger>
+	 *   <Select.Content>
+	 *     <Select.Group>
+	 *       <Select.Label>Fruits</Select.Label>
+	 *       <Select.Item value="apple">Apple</Select.Item>
+	 *       <Select.Item value="banana">Banana</Select.Item>
+	 *       <Select.Item value="cherry">Cherry</Select.Item>
+	 *     </Select.Group>
+	 *     <Select.Separator />
+	 *     <Select.Group>
+	 *       <Select.Label>Veggies</Select.Label>
+	 *       <Select.Item value="carrot">Carrot</Select.Item>
+	 *       <Select.Item value="cucumber">Cucumber</Select.Item>
+	 *     </Select.Group>
+	 *   </Select.Content>
+	 * </Select.Root>
+	 * ```
+	 */
+	Group,
+	/**
+	 * An option within a select menu. Similar to an html `<option>` element.
+	 * Has a required `value` prop. When a user selects this item, `Select.Root`
+	 * passes that value to its `onValueChange` handler.
+	 * Displays the children as the option's text. Pass `icon` to render an icon
+	 * before the text.
+	 *
+	 * **Structure.** `children` render inside a `<span data-slot="select-item-label">`.
+	 * Radix portals that span into `Select.Value` while the item is selected and
+	 * removes it when the selection changes. The span exists so the node React
+	 * removes is an element: a browser translation engine reparents text nodes,
+	 * and a removal aimed at one throws. The span is `display: contents`, so it
+	 * lays out nothing of its own in the list or in the trigger. To style it as a
+	 * box, set a display of your own on it first.
+	 *
+	 * **Untranslatable labels.** When the label is an ID, a path, a filename, or a
+	 * key, set `translate="no"` on the item. The attribute also rides on the label
+	 * span, so the copy the trigger shows stays untranslated too.
+	 *
+	 * **`asChild`.** Radix clones your single child as the option element. The label
+	 * span and the indicator move inside it, so the guarantee above holds on both paths.
+	 *
+	 * | Data Attribute     | Value                        | Description                                                          |
+	 * | ------------------ | ---------------------------- | -------------------------------------------------------------------- |
+	 * | `data-slot`        | `"select-item"`              | On the option element.                                               |
+	 * | `data-slot`        | `"select-item-label"`        | On the `<span>` wrapping `children`, in the list and in the trigger. |
+	 * | `data-state`       | `"checked"` \| `"unchecked"` | Whether this item is the selected value.                             |
+	 * | `data-highlighted` | present when highlighted     | Presence-only. The item under the pointer or the keyboard focus.     |
+	 * | `data-disabled`    | present when disabled        | Presence-only. The `disabled` prop.                                  |
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/select#selectitem
+	 *
+	 * @example
+	 * ```tsx
+	 * <Select.Root>
+	 *   <Select.Trigger>
+	 *     <Select.Value placeholder="Select a fruit" />
+	 *   </Select.Trigger>
+	 *   <Select.Content>
+	 *     <Select.Group>
+	 *       <Select.Label>Fruits</Select.Label>
+	 *       <Select.Item value="apple">Apple</Select.Item>
+	 *       <Select.Item value="banana">Banana</Select.Item>
+	 *       <Select.Item value="cherry">Cherry</Select.Item>
+	 *     </Select.Group>
+	 *     <Select.Separator />
+	 *     <Select.Group>
+	 *       <Select.Label>Veggies</Select.Label>
+	 *       <Select.Item value="carrot">Carrot</Select.Item>
+	 *       <Select.Item value="cucumber">Cucumber</Select.Item>
+	 *     </Select.Group>
+	 *   </Select.Content>
+	 * </Select.Root>
+	 * ```
+	 */
+	Item,
+	/**
+	 * Used to render the label of a group. It won't be focusable using arrow keys.
+	 *
+	 * | Data Attribute | Value            | Description                 |
+	 * | -------------- | ---------------- | --------------------------- |
+	 * | `data-slot`    | `"select-label"` | On the group label element. |
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/select#selectlabel
+	 *
+	 * @example
+	 * ```tsx
+	 * <Select.Root>
+	 *   <Select.Trigger>
+	 *     <Select.Value placeholder="Select a fruit" />
+	 *   </Select.Trigger>
+	 *   <Select.Content>
+	 *     <Select.Group>
+	 *       <Select.Label>Fruits</Select.Label>
+	 *       <Select.Item value="apple">Apple</Select.Item>
+	 *       <Select.Item value="banana">Banana</Select.Item>
+	 *       <Select.Item value="cherry">Cherry</Select.Item>
+	 *     </Select.Group>
+	 *     <Select.Separator />
+	 *     <Select.Group>
+	 *       <Select.Label>Veggies</Select.Label>
+	 *       <Select.Item value="carrot">Carrot</Select.Item>
+	 *       <Select.Item value="cucumber">Cucumber</Select.Item>
+	 *     </Select.Group>
+	 *   </Select.Content>
+	 * </Select.Root>
+	 * ```
+	 */
+	Label,
+	/**
+	 * Used to visually separate items or groups of items in the select content.
+	 *
+	 * | Data Attribute | Value                | Description               |
+	 * | -------------- | -------------------- | ------------------------- |
+	 * | `data-slot`    | `"select-separator"` | On the separator element. |
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/select#selectseparator
+	 *
+	 * @example
+	 * ```tsx
+	 * <Select.Root>
+	 *   <Select.Trigger>
+	 *     <Select.Value placeholder="Select a fruit" />
+	 *   </Select.Trigger>
+	 *   <Select.Content>
+	 *     <Select.Group>
+	 *       <Select.Label>Fruits</Select.Label>
+	 *       <Select.Item value="apple">Apple</Select.Item>
+	 *       <Select.Item value="banana">Banana</Select.Item>
+	 *       <Select.Item value="cherry">Cherry</Select.Item>
+	 *     </Select.Group>
+	 *     <Select.Separator />
+	 *     <Select.Group>
+	 *       <Select.Label>Veggies</Select.Label>
+	 *       <Select.Item value="carrot">Carrot</Select.Item>
+	 *       <Select.Item value="cucumber">Cucumber</Select.Item>
+	 *     </Select.Group>
+	 *   </Select.Content>
+	 * </Select.Root>
+	 * ```
+	 */
+	Separator: SelectSeparatorComponent,
+	/**
+	 * The button that toggles the select. The Select.Content will position itself adjacent to the trigger.
+	 * When composing with `Field.Item`, wrap `Select.Root` in `Field.Control`:
+	 * the generated `id`, `name`, and `aria-invalid` flow onto `Select.Root` (so
+	 * the hidden form input gets the field name), and the trigger reads
+	 * `aria-describedby` / `aria-errormessage` from `FieldControlContext`.
+	 *
+	 * **Structure.** `children` render inside a
+	 * `<span data-slot="select-trigger-label">`. The caret is a permanent element
+	 * sibling, so without the span a bare text child is never a lone child: a
+	 * browser translation engine reparents that text node, and the removal React
+	 * runs when the child changes shape or goes away throws. The span is
+	 * `display: contents`, so `Select.Value` stays a flex item of the trigger and
+	 * keeps its `gap`. A `[&>span]` class of your own now reaches the wrapper, not
+	 * `Select.Value`. Match the part's own variant instead:
+	 * `[&>[data-slot=select-trigger-label]>span]:line-clamp-none`.
+	 *
+	 * **`asChild`.** Radix clones your single child as the trigger element. The label
+	 * span and the caret move inside it, so the guarantee above holds on both paths.
+	 *
+	 * | Data Attribute     | Value                                   | Description                                                          |
+	 * | ------------------ | --------------------------------------- | -------------------------------------------------------------------- |
+	 * | `data-slot`        | `"select-trigger"`                      | On the trigger button.                                               |
+	 * | `data-slot`        | `"select-trigger-label"`                | On the `<span>` wrapping `children`.                                 |
+	 * | `data-state`       | `"open"` \| `"closed"`                  | Whether the list is open.                                            |
+	 * | `data-placeholder` | present when there is no value          | Presence-only. Style the placeholder text with `data-placeholder:`.  |
+	 * | `data-disabled`    | present when disabled                   | Presence-only. The `disabled` prop on `Select.Root`.                 |
+	 * | `data-validation`  | `"success"` \| `"warning"` \| `"error"` | The resolved `validation` state. Omitted when there is none.         |
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/select#selecttrigger
+	 *
+	 * @example
+	 * ```tsx
+	 * <Select.Root>
+	 *   <Select.Trigger>
+	 *     <Select.Value placeholder="Select a fruit" />
+	 *   </Select.Trigger>
+	 *   <Select.Content>
+	 *     <Select.Group>
+	 *       <Select.Label>Fruits</Select.Label>
+	 *       <Select.Item value="apple">Apple</Select.Item>
+	 *       <Select.Item value="banana">Banana</Select.Item>
+	 *       <Select.Item value="cherry">Cherry</Select.Item>
+	 *     </Select.Group>
+	 *     <Select.Separator />
+	 *     <Select.Group>
+	 *       <Select.Label>Veggies</Select.Label>
+	 *       <Select.Item value="carrot">Carrot</Select.Item>
+	 *       <Select.Item value="cucumber">Cucumber</Select.Item>
+	 *     </Select.Group>
+	 *   </Select.Content>
+	 * </Select.Root>
+	 * ```
+	 */
+	Trigger,
+	/**
+	 * The part that reflects the selected value. Renders the selected item's text
+	 * by default. For more control, control the select and pass your own children.
+	 * Do not style this part: under `Select.Content position="item-aligned"`, Radix
+	 * measures its box to align the open list over the selected item. Pass
+	 * `placeholder` for the text to show when the select has no value.
+	 *
+	 * **Structure.** `placeholder` renders inside a
+	 * `<span data-slot="select-placeholder">`, your own `children` inside a
+	 * `<span data-slot="select-value-label">`, and the selected item's text arrives
+	 * inside the `select-item-label` span that `Select.Item` renders. Each span is
+	 * `display: contents`, so it lays out nothing of its own. React removes one of
+	 * those spans whenever the value changes, and an element removal cannot throw:
+	 * a browser translation engine reparents text nodes, and a removal aimed at a
+	 * reparented text node does.
+	 *
+	 * **`asChild` is not supported.** Radix hands its `Slot` a keyed Fragment, so
+	 * your element receives none of the value's props and React warns. Pass
+	 * `children` instead.
+	 *
+	 * | Data Attribute | Value                  | Description                                                                   |
+	 * | -------------- | ---------------------- | ----------------------------------------------------------------------------- |
+	 * | `data-slot`    | `"select-value"`       | On the value element.                                                         |
+	 * | `data-slot`    | `"select-placeholder"` | On the `<span>` wrapping `placeholder`. Present only while there is no value. |
+	 * | `data-slot`    | `"select-value-label"` | On the `<span>` wrapping your `children`. Absent under `asChild`.             |
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/select#selectvalue
+	 *
+	 * @example
+	 * ```tsx
+	 * <Select.Root>
+	 *   <Select.Trigger>
+	 *     <Select.Value placeholder="Select a fruit" />
+	 *   </Select.Trigger>
+	 *   <Select.Content>
+	 *     <Select.Group>
+	 *       <Select.Label>Fruits</Select.Label>
+	 *       <Select.Item value="apple">Apple</Select.Item>
+	 *       <Select.Item value="banana">Banana</Select.Item>
+	 *       <Select.Item value="cherry">Cherry</Select.Item>
+	 *     </Select.Group>
+	 *     <Select.Separator />
+	 *     <Select.Group>
+	 *       <Select.Label>Veggies</Select.Label>
+	 *       <Select.Item value="carrot">Carrot</Select.Item>
+	 *       <Select.Item value="cucumber">Cucumber</Select.Item>
+	 *     </Select.Group>
+	 *   </Select.Content>
+	 * </Select.Root>
+	 * ```
+	 */
+	Value,
+} as const;
+
+export {
+	//,
+	Select,
+};

@@ -1,0 +1,710 @@
+"use client";
+
+import {
+	cloneElement,
+	createContext,
+	isValidElement,
+	useContext,
+	useId,
+	useMemo,
+	useRef,
+} from "react";
+import type { ComponentProps, MouseEvent, ReactNode, RefObject } from "react";
+import invariant from "tiny-invariant";
+import { useIsomorphicLayoutEffect } from "../../hooks/use-isomorphic-layout-effect.js";
+import type { WithAsChild } from "../../types/as-child.js";
+import { useComposedRefs } from "../../utils/compose-refs/compose-refs.js";
+import { cx } from "../../utils/cx/cx.js";
+import { isInteractiveTarget } from "../../utils/interactive-target.js";
+import { FieldControlContext } from "../field/field-context.js";
+import { Label } from "../label/label.js";
+import { RadioItemContext } from "../radio-group/radio-item-context.js";
+import { Slot } from "../slot/index.js";
+
+/**
+ * Association + identity props `Choice.Indicator` injects onto the control it
+ * wraps, so the control, `Choice.Label`'s `htmlFor`, and the description
+ * association all resolve from one shared id without the caller threading ids.
+ */
+type ChoiceControlProps = {
+	id: string;
+	name: string | undefined;
+	disabled: boolean;
+	"aria-describedby": string | undefined;
+	"aria-invalid": ComponentProps<"input">["aria-invalid"];
+	"aria-errormessage": string | undefined;
+};
+
+/**
+ * Shared identity between the parts of a `Choice`. `Root` owns the control's
+ * `id` (used by `Label`'s `htmlFor`) and the description's `id` (referenced by
+ * the control's `aria-describedby`), and pre-computes the props `Indicator`
+ * injects onto the control.
+ */
+type ChoiceContextValue = {
+	/** DOM id of the control; `Choice.Label` consumes it as its `htmlFor` target. */
+	controlId: string;
+	/** DOM id of the description slot; the control's `aria-describedby` points here. */
+	descriptionId: string;
+	/** Whether the choice is disabled, so `Label` / `Title` / `Description` dim in step. */
+	disabled: boolean;
+	/**
+	 * The rendered `Choice.Label` element, or `null` when the choice uses
+	 * `Choice.Title`. `Choice.Description` forwards its click here.
+	 */
+	labelRef: RefObject<HTMLLabelElement | null>;
+	/** Props `Choice.Indicator` injects onto its control child. */
+	controlProps: ChoiceControlProps;
+};
+
+const ChoiceContext = createContext<ChoiceContextValue | null>(null);
+
+/**
+ * Read the nearest {@link ChoiceContext}. Throws when a part is rendered outside
+ * `Choice.Root` so misuse fails loudly rather than silently dropping the
+ * label/description association.
+ */
+function useChoiceContext(part: string): ChoiceContextValue {
+	const context = useContext(ChoiceContext);
+	invariant(context, `Choice.${part} must be rendered inside Choice.Root.`);
+	return context;
+}
+
+/**
+ * Props for `Choice.Root`. Extends `<div>` props (minus `id`, narrowed below)
+ * with the disabled / id / name controls. Inside a `Field.Control`, the field's
+ * `id` / `name` / `aria-*` take precedence over these.
+ *
+ * @see https://mantle.ngrok.com/components/forms/choice
+ *
+ * @example
+ * ```tsx
+ * <Choice.Root name="notify">
+ *   <Choice.Indicator>
+ *     <Checkbox />
+ *   </Choice.Indicator>
+ *   <Choice.Content>
+ *     <Choice.Label>Email</Choice.Label>
+ *     <Choice.Description>Get notified by email.</Choice.Description>
+ *   </Choice.Content>
+ * </Choice.Root>
+ * ```
+ */
+type ChoiceRootProps = Omit<ComponentProps<"div">, "id"> & {
+	/** Marks the choice disabled — dims the text and is injected onto the control. */
+	disabled?: boolean;
+	/**
+	 * Explicit control id. Defaults to a generated id, or — when composed inside a
+	 * `Field.Control` — the field's id, so `Field.Label` and `Choice.Label` resolve
+	 * to the same control.
+	 */
+	id?: string;
+	/** Form value name for the control. Inherited from `Field` when composed within one. */
+	name?: string;
+	/** `Choice.Indicator`, a `Choice.Content` (with `Label` / `Title` + `Description`). */
+	children: ReactNode;
+};
+
+/**
+ * Root of a `Choice`: the indicator-left / content-right layout for pairing a
+ * checkbox or radio with a titled, multi-line label. Owns the control's `id` and the
+ * description's `id`. When rendered inside a `Field.Control`, it reads the
+ * field's `id` / `name` / `aria-*` from `FieldControlContext` and merges them
+ * into the props `Indicator` injects onto the control (the field's
+ * `aria-describedby` is concatenated with this `Choice`'s own description id).
+ * Outside a `Field` it falls back to its own generated ids, so the two compose
+ * but neither requires the other.
+ *
+ * @see https://mantle.ngrok.com/components/forms/choice
+ *
+ * @example
+ * ```tsx
+ * <Choice.Root name="notify">
+ *   <Choice.Indicator>
+ *     <Checkbox />
+ *   </Choice.Indicator>
+ *   <Choice.Content>
+ *     <Choice.Label>Email</Choice.Label>
+ *     <Choice.Description>Get notified by email.</Choice.Description>
+ *   </Choice.Content>
+ * </Choice.Root>
+ * ```
+ */
+const Root = ({
+	"aria-describedby": ariaDescribedBy,
+	"aria-errormessage": ariaErrorMessage,
+	"aria-invalid": ariaInvalid,
+	children,
+	className,
+	disabled = false,
+	id,
+	name,
+	ref,
+	...props
+}: ChoiceRootProps) => {
+	const fieldControl = useContext(FieldControlContext);
+	// Read the field values as primitives. `Field.Control` rebuilds its context
+	// object every render, so depending on the object would defeat the memo
+	// below — depend on these stable strings instead.
+	const fieldId = fieldControl?.id;
+	const fieldName = fieldControl?.name;
+	const fieldDescribedBy = fieldControl?.["aria-describedby"];
+	const fieldAriaInvalid = fieldControl?.["aria-invalid"];
+	const fieldErrorMessage = fieldControl?.["aria-errormessage"];
+	const generatedId = useId();
+	const descriptionId = useId();
+	const labelRef = useRef<HTMLLabelElement>(null);
+	const controlId = fieldId ?? id ?? generatedId;
+	// Reference our own description slot and append any inherited describedby
+	// (a Field.Control's description/error ids, or a caller-supplied one). Inside
+	// a Field the value can arrive via both context and a cloned prop, so prefer
+	// one (`??`, not both) to avoid listing the same id twice. Per WAI-ARIA an
+	// unresolved IDREF is ignored, so the description id is harmless when no
+	// Description is rendered.
+	const inheritedDescribedBy = fieldDescribedBy ?? ariaDescribedBy;
+	const describedBy = [inheritedDescribedBy, descriptionId].filter(Boolean).join(" ") || undefined;
+
+	const context = useMemo<ChoiceContextValue>(
+		() => ({
+			controlId,
+			descriptionId,
+			disabled,
+			labelRef,
+			controlProps: {
+				id: controlId,
+				name: fieldName ?? name,
+				disabled,
+				"aria-describedby": describedBy,
+				"aria-invalid": fieldAriaInvalid ?? ariaInvalid,
+				"aria-errormessage": fieldErrorMessage ?? ariaErrorMessage,
+			},
+		}),
+		[
+			controlId,
+			descriptionId,
+			disabled,
+			describedBy,
+			fieldName,
+			name,
+			fieldAriaInvalid,
+			ariaInvalid,
+			fieldErrorMessage,
+			ariaErrorMessage,
+		],
+	);
+
+	return (
+		<ChoiceContext.Provider value={context}>
+			{/* items-start so the indicator aligns to the first line when the title wraps. */}
+			<div
+				ref={ref}
+				data-slot="choice"
+				className={cx("flex w-full items-start gap-2", className)}
+				{...props}
+			>
+				{children}
+			</div>
+		</ChoiceContext.Provider>
+	);
+};
+
+type ChoiceIndicatorProps = ComponentProps<"span">;
+
+/**
+ * The left control slot of a `Choice`: drop the control here (a `Checkbox`, a
+ * radio indicator, a `Switch`, …). Its single element child is cloned with the
+ * shared `id` / `name` / `aria-*` / `disabled` from `Root`, so a control placed
+ * here is wired to `Choice.Label` and the description without the caller
+ * threading ids. A non-element child (or none) is rendered untouched.
+ *
+ * The slot is one line tall (`h-lh`) using the same `text-sm` line box as the
+ * title, and centers its child — so the control sits centered on the title's
+ * first line and stays put when the title wraps.
+ *
+ * @see https://mantle.ngrok.com/components/forms/choice
+ *
+ * @example
+ * ```tsx
+ * <Choice.Root name="notify">
+ *   <Choice.Indicator>
+ *     <Checkbox />
+ *   </Choice.Indicator>
+ *   <Choice.Content>
+ *     <Choice.Label>Email</Choice.Label>
+ *     <Choice.Description>Get notified by email.</Choice.Description>
+ *   </Choice.Content>
+ * </Choice.Root>
+ * ```
+ */
+const Indicator = ({ children, className, ref, ...props }: ChoiceIndicatorProps) => {
+	const { controlProps } = useChoiceContext("Indicator");
+	// Inject the association props onto the control. `id` and `aria-describedby`
+	// are owned by Choice and always win. `disabled` / `name` / `aria-invalid` /
+	// `aria-errormessage`, though, may have been set on the control itself — only
+	// override those when Choice (or a Field) actually carries a value, so a
+	// `<Checkbox disabled name="x" />` placed here isn't silently reset.
+	const control: ReactNode = isValidElement<Record<string, unknown>>(children)
+		? cloneElement(children, {
+				...controlProps,
+				disabled: controlProps.disabled || children.props.disabled === true,
+				name: controlProps.name ?? children.props.name,
+				"aria-invalid": controlProps["aria-invalid"] ?? children.props["aria-invalid"],
+				"aria-errormessage":
+					controlProps["aria-errormessage"] ?? children.props["aria-errormessage"],
+			})
+		: children;
+
+	return (
+		<span
+			ref={ref}
+			data-slot="choice-indicator"
+			// `h-lh` resolves to this element's own line-height, so it must share the
+			// title's `text-sm` line box (14px / 20px) — otherwise the slot would size
+			// to the inherited line-height and the control could not center on the
+			// title's first line. `items-center` then centers the control in that
+			// one-line box; `items-start` on Root keeps it on the first line when the
+			// title wraps.
+			className={cx("flex h-lh shrink-0 items-center text-sm", className)}
+			{...props}
+		>
+			{control}
+		</span>
+	);
+};
+
+type ChoiceContentProps = ComponentProps<"div"> & WithAsChild;
+
+/**
+ * The right column of a `Choice` — stacks a `Choice.Label` / `Choice.Title` over
+ * an optional `Choice.Description`. `min-w-0` so long titles truncate instead of
+ * pushing the row wide.
+ *
+ * @see https://mantle.ngrok.com/components/forms/choice
+ *
+ * @example
+ * ```tsx
+ * <Choice.Root name="notify">
+ *   <Choice.Indicator>
+ *     <Checkbox />
+ *   </Choice.Indicator>
+ *   <Choice.Content>
+ *     <Choice.Label>Email</Choice.Label>
+ *     <Choice.Description>Get notified by email.</Choice.Description>
+ *   </Choice.Content>
+ * </Choice.Root>
+ * ```
+ */
+const Content = ({ asChild, className, ref, ...props }: ChoiceContentProps) => {
+	const Comp = asChild ? Slot : "div";
+
+	return (
+		<Comp
+			ref={ref}
+			data-slot="choice-content"
+			className={cx("flex min-w-0 flex-1 flex-col gap-0.5", className)}
+			{...props}
+		/>
+	);
+};
+
+/**
+ * Props for `Choice.Label`. The mantle `Label` props, minus `htmlFor` and
+ * `disabled` — those are owned by `Choice.Root` (the control id and the choice's
+ * disabled state) and are not part of the public surface, so consumer props can
+ * never override the label-to-control wiring.
+ */
+type ChoiceLabelProps = Omit<ComponentProps<typeof Label>, "htmlFor" | "disabled">;
+
+/**
+ * The emphasized title of a `Choice`, rendered as a real `<label>` wired to the
+ * control by `htmlFor`, so clicking it toggles the control and it supplies the
+ * control's accessible name. Use this when the `Choice` owns the labeling (a
+ * standalone checkbox, a raw `<form>`, React-state-only).
+ *
+ * It is the mantle {@link Label} (not a re-implementation), so it keeps every
+ * base-label behavior — cursor, the double-click text-selection guard, and the
+ * auto `font-medium` — and mirrors how `Field.Label` reuses `Label`. When an
+ * ancestor already owns the labeling and click target (a fully-clickable list
+ * row or a Headless radio item), use `Choice.Title` instead — a label-less `<p>`
+ * (it accepts `asChild`) — so labels never nest or compete.
+ *
+ * @see https://mantle.ngrok.com/components/forms/choice
+ *
+ * @example
+ * ```tsx
+ * <Choice.Root name="notify">
+ *   <Choice.Indicator>
+ *     <Checkbox />
+ *   </Choice.Indicator>
+ *   <Choice.Content>
+ *     <Choice.Label>Email</Choice.Label>
+ *     <Choice.Description>Get notified by email.</Choice.Description>
+ *   </Choice.Content>
+ * </Choice.Root>
+ * ```
+ */
+const ChoiceLabel = ({ className, ref, ...props }: ChoiceLabelProps) => {
+	const { controlId, disabled, labelRef } = useChoiceContext("Label");
+	// `Choice.Description` clicks this element to reach the control.
+	const composedRef = useComposedRefs(labelRef, ref);
+
+	// Reuse the real `Label` rather than re-implementing it, so the title keeps
+	// all of `Label`'s styling and behavior. `htmlFor` / `disabled` come from
+	// `Choice.Root` and are applied after `{...props}` so the wiring always wins.
+	return (
+		<Label
+			ref={composedRef}
+			data-slot="choice-label"
+			className={cx(disabled && "opacity-50", className)}
+			{...props}
+			htmlFor={controlId}
+			disabled={disabled}
+		/>
+	);
+};
+
+/**
+ * The emphasized title of a `Choice`, label-styled but **not** a `<label>` —
+ * renders a `<p>`. Mirrors `Field.LabelText`. Use this when something else owns
+ * the control's labeling and click target: a fully-clickable list row or a
+ * Headless radio item. It avoids nesting two `<label>`s or splitting
+ * the click target. Pass `asChild` to supply your own element. For a standalone
+ * control — or inside a `Field` — where the title can be the label, use
+ * `Choice.Label`.
+ *
+ * Inside a `RadioGroup` item, the title registers its id with the radio, so the
+ * option's `aria-labelledby` names it by the title alone. The description stays
+ * out of the name. The `id` defaults to a generated one.
+ *
+ * @see https://mantle.ngrok.com/components/forms/choice
+ *
+ * @example
+ * ```tsx
+ * <Choice.Root id="onboarding-key">
+ *   <Choice.Indicator>
+ *     <Checkbox />
+ *   </Choice.Indicator>
+ *   <Choice.Content>
+ *     <Choice.Title>Onboarding Key</Choice.Title>
+ *     <Choice.Description>ng-3FaThZL***8xiA</Choice.Description>
+ *   </Choice.Content>
+ * </Choice.Root>
+ * ```
+ */
+const Title = ({ asChild, className, id, ref, ...props }: ComponentProps<"p"> & WithAsChild) => {
+	const { disabled } = useChoiceContext("Title");
+	const radioItem = useContext(RadioItemContext);
+	const generatedId = useId();
+	const titleId = id ?? generatedId;
+	// Why a layout effect: the radio stamps `aria-labelledby` in the same commit,
+	// so no paint carries the flattened title-plus-description name.
+	useIsomorphicLayoutEffect(() => radioItem?.registerLabelId(titleId), [radioItem, titleId]);
+	const Comp = asChild ? Slot : "p";
+
+	return (
+		<Comp
+			ref={ref}
+			data-slot="choice-title"
+			className={cx(
+				"text-strong text-sm font-medium font-sans",
+				disabled && "opacity-50",
+				className,
+			)}
+			{...props}
+			id={titleId}
+		/>
+	);
+};
+
+/**
+ * Whether a click on the description should forward to the `Choice.Label`.
+ * Returns `false` when a consumer handler called `preventDefault()`, when the
+ * click landed on interactive content inside the description (the same rule a
+ * `List` row applies), or when an ancestor `<label>` already forwards the click
+ * (a second forward would toggle the control twice).
+ */
+function shouldForwardDescriptionClick(event: MouseEvent<HTMLElement>): boolean {
+	if (event.defaultPrevented) {
+		return false;
+	}
+	if (isInteractiveTarget(event.target, event.currentTarget)) {
+		return false;
+	}
+	return event.currentTarget.closest("label") == null;
+}
+
+/**
+ * The de-emphasized supplementary line of a `Choice`, in the muted body color
+ * and wired to the control via `aria-describedby` (never a second label).
+ * Renders a `<p>`; pass `asChild` to supply your own element. `Choice.Root`
+ * owns its `id`, so `id` is not a prop.
+ *
+ * A click on the description forwards to the sibling `Choice.Label`, so the
+ * whole content column toggles the control while the accessible name stays the
+ * label alone. The forward skips a click on a link or other interactive content
+ * inside the description. After it forwards, it marks the click handled with
+ * `preventDefault()`, so a click-to-activate ancestor (a `SelectableList` row)
+ * does not toggle the control a second time. When the choice uses
+ * `Choice.Title`, the description forwards nothing, because an ancestor owns
+ * that click.
+ *
+ * Inside a `RadioGroup` item, the description registers its id with the radio,
+ * so the option's `aria-describedby` points here.
+ *
+ * @see https://mantle.ngrok.com/components/forms/choice
+ *
+ * @example
+ * ```tsx
+ * <Choice.Root name="notify">
+ *   <Choice.Indicator>
+ *     <Checkbox />
+ *   </Choice.Indicator>
+ *   <Choice.Content>
+ *     <Choice.Label>Email</Choice.Label>
+ *     <Choice.Description>Get notified by email.</Choice.Description>
+ *   </Choice.Content>
+ * </Choice.Root>
+ * ```
+ */
+const Description = ({
+	asChild,
+	className,
+	onClick,
+	ref,
+	...props
+}: Omit<ComponentProps<"p">, "id"> & WithAsChild) => {
+	const { descriptionId, disabled, labelRef } = useChoiceContext("Description");
+	const radioItem = useContext(RadioItemContext);
+	useIsomorphicLayoutEffect(
+		() => radioItem?.registerDescriptionId(descriptionId),
+		[radioItem, descriptionId],
+	);
+	const Comp = asChild ? Slot : "p";
+
+	return (
+		<Comp
+			ref={ref}
+			data-slot="choice-description"
+			className={cx(
+				"text-body text-sm leading-4",
+				// The description extends the label's click target, so it shares the
+				// label's pointer cursor. The sibling selector keeps the text cursor when
+				// the choice uses `Choice.Title` and an ancestor owns the click.
+				!disabled && "[[data-slot~=choice-label]~&]:cursor-pointer",
+				disabled && "opacity-50",
+				className,
+			)}
+			onClick={(event: MouseEvent<HTMLParagraphElement>) => {
+				onClick?.(event);
+				if (shouldForwardDescriptionClick(event)) {
+					// `HTMLElement.click()` on the label runs its activation behavior, so
+					// the control receives the same click a direct label click sends.
+					labelRef.current?.click();
+					// Why: a click-to-activate ancestor (a `SelectableList` row) reads
+					// `defaultPrevented` as "handled", so the forward toggles once.
+					event.preventDefault();
+				}
+			}}
+			{...props}
+			// Why after the spread: the control's `aria-describedby` points at this
+			// id, and a wider props object can still carry an `id` past the type.
+			id={descriptionId}
+		/>
+	);
+};
+
+/**
+ * A reusable indicator-left / content-right layout for a single choice: a
+ * control (checkbox, radio, switch) beside an emphasized title and an optional
+ * de-emphasized description. Use it to pair a checkbox or radio with a rich,
+ * titled label, or reach for it directly to build your own choice-like rows.
+ *
+ * It is a pure layout + association primitive: it owns the control's `id` and
+ * the description's `id` and wires them together, but does **not** own the
+ * control's value — drop your own control into `Choice.Indicator`. Pick
+ * `Choice.Label` (a real `<label>`) when the `Choice` owns the labeling, or
+ * `Choice.Title` (label-less text) when an ancestor (a clickable row or a
+ * Headless radio item) already does.
+ *
+ * **Use it for choice-like layouts** — a checkbox or radio input that needs an
+ * associated label and an optional supplementary description. It is not a
+ * general-purpose layout primitive; for laying out non-control content, reach
+ * for a plain flex/grid or `MediaObject` instead.
+ *
+ * **Field interop.** Inside a `Field.Control`, `Choice.Root` reads the field's
+ * `id` / `name` / `aria-*` and merges its description into the control's
+ * `aria-describedby`. Outside a `Field` it uses its own generated ids — the two
+ * are aware of each other but neither is required.
+ *
+ * **Radio interop.** Inside a `RadioGroup` item, `Choice.Title` and
+ * `Choice.Description` register their ids with the radio, so the option's
+ * accessible name is the title alone and the description is its
+ * `aria-describedby`.
+ *
+ * @see https://mantle.ngrok.com/components/forms/choice
+ *
+ * @example
+ * Composition:
+ * ```
+ * Choice.Root
+ * ├── Choice.Indicator
+ * └── Choice.Content
+ *     ├── Choice.Label        (or Choice.Title — pick one)
+ *     └── Choice.Description
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <Choice.Root name="notify">
+ *   <Choice.Indicator>
+ *     <Checkbox />
+ *   </Choice.Indicator>
+ *   <Choice.Content>
+ *     <Choice.Label>Email</Choice.Label>
+ *     <Choice.Description>Get notified by email.</Choice.Description>
+ *   </Choice.Content>
+ * </Choice.Root>
+ * ```
+ */
+const Choice = {
+	/**
+	 * Root of a `Choice`: the indicator-left / content-right layout for pairing a
+	 * checkbox or radio with a titled, multi-line label. Owns the control's `id` and the
+	 * description's `id`. When rendered inside a `Field.Control`, it reads the
+	 * field's `id` / `name` / `aria-*` from `FieldControlContext` and merges them
+	 * into the props `Indicator` injects onto the control (the field's
+	 * `aria-describedby` is concatenated with this `Choice`'s own description id).
+	 * Outside a `Field` it falls back to its own generated ids, so the two compose
+	 * but neither requires the other.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/choice
+	 *
+	 * @example
+	 * ```tsx
+	 * <Choice.Root name="notify">
+	 *   <Choice.Indicator>
+	 *     <Checkbox />
+	 *   </Choice.Indicator>
+	 *   <Choice.Content>
+	 *     <Choice.Label>Email</Choice.Label>
+	 *     <Choice.Description>Get notified by email.</Choice.Description>
+	 *   </Choice.Content>
+	 * </Choice.Root>
+	 * ```
+	 */
+	Root,
+	/**
+	 * The left control slot of a `Choice`: drop the control here (a `Checkbox`, a
+	 * radio indicator, a `Switch`, …). Its single element child is cloned with the
+	 * shared `id` / `name` / `aria-*` / `disabled` from `Root`, so a control placed
+	 * here is wired to `Choice.Label` and the description without the caller
+	 * threading ids. A non-element child (or none) is rendered untouched.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/choice
+	 *
+	 * @example
+	 * ```tsx
+	 * <Choice.Root name="notify">
+	 *   <Choice.Indicator>
+	 *     <Checkbox />
+	 *   </Choice.Indicator>
+	 *   <Choice.Content>
+	 *     <Choice.Label>Email</Choice.Label>
+	 *     <Choice.Description>Get notified by email.</Choice.Description>
+	 *   </Choice.Content>
+	 * </Choice.Root>
+	 * ```
+	 */
+	Indicator,
+	/**
+	 * Content: the right column that stacks the title over the description.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/choice
+	 *
+	 * @example
+	 * ```tsx
+	 * <Choice.Root name="notify">
+	 *   <Choice.Indicator>
+	 *     <Checkbox />
+	 *   </Choice.Indicator>
+	 *   <Choice.Content>
+	 *     <Choice.Label>Email</Choice.Label>
+	 *     <Choice.Description>Get notified by email.</Choice.Description>
+	 *   </Choice.Content>
+	 * </Choice.Root>
+	 * ```
+	 */
+	Content,
+	/**
+	 * Label: the title as a real `<label htmlFor>`. Use when the `Choice` owns
+	 * labeling (standalone control); otherwise use `Choice.Title`.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/choice
+	 *
+	 * @example
+	 * ```tsx
+	 * <Choice.Root name="notify">
+	 *   <Choice.Indicator>
+	 *     <Checkbox />
+	 *   </Choice.Indicator>
+	 *   <Choice.Content>
+	 *     <Choice.Label>Email</Choice.Label>
+	 *     <Choice.Description>Get notified by email.</Choice.Description>
+	 *   </Choice.Content>
+	 * </Choice.Root>
+	 * ```
+	 */
+	Label: ChoiceLabel,
+	/**
+	 * Title: the title as label-less text (`<p>`). Use when an ancestor (a
+	 * clickable row or a Headless radio item) owns labeling. Inside a
+	 * `RadioGroup` item it names the radio through `aria-labelledby`.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/choice
+	 *
+	 * @example
+	 * ```tsx
+	 * <Choice.Root id="onboarding-key">
+	 *   <Choice.Indicator>
+	 *     <Checkbox />
+	 *   </Choice.Indicator>
+	 *   <Choice.Content>
+	 *     <Choice.Title>Onboarding Key</Choice.Title>
+	 *     <Choice.Description>ng-3FaThZL***8xiA</Choice.Description>
+	 *   </Choice.Content>
+	 * </Choice.Root>
+	 * ```
+	 */
+	Title,
+	/**
+	 * Description: the supplementary line, wired via `aria-describedby`. A click
+	 * on it forwards to `Choice.Label`. Inside a `RadioGroup` item it describes
+	 * the radio through `aria-describedby`.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/choice
+	 *
+	 * @example
+	 * ```tsx
+	 * <Choice.Root name="notify">
+	 *   <Choice.Indicator>
+	 *     <Checkbox />
+	 *   </Choice.Indicator>
+	 *   <Choice.Content>
+	 *     <Choice.Label>Email</Choice.Label>
+	 *     <Choice.Description>Get notified by email.</Choice.Description>
+	 *   </Choice.Content>
+	 * </Choice.Root>
+	 * ```
+	 */
+	Description,
+} as const;
+
+export {
+	//,
+	Choice,
+};
+
+export type {
+	//,
+	ChoiceRootProps,
+};

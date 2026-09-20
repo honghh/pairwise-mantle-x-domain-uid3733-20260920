@@ -1,0 +1,2156 @@
+---
+title: Bar Chart
+description: A canvas-rendered bar chart for comparing values across categories, with grouped and stacked variants.
+---
+
+import { BarChart } from "@ngrok/mantle/bar-chart";
+import { Button } from "@ngrok/mantle/button";
+import { Empty } from "@ngrok/mantle/empty";
+import { useEffect, useState } from "react";
+import { Example } from "~/components/example";
+
+export const endpointsByRegion = [
+	{ month: "January", usEast: 41, euWest: 0, apSouth: 0 },
+	{ month: "February", usEast: 52, euWest: 0, apSouth: 0 },
+	{ month: "March", usEast: 0, euWest: 38, apSouth: 0 },
+	{ month: "April", usEast: 0, euWest: 44, apSouth: 12 },
+	{ month: "May", usEast: 18, euWest: 0, apSouth: 26 },
+	{ month: "June", usEast: 23, euWest: 51, apSouth: 31 },
+];
+
+export function SparseStackBarChartExample() {
+	return (
+		<div className="grid w-full gap-6 sm:grid-cols-2">
+			<BarChart.Root
+				data={endpointsByRegion}
+				xKey="month"
+				stacked
+				aria-label="Active endpoints by region"
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="usEast" label="US East" />
+				<BarChart.Bar dataKey="euWest" label="EU West" />
+				<BarChart.Bar dataKey="apSouth" label="AP South" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			<BarChart.Root
+				data={endpointsByRegion}
+				xKey="month"
+				stacked
+				orientation="horizontal"
+				aria-label="Active endpoints by region, horizontal"
+			>
+				<BarChart.Grid lines="vertical" />
+				<BarChart.XAxis />
+				<BarChart.YAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.Bar dataKey="usEast" label="US East" />
+				<BarChart.Bar dataKey="euWest" label="EU West" />
+				<BarChart.Bar dataKey="apSouth" label="AP South" />
+				<BarChart.Legend />
+			</BarChart.Root>
+		</div>
+	);
+}
+
+export const monthlySpend = [
+	{ month: "January", endpoints: 39, transfer: 11.42, events: 0.28 },
+	{ month: "February", endpoints: 39, transfer: 12.06, events: 0.31 },
+	{ month: "March", endpoints: 39, transfer: 9.87, events: 0.004 },
+	{ month: "April", endpoints: 39, transfer: 14.55, events: 0.19 },
+	{ month: "May", endpoints: 39, transfer: 13.02, events: 0 },
+	{ month: "June", endpoints: 39, transfer: 15.31, events: 0.42 },
+];
+
+export function SubCentBarChartExample() {
+	return (
+		<BarChart.Root data={monthlySpend} xKey="month" stacked aria-label="Monthly spend by line item">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis tickFormat={(value) => `$${value}`} />
+			<BarChart.Bar dataKey="endpoints" label="Endpoints" />
+			<BarChart.Bar dataKey="transfer" label="Transfer" />
+			<BarChart.Bar dataKey="events" label="Events" />
+			<BarChart.Tooltip valueFormat={(value) => `$${value.toFixed(3)}`} />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+
+export const netEndpointChange = [
+	{ month: "January", added: 128, churned: -34, suspended: -11 },
+	{ month: "February", added: 96, churned: -52, suspended: -8 },
+	{ month: "March", added: 141, churned: -27, suspended: -19 },
+	{ month: "April", added: 62, churned: -88, suspended: -24 },
+	{ month: "May", added: 118, churned: -41, suspended: 0 },
+	{ month: "June", added: 154, churned: -36, suspended: -14 },
+];
+
+export function DivergingBarChartExample() {
+	return (
+		<BarChart.Root
+			data={netEndpointChange}
+			xKey="month"
+			stacked
+			aria-label="Net change in active endpoints"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="added" label="Added" />
+			<BarChart.Bar dataKey="churned" label="Churned" color="var(--color-danger-500)" />
+			{/*
+			 * Both negative series stack below zero, so they always touch. In
+			 * light-high-contrast the two semantic reds sit 14.05 ΔE apart for
+			 * full-color vision, under the 15 the palette holds its own slots to, so
+			 * the texture carries a difference hue alone does not.
+			 */}
+			<BarChart.Bar
+				dataKey="suspended"
+				label="Suspended"
+				color="var(--color-warning-500)"
+				texture="hatch"
+			/>
+			<BarChart.Tooltip />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+
+export const requestsByProtocol = [
+	{ month: "January", http: 1240, tcp: 910, tls: 640 },
+	{ month: "February", http: 1385, tcp: 845, tls: 705 },
+	{ month: "March", http: 1520, tcp: 1010, tls: 590 },
+	{ month: "April", http: 1180, tcp: 1145, tls: 820 },
+	{ month: "May", http: 1660, tcp: 980, tls: 735 },
+	{ month: "June", http: 1745, tcp: 1220, tls: 880 },
+];
+
+export function StackedActivationBarChartExample() {
+	const [lastActivated, setLastActivated] = useState("Click a segment.");
+	return (
+		<div className="w-full">
+			<BarChart.Root
+				data={requestsByProtocol}
+				xKey="month"
+				stacked
+				aria-label="Requests by protocol"
+				onDatumActivate={(event) => {
+					const series = event.dataKey == null ? "whole month" : event.dataKey;
+					setLastActivated(`Activated ${String(event.xValue)} (${series}).`);
+				}}
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis tickFormat={(value) => `${value}k`} />
+				<BarChart.Bar dataKey="http" label="HTTP" />
+				<BarChart.Bar dataKey="tcp" label="TCP" />
+				<BarChart.Bar dataKey="tls" label="TLS" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			<p className="text-muted mt-3 text-sm">{lastActivated}</p>
+		</div>
+	);
+}
+
+export const noUsageYet = [
+	{ month: "January", requests: 0 },
+	{ month: "February", requests: 0 },
+	{ month: "March", requests: 0 },
+	{ month: "April", requests: 0 },
+	{ month: "May", requests: 0 },
+	{ month: "June", requests: 0 },
+];
+
+export function NoUsageYetBarChartExample() {
+	return (
+		<BarChart.Root data={noUsageYet} xKey="month" aria-label="Requests by month">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="requests" label="Requests" />
+			<BarChart.Tooltip />
+		</BarChart.Root>
+	);
+}
+
+export const spendByProvider = [
+	{ month: "April", aws: 1610, gcp: 1145, azure: 520, onPrem: 141 },
+	{ month: "May", aws: 1745, gcp: 1080, azure: 565, onPrem: 133 },
+	{ month: "June", aws: 1890, gcp: 1220, azure: 610, onPrem: 152 },
+];
+
+export const spendByRegion = [
+	{ month: "April", usEast: 1495, usWest: 828, euWest: 690, apSouth: 403 },
+	{ month: "May", usEast: 1580, usWest: 874, euWest: 745, apSouth: 434 },
+	{ month: "June", usEast: 1712, usWest: 940, euWest: 803, apSouth: 417 },
+];
+
+export const spendByAccessKey = [
+	{ month: "April", ci: 1240, staging: 762, production: 1330, laptop: 84 },
+	{ month: "May", ci: 1315, staging: 810, production: 1440, laptop: 68 },
+	{ month: "June", ci: 1428, staging: 869, production: 1560, laptop: 15 },
+];
+
+export const groupings = {
+	provider: {
+		label: "By provider",
+		data: spendByProvider,
+		series: [
+			["aws", "AWS"],
+			["gcp", "GCP"],
+			["azure", "Azure"],
+			["onPrem", "On-prem"],
+		],
+	},
+	region: {
+		label: "By region",
+		data: spendByRegion,
+		series: [
+			["usEast", "US East"],
+			["usWest", "US West"],
+			["euWest", "EU West"],
+			["apSouth", "AP South"],
+		],
+	},
+	accessKey: {
+		label: "By access key",
+		data: spendByAccessKey,
+		series: [
+			["ci", "CI"],
+			["staging", "Staging"],
+			["production", "Production"],
+			["laptop", "Laptop"],
+		],
+	},
+};
+
+export function RegroupBarChartExample() {
+	const [grouping, setGrouping] = useState("provider");
+	const active = groupings[grouping];
+	return (
+		<div className="w-full">
+			<div className="mb-3 flex flex-wrap gap-2">
+				{Object.entries(groupings).map(([key, option]) => (
+					<Button
+						key={key}
+						appearance={key === grouping ? "filled" : "outlined"}
+						onClick={() => setGrouping(key)}
+					>
+						{option.label}
+					</Button>
+				))}
+			</div>
+			{/* No `key` on the Root: remounting it would reset the palette and hide
+			    the behavior this example exists to show. */}
+			<BarChart.Root data={active.data} xKey="month" aria-label="Monthly requests by grouping">
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				{active.series.map(([dataKey, label]) => (
+					<BarChart.Bar key={dataKey} dataKey={dataKey} label={label} />
+				))}
+				<BarChart.Legend />
+			</BarChart.Root>
+		</div>
+	);
+}
+
+export const requestsByModelProvider = [
+	{ day: "Mon", openai: 4210, gemini: 1640, claude: 3180, acmeLlm: 820, byoRouter: 310 },
+	{ day: "Tue", openai: 4620, gemini: 1780, claude: 3540, acmeLlm: 910, byoRouter: 380 },
+	{ day: "Wed", openai: 3980, gemini: 2010, claude: 3920, acmeLlm: 1140, byoRouter: 420 },
+	{ day: "Thu", openai: 5100, gemini: 1930, claude: 4180, acmeLlm: 1020, byoRouter: 470 },
+	{ day: "Fri", openai: 5340, gemini: 2240, claude: 4460, acmeLlm: 1310, byoRouter: 510 },
+];
+
+export function BrandColorBarChartExample() {
+	return (
+		<BarChart.Root
+			data={requestsByModelProvider}
+			xKey="day"
+			stacked
+			// The canvas probe and the legend swatch both resolve through this
+			// element's own cascade. A theme that needs its own value takes a variant:
+			// `dark:[--provider-claude:…]`.
+			className="[--provider-openai:#10a37f] [--provider-gemini:#3186ff] [--provider-claude:#d97757]"
+			aria-label="Requests by model provider"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis />
+			<BarChart.YAxis tickFormat={(count) => `${count / 1000}k`} />
+			{/* Known providers keep one color for as long as the app declares it. Claude
+			    sits between the other two on purpose, and wears a texture because it runs
+			    close to OpenAI under simulated color vision deficiency — see the note
+			    above. */}
+			<BarChart.Bar dataKey="openai" label="OpenAI" seriesSlot={1} color="var(--provider-openai)" />
+			<BarChart.Bar
+				dataKey="claude"
+				label="Claude"
+				seriesSlot={2}
+				color="var(--provider-claude)"
+				texture="hatch"
+			/>
+			<BarChart.Bar dataKey="gemini" label="Gemini" seriesSlot={3} color="var(--provider-gemini)" />
+			{/* The fixed slots above reserve chart-1 through chart-3, so automatic
+			    bring-your-own providers take chart-4 and chart-5. */}
+			<BarChart.Bar dataKey="acmeLlm" label="Acme LLM" />
+			<BarChart.Bar dataKey="byoRouter" label="BYO Router" />
+			<BarChart.Tooltip />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+
+export const monthlyVisitors = [
+	{ month: "January", desktop: 186, mobile: 80 },
+	{ month: "February", desktop: 305, mobile: 200 },
+	{ month: "March", desktop: 237, mobile: 120 },
+	{ month: "April", desktop: 73, mobile: 190 },
+	{ month: "May", desktop: 209, mobile: 130 },
+	{ month: "June", desktop: 214, mobile: 140 },
+];
+
+export function SeriesIdentityBarChartExample() {
+	return (
+		// An app declares its brand token once, high in the tree. This example
+		// declares it on the wrapper so it stands alone. A theme that needs its own
+		// value takes a variant: `dark:[--color-brand:…]`.
+		<div className="grid w-full gap-6 [--color-brand:#d07c00] sm:grid-cols-2">
+			<BarChart.Root
+				data={monthlyVisitors}
+				xKey="month"
+				className="[--color-chart-1:var(--color-brand)]"
+				aria-label="Visitors by month, first slot rethemed"
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="desktop" label="Desktop" />
+				<BarChart.Bar dataKey="mobile" label="Mobile" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			{/* The sibling never sees the declaration above, so its Desktop series
+			    keeps the chart-1 blue. */}
+			<BarChart.Root
+				data={monthlyVisitors}
+				xKey="month"
+				aria-label="Visitors by month, one color overridden"
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="desktop" label="Desktop" />
+				<BarChart.Bar dataKey="mobile" label="Mobile" color="var(--color-brand)" />
+				<BarChart.Legend />
+			</BarChart.Root>
+		</div>
+	);
+}
+
+export const dailyRequests = Array.from({ length: 91 }, (_, day) => {
+	const date = new Date(2026, 3, 1 + day);
+	const weekend = date.getDay() === 0 || date.getDay() === 6;
+	return {
+		date,
+		requests: Math.round(
+			(weekend ? 0.55 : 1) *
+				(52_000 + 14_000 * Math.sin(day / 9) + 9_000 * Math.sin(day / 2.7) + 120 * day),
+		),
+	};
+});
+
+export const shortDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
+export function DailyBarChartExample() {
+	return (
+		<BarChart.Root
+			data={dailyRequests}
+			xKey="date"
+			aria-label="HTTP requests per day over the last three months"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(date) => shortDate.format(new Date(date))} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="requests" label="Requests" />
+		</BarChart.Root>
+	);
+}
+
+export function CopyMarkdownExample() {
+	return (
+		<BarChart.Root data={monthlyVisitors} xKey="month" aria-label="Visitors by month, copyable">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" />
+			<BarChart.Tooltip />
+			<BarChart.Legend />
+			<BarChart.CopyButton className="absolute right-0 top-0" />
+		</BarChart.Root>
+	);
+}
+
+export const endpointRequests = [
+	{ endpoint: "/api/tunnels", requests: 4820 },
+	{ endpoint: "/api/edges", requests: 3190 },
+	{ endpoint: "/api/domains", requests: 2440 },
+	{ endpoint: "/api/certs", requests: 1210 },
+	{ endpoint: "/api/events", requests: 640 },
+];
+
+export function GroupedBarChartExample() {
+	return (
+		<BarChart.Root data={monthlyVisitors} xKey="month" aria-label="Visitors by month">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" />
+			<BarChart.Tooltip />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+
+export function HorizontalBarChartExample() {
+	return (
+		<BarChart.Root
+			data={endpointRequests}
+			xKey="endpoint"
+			orientation="horizontal"
+			aria-label="Requests by endpoint"
+		>
+			<BarChart.Grid lines="vertical" />
+			<BarChart.XAxis />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="requests" label="Requests" />
+			<BarChart.Tooltip />
+		</BarChart.Root>
+	);
+}
+
+export const deviceVisitors = [
+	{ month: "January", desktop: 186, mobile: 80, tablet: 47, tv: 22, kiosk: 14 },
+	{ month: "February", desktop: 305, mobile: 200, tablet: 65, tv: 31, kiosk: 18 },
+	{ month: "March", desktop: 237, mobile: 120, tablet: 52, tv: 26, kiosk: 12 },
+	{ month: "April", desktop: 73, mobile: 190, tablet: 41, tv: 19, kiosk: 9 },
+	{ month: "May", desktop: 209, mobile: 130, tablet: 58, tv: 28, kiosk: 16 },
+	{ month: "June", desktop: 214, mobile: 140, tablet: 63, tv: 34, kiosk: 21 },
+];
+
+export function TexturedBarChartExample() {
+	return (
+		<BarChart.Root
+			data={deviceVisitors}
+			xKey="month"
+			stacked
+			aria-label="Visitors by month and device"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" texture="hatch" />
+			<BarChart.Bar dataKey="tablet" label="Tablet" texture="dots" />
+			<BarChart.Bar dataKey="tv" label="TV" texture="parallel" />
+			<BarChart.Bar dataKey="kiosk" label="Kiosk" texture="grid" />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+
+export const requestsByZone = [
+	{ day: "Mon", usEast1a: 1240, usEast1b: 1080, usEast1c: 760, euWest1: 1410 },
+	{ day: "Tue", usEast1a: 1310, usEast1b: 1140, usEast1c: 820, euWest1: 1520 },
+	{ day: "Wed", usEast1a: 1190, usEast1b: 1020, usEast1c: 900, euWest1: 1470 },
+	{ day: "Thu", usEast1a: 1420, usEast1b: 1210, usEast1c: 870, euWest1: 1630 },
+	{ day: "Fri", usEast1a: 1580, usEast1b: 1330, usEast1c: 940, euWest1: 1710 },
+];
+
+export function SharedSlotBarChartExample() {
+	return (
+		<BarChart.Root
+			data={requestsByZone}
+			xKey="day"
+			stacked
+			aria-label="Requests by availability zone"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis />
+			<BarChart.YAxis tickFormat={(count) => `${count / 1000}k`} />
+			{/* One region, one hue: the three us-east zones share a series slot and
+			    stay apart by texture. The group holds one slot between them, so
+			    eu-west-1 paints chart-2 rather than chart-4. */}
+			<BarChart.Bar dataKey="usEast1a" label="us-east-1a" seriesSlot={1} />
+			<BarChart.Bar dataKey="usEast1b" label="us-east-1b" seriesSlot={1} texture="hatch" />
+			<BarChart.Bar dataKey="usEast1c" label="us-east-1c" seriesSlot={1} texture="dots" />
+			<BarChart.Bar dataKey="euWest1" label="eu-west-1" />
+			<BarChart.Tooltip />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+
+export function StackedBarChartExample() {
+	return (
+		<BarChart.Root data={monthlyVisitors} xKey="month" stacked aria-label="Visitors by month">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+
+export function SingleSeriesBarChartExample() {
+	return (
+		<div className="w-full">
+			<h4 id="endpoint-requests-title" className="text-strong mb-2 text-sm font-medium">
+				Requests by endpoint (last 24 hours)
+			</h4>
+			<BarChart.Root
+				data={endpointRequests}
+				xKey="endpoint"
+				aria-labelledby="endpoint-requests-title"
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="requests" label="Requests" />
+			</BarChart.Root>
+		</div>
+	);
+}
+
+export const failedDeploys = [
+	{ weekday: "Monday", failures: 1 },
+	{ weekday: "Tuesday", failures: 0 },
+	{ weekday: "Wednesday", failures: 3 },
+	{ weekday: "Thursday", failures: 2 },
+	{ weekday: "Friday", failures: 1 },
+];
+
+export function IntegerCountsBarChartExample() {
+	return (
+		<BarChart.Root data={failedDeploys} xKey="weekday" aria-label="Failed deploys by weekday">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(weekday) => String(weekday).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="failures" label="Failures" />
+			<BarChart.Tooltip />
+		</BarChart.Root>
+	);
+}
+
+export function ReferenceLineBarChartExample() {
+	return (
+		<BarChart.Root data={monthlyVisitors} xKey="month" aria-label="Visitors by month">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" />
+			<BarChart.ReferenceLine y={250} label="Capacity" />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+
+export function CustomTooltipBarChartExample() {
+	return (
+		<BarChart.Root data={monthlyVisitors} xKey="month" aria-label="Visitors by month">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" />
+			<BarChart.Tooltip
+				valueFormat={(value) => `${value.toLocaleString()} visits`}
+				footer="Click a month to view traffic logs"
+			/>
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+
+export function ActivationBarChartExample() {
+	const [lastActivated, setLastActivated] = useState("Nothing activated yet.");
+	return (
+		<div className="w-full">
+			<BarChart.Root
+				data={monthlyVisitors}
+				xKey="month"
+				aria-label="Visitors by month"
+				onDatumActivate={(event) => {
+					const series = event.dataKey == null ? "whole month" : event.dataKey;
+					setLastActivated(`Activated ${String(event.xValue)} (${series}).`);
+				}}
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="desktop" label="Desktop" />
+				<BarChart.Bar dataKey="mobile" label="Mobile" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			<p className="text-muted mt-3 text-sm">{lastActivated}</p>
+		</div>
+	);
+}
+
+export function ControlledHoverBarChartExample() {
+	const [activeIndex, setActiveIndex] = useState(null);
+	return (
+		<div className="w-full">
+			<BarChart.Root
+				data={monthlyVisitors}
+				xKey="month"
+				aria-label="Visitors by month"
+				activeIndex={activeIndex}
+				onActiveIndexChange={setActiveIndex}
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="desktop" label="Desktop" />
+				<BarChart.Bar dataKey="mobile" label="Mobile" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			<div className="mt-3 flex items-center gap-3">
+				<Button
+					type="button"
+					appearance="outlined"
+					onClick={() => setActiveIndex(activeIndex === 1 ? null : 1)}
+				>
+					{activeIndex === 1 ? "Unpin February" : "Pin February"}
+				</Button>
+				<span className="text-muted text-sm">
+					activeIndex: {activeIndex == null ? "null" : activeIndex}
+				</span>
+			</div>
+		</div>
+	);
+}
+
+export function PendingBarChartExample() {
+	const [pending, setPending] = useState(false);
+	return (
+		<div className="w-full">
+			<BarChart.Root
+				data={monthlyVisitors}
+				xKey="month"
+				pending={pending}
+				aria-label="Visitors by month"
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="desktop" label="Desktop" />
+				<BarChart.Bar dataKey="mobile" label="Mobile" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			<Button
+				type="button"
+				appearance="outlined"
+				className="mt-3"
+				onClick={() => setPending(!pending)}
+			>
+				{pending ? "Finish refetch" : "Simulate refetch"}
+			</Button>
+		</div>
+	);
+}
+
+export function liveConnections(tick) {
+	const regions = ["us-east", "us-west", "eu-west", "eu-central", "ap-southeast", "sa-east"];
+	return regions.map((region, index) => ({
+		region,
+		connections: Math.round(
+			900 + 460 * Math.sin(tick / 10 + index * 1.7) + 210 * Math.sin(tick / 3.6 + index * 0.9),
+		),
+	}));
+}
+
+export function LiveBarChartExample() {
+	const [tick, setTick] = useState(0);
+	useEffect(() => {
+		const interval = setInterval(() => {
+			setTick((current) => current + 1);
+		}, 400);
+		return () => clearInterval(interval);
+	}, []);
+	return (
+		<BarChart.Root
+			data={liveConnections(tick)}
+			xKey="region"
+			aria-label="Live connections by region"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="connections" label="Connections" />
+			<BarChart.Tooltip />
+		</BarChart.Root>
+	);
+}
+
+export const placeholderUsage = [40, 62, 51, 78, 66, 89, 72].map((value, index) => ({
+	day: `Day ${index + 1}`,
+	value,
+}));
+
+export function EmptyStateBarChartExample() {
+	return (
+		<div className="relative w-full">
+			<BarChart.Root data={placeholderUsage} xKey="day" decorative>
+				<BarChart.Bar dataKey="value" />
+			</BarChart.Root>
+			<Empty.Root className="absolute inset-0 m-auto h-fit w-fit">
+				<Empty.Title>No usage yet</Empty.Title>
+				<Empty.Description>
+					<p>Traffic will appear here once your endpoints start receiving requests.</p>
+				</Empty.Description>
+			</Empty.Root>
+		</div>
+	);
+}
+
+# Bar Chart
+
+A canvas-rendered bar chart for comparing values across categories, with grouped and stacked variants.
+
+## When to use
+
+Use a `BarChart` to compare values across discrete categories: months, endpoints, plans. Bars encode value by length from a shared zero baseline, so the y-axis minimum is fixed at `0` and a truncated-bar axis is unrepresentable.
+
+- Time-binned aggregates (requests per day, cost per week) are categories too: each bar is a bucket's total, so a dense daily chart like the one below belongs here.
+- Grouped bars (the default) compare series side by side within each category.
+- Stacked bars (`stacked` on the Root) show how parts compose each category's total.
+- Prefer `LineChart` for trends over continuous time: sampled measurements at every timestamp read as a stream, not buckets.
+- Prefer `AreaChart` for cumulative composition over continuous time.
+
+**Keep it to eight series or fewer.** The default chart tokens are eight validated categorical slots. The ninth series onward all wear the neutral `--color-chart-other`, so a dozen access keys legend as a wall of identical gray. Eight is the palette's measured limit, not a style preference: all 28 pairs of the eight clear the colorblind-safe gates, and the closest pair clears its floor by 0.054 ΔE. A ninth hue has nowhere to sit. Rank by the window's total, keep the top seven, and sum the rest into one `"Other"` series. Series that belong to one thing are the narrow exception: they can share one `seriesSlot` and stay apart by `texture`. See [Sharing one color slot](#sharing-one-color-slot).
+
+```tsx
+const TOP_N = 7;
+
+/** The top-N keys by window total, with every other key summed into "Other". */
+function foldTail(rows, keys) {
+	const totals = keys.map((key) => ({
+		key,
+		total: rows.reduce((sum, row) => sum + (row[key] ?? 0), 0),
+	}));
+	const top = totals
+		.toSorted((a, b) => b.total - a.total)
+		.slice(0, TOP_N)
+		.map(({ key }) => key);
+	const tail = keys.filter((key) => !top.includes(key));
+	const folded = rows.map((row) => ({
+		...row,
+		other: tail.reduce((sum, key) => sum + (row[key] ?? 0), 0),
+	}));
+	return { rows: folded, series: tail.length === 0 ? top : [...top, "other"] };
+}
+```
+
+Set the fold's own series to `seriesSlot="other"`, so it always reads as the tail rather than taking a categorical slot. Keep it last, so it sits at the far end of a stack.
+
+Compose everything inside `BarChart.Root`: gridlines, axes, one `BarChart.Bar` per series, and (on multi-series charts) the legend. The interaction layer (per-category hover band and tooltip, keyboard stepping, polite announcements, and an sr-only data table) ships with `Root` unconditionally.
+
+Density takes care of itself: this chart plots 91 daily bars, and the band axis thins its own labels (evenly spaced from the first day, skipped rather than rotated when they'd collide). `Date` x values format as dates in the tooltip, land as exact ISO timestamps in the data-table twin, and take a `tickFormat` for short axis labels.
+
+<Example>
+	<DailyBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+/** Deterministic daily traffic: weekly seasonality over a gentle upward trend. */
+const dailyRequests = Array.from({ length: 91 }, (_, day) => {
+	const date = new Date(2026, 3, 1 + day);
+	const weekend = date.getDay() === 0 || date.getDay() === 6;
+	return {
+		date,
+		requests: Math.round(
+			(weekend ? 0.55 : 1) *
+				(52_000 + 14_000 * Math.sin(day / 9) + 9_000 * Math.sin(day / 2.7) + 120 * day),
+		),
+	};
+});
+
+const shortDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
+function DailyBarChartExample() {
+	return (
+		<BarChart.Root
+			data={dailyRequests}
+			xKey="date"
+			aria-label="HTTP requests per day over the last three months"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(date) => shortDate.format(new Date(date))} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="requests" label="Requests" />
+		</BarChart.Root>
+	);
+}
+```
+
+## Grouped bars
+
+The default layout draws one bar per series side by side within each category: the head-to-head comparison. Always compose `BarChart.Legend` on multi-series charts: series identity must never rely on color-matching alone.
+
+<Example>
+	<GroupedBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const monthlyVisitors = [
+	{ month: "January", desktop: 186, mobile: 80 },
+	{ month: "February", desktop: 305, mobile: 200 },
+	{ month: "March", desktop: 237, mobile: 120 },
+	{ month: "April", desktop: 73, mobile: 190 },
+	{ month: "May", desktop: 209, mobile: 130 },
+	{ month: "June", desktop: 214, mobile: 140 },
+];
+
+function GroupedBarChartExample() {
+	return (
+		<BarChart.Root data={monthlyVisitors} xKey="month" aria-label="Visitors by month">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" />
+			<BarChart.Tooltip />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+```
+
+## Stacked bars
+
+Add `stacked` to the Root to stack the composed series instead of grouping them. Bars stack from the baseline up in registration order: series that mount together register in composition order, so the first `BarChart.Bar` sits on the baseline and the last on top. A `Bar` that mounts later stacks on top of every series already registered, whatever its position in the JSX, and a `dataKey` that unmounts and returns resumes its original position. Reordering the parts of a mounted chart does not restack it: the position sticks to the `dataKey`, which is what keeps a series from jumping when you rename its `label`. The tooltip lists the far end of the stack first, so a vertical chart reads top-down and a horizontal one reads from the far end back to the baseline.
+
+<Example>
+	<StackedBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const monthlyVisitors = [
+	{ month: "January", desktop: 186, mobile: 80 },
+	{ month: "February", desktop: 305, mobile: 200 },
+	{ month: "March", desktop: 237, mobile: 120 },
+	{ month: "April", desktop: 73, mobile: 190 },
+	{ month: "May", desktop: 209, mobile: 130 },
+	{ month: "June", desktop: 214, mobile: 140 },
+];
+
+function StackedBarChartExample() {
+	return (
+		<BarChart.Root data={monthlyVisitors} xKey="month" stacked aria-label="Visitors by month">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+```
+
+## Sparse stacks
+
+A stack whose series are zero on most columns is the shape a "usage by region" or "usage by access key" chart
+produces. Every geometry decision on a stacked bar is per column, not per series: the rounded cap goes to the
+segment that is actually outermost on that column, and the 2px surface gap is carved only where a neighbor
+adjoins. March carries one series, so its column sits flat on the axis and wears the cap on the segment a reader
+can see. June carries all three, so its seams are separated. Both orientations follow the same rule.
+
+<Example>
+	<SparseStackBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const endpointsByRegion = [
+	{ month: "January", usEast: 41, euWest: 0, apSouth: 0 },
+	{ month: "February", usEast: 52, euWest: 0, apSouth: 0 },
+	{ month: "March", usEast: 0, euWest: 38, apSouth: 0 },
+	{ month: "April", usEast: 0, euWest: 44, apSouth: 12 },
+	{ month: "May", usEast: 18, euWest: 0, apSouth: 26 },
+	{ month: "June", usEast: 23, euWest: 51, apSouth: 31 },
+];
+
+function SparseStackBarChartExample() {
+	return (
+		<div className="grid w-full gap-6 sm:grid-cols-2">
+			<BarChart.Root
+				data={endpointsByRegion}
+				xKey="month"
+				stacked
+				aria-label="Active endpoints by region"
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="usEast" label="US East" />
+				<BarChart.Bar dataKey="euWest" label="EU West" />
+				<BarChart.Bar dataKey="apSouth" label="AP South" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			<BarChart.Root
+				data={endpointsByRegion}
+				xKey="month"
+				stacked
+				orientation="horizontal"
+				aria-label="Active endpoints by region, horizontal"
+			>
+				<BarChart.Grid lines="vertical" />
+				<BarChart.XAxis />
+				<BarChart.YAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.Bar dataKey="usEast" label="US East" />
+				<BarChart.Bar dataKey="euWest" label="EU West" />
+				<BarChart.Bar dataKey="apSouth" label="AP South" />
+				<BarChart.Legend />
+			</BarChart.Root>
+		</div>
+	);
+}
+```
+
+### Segments smaller than the surface gap
+
+A segment can be worth less than one pixel: a sub-cent line item against a dollar-scale axis. The gap carves at
+most half of a segment's painted extent, so a short segment paints shorter rather than inverting or vanishing,
+and a taller segment never paints shorter than the one beside it. A segment that rounds to no ink at all cannot
+take the rounded cap from the segment a reader can see: March's `events` value is `$0.004`, so the column reads
+the same as May's exact `$0`.
+
+<Example>
+	<SubCentBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const monthlySpend = [
+	{ month: "January", endpoints: 39, transfer: 11.42, events: 0.28 },
+	{ month: "February", endpoints: 39, transfer: 12.06, events: 0.31 },
+	{ month: "March", endpoints: 39, transfer: 9.87, events: 0.004 },
+	{ month: "April", endpoints: 39, transfer: 14.55, events: 0.19 },
+	{ month: "May", endpoints: 39, transfer: 13.02, events: 0 },
+	{ month: "June", endpoints: 39, transfer: 15.31, events: 0.42 },
+];
+
+function SubCentBarChartExample() {
+	return (
+		<BarChart.Root data={monthlySpend} xKey="month" stacked aria-label="Monthly spend by line item">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis tickFormat={(value) => `$${value}`} />
+			<BarChart.Bar dataKey="endpoints" label="Endpoints" />
+			<BarChart.Bar dataKey="transfer" label="Transfer" />
+			<BarChart.Bar dataKey="events" label="Events" />
+			<BarChart.Tooltip valueFormat={(value) => `$${value.toFixed(3)}`} />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+```
+
+## Diverging stacks
+
+Negative values pile downward from the zero baseline while positive values pile up, and each pile caps its own
+outer end. The axis grows below zero on its own: no `yDomain` override, because a bar chart's minimum is the
+baseline, not the data floor. April is the month worth looking at: 62 endpoints added against 112 lost, so the
+net is negative and the two piles are visibly unequal. Series that carry good or bad meaning wear the semantic
+status colors here rather than categorical slots.
+
+<Example>
+	<DivergingBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const netEndpointChange = [
+	{ month: "January", added: 128, churned: -34, suspended: -11 },
+	{ month: "February", added: 96, churned: -52, suspended: -8 },
+	{ month: "March", added: 141, churned: -27, suspended: -19 },
+	{ month: "April", added: 62, churned: -88, suspended: -24 },
+	{ month: "May", added: 118, churned: -41, suspended: 0 },
+	{ month: "June", added: 154, churned: -36, suspended: -14 },
+];
+
+function DivergingBarChartExample() {
+	return (
+		<BarChart.Root
+			data={netEndpointChange}
+			xKey="month"
+			stacked
+			aria-label="Net change in active endpoints"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="added" label="Added" />
+			<BarChart.Bar dataKey="churned" label="Churned" color="var(--color-danger-500)" />
+			{/*
+			 * Both negative series stack below zero, so they always touch. In
+			 * light-high-contrast the two semantic reds sit 14.05 ΔE apart for
+			 * full-color vision, under the 15 the palette holds its own slots to, so
+			 * the texture carries a difference hue alone does not.
+			 */}
+			<BarChart.Bar
+				dataKey="suspended"
+				label="Suspended"
+				color="var(--color-warning-500)"
+				texture="hatch"
+			/>
+			<BarChart.Tooltip />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+```
+
+## No usage yet
+
+An all-zero series is data, not an empty state: it reports that nothing happened. The value axis stays anchored
+at the baseline, so the zero line sits on the axis instead of floating through the middle of the plot. Keep the
+accessible name, the tooltip, and the data table: a reader and a screen reader both need to hear "0", not
+nothing. Reach for `decorative` only when the values are a synthetic backdrop behind an empty-state message; see
+[Decorative charts](#decorative-charts).
+
+<Example>
+	<NoUsageYetBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const noUsageYet = [
+	{ month: "January", requests: 0 },
+	{ month: "February", requests: 0 },
+	{ month: "March", requests: 0 },
+	{ month: "April", requests: 0 },
+	{ month: "May", requests: 0 },
+	{ month: "June", requests: 0 },
+];
+
+function NoUsageYetBarChartExample() {
+	return (
+		<BarChart.Root data={noUsageYet} xKey="month" aria-label="Requests by month">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="requests" label="Requests" />
+			<BarChart.Tooltip />
+		</BarChart.Root>
+	);
+}
+```
+
+## Regrouping a live chart
+
+A dashboard that regroups one chart (by provider, then by region, then by access key) cycles a new set of
+`dataKey`s through the same Root. Automatic series take the unreserved slots in composition order. Each grouping
+therefore starts at slot 1 and paints four distinct validated colors.
+
+Do not put a `key` on the Root to work around this. Remounting discards the tween state, the measured layout,
+and the hover position, and it replays the enter animation on every switch. Cycle the series instead and let the
+Root keep its store.
+
+Removing an automatic series closes the gap, so a survivor may move to an earlier slot. When an entity must keep
+the same built-in identity while sibling series appear or disappear, set `seriesSlot`.
+
+<Example>
+	<RegroupBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+import { Button } from "@ngrok/mantle/button";
+import { useState } from "react";
+
+const groupings = {
+	provider: {
+		label: "By provider",
+		data: [
+			{ month: "April", aws: 1610, gcp: 1145, azure: 520, onPrem: 141 },
+			{ month: "May", aws: 1745, gcp: 1080, azure: 565, onPrem: 133 },
+			{ month: "June", aws: 1890, gcp: 1220, azure: 610, onPrem: 152 },
+		],
+		series: [
+			["aws", "AWS"],
+			["gcp", "GCP"],
+			["azure", "Azure"],
+			["onPrem", "On-prem"],
+		],
+	},
+	region: {
+		label: "By region",
+		data: [
+			{ month: "April", usEast: 1495, usWest: 828, euWest: 690, apSouth: 403 },
+			{ month: "May", usEast: 1580, usWest: 874, euWest: 745, apSouth: 434 },
+			{ month: "June", usEast: 1712, usWest: 940, euWest: 803, apSouth: 417 },
+		],
+		series: [
+			["usEast", "US East"],
+			["usWest", "US West"],
+			["euWest", "EU West"],
+			["apSouth", "AP South"],
+		],
+	},
+	accessKey: {
+		label: "By access key",
+		data: [
+			{ month: "April", ci: 1240, staging: 762, production: 1330, laptop: 84 },
+			{ month: "May", ci: 1315, staging: 810, production: 1440, laptop: 68 },
+			{ month: "June", ci: 1428, staging: 869, production: 1560, laptop: 15 },
+		],
+		series: [
+			["ci", "CI"],
+			["staging", "Staging"],
+			["production", "Production"],
+			["laptop", "Laptop"],
+		],
+	},
+};
+
+function RegroupBarChartExample() {
+	const [grouping, setGrouping] = useState("provider");
+	const active = groupings[grouping];
+	return (
+		<div className="w-full">
+			<div className="mb-3 flex flex-wrap gap-2">
+				{Object.entries(groupings).map(([key, option]) => (
+					<Button
+						key={key}
+						appearance={key === grouping ? "filled" : "outlined"}
+						onClick={() => setGrouping(key)}
+					>
+						{option.label}
+					</Button>
+				))}
+			</div>
+			<BarChart.Root data={active.data} xKey="month" aria-label="Monthly requests by grouping">
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				{active.series.map(([dataKey, label]) => (
+					<BarChart.Bar key={dataKey} dataKey={dataKey} label={label} />
+				))}
+				<BarChart.Legend />
+			</BarChart.Root>
+		</div>
+	);
+}
+```
+
+## Fixed colors for known entities
+
+A chart of named things (AI model providers, cloud vendors, plan tiers) often wants one recognizable color per
+thing across every chart and every page. Declare the values as custom properties on the Root and pass each one to
+the matching series. The canvas resolves them through a probe inside the Root. The legend swatch and the tooltip
+stroke emit the same `var()`, so one declaration set covers all three surfaces.
+
+Use `var(--your-token)` rather than a raw hex. A hex freezes: the same value paints on white and on near-black.
+Neither high-contrast theme can adjust it. A custom property lets you give each theme its own value, and mantle
+re-resolves it whenever the theme changes.
+
+The `color` prop changes only paint. It does not reserve a slot or change the default point shape. The example
+also gives its known providers `seriesSlot` values, so automatic providers start at slot 4. When an entity needs
+both an app-defined color and a fixed identity position, use this combination.
+
+**So check your own palette against the eight slots, and against itself.** Series order decides whether a
+collision bites, because a stacked chart only ever puts consecutive series against each other. The example below
+runs OpenAI, Claude, Gemini, which clears both hard floors in all four themes: 23.45 ΔE at worst for full-color
+vision, and 6.85 under simulated color vision deficiency (CVD). That 6.85 clears the CVD floor of 6 and misses the
+target of 8, which mantle's own palette treats as legal only with a second encoding, so the example gives Claude a
+`texture`. Swap Claude and Gemini and Claude lands against `chart-4` at 11.42 ΔE in dark and 7.17 in
+dark-high-contrast, under the full-color floor of 15. When a pair does collide, reorder the series, change the
+color, or add a `texture`. When several entities belong to one family (zones of a region, tiers of one plan),
+give them the same `seriesSlot` on purpose and keep them apart by `texture`. See
+[Sharing one color slot](#sharing-one-color-slot).
+
+Three limits are worth knowing:
+
+- Grouped bars and scatter plots compare every series to every other, not only its neighbors. The eight slots
+  clear that bar; this set does not. ChatGPT green sits 6.77 ΔE from dark's `chart-5` `#0da9ae`.
+- Brand colors collide with each other. Five of the major AI providers use nearly the same blue.
+- A black or near-black brand color falls below the chroma floor, so it carries no color identity at all.
+
+<Example>
+	<BrandColorBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const requestsByModelProvider = [
+	{ day: "Mon", openai: 4210, gemini: 1640, claude: 3180, acmeLlm: 820, byoRouter: 310 },
+	{ day: "Tue", openai: 4620, gemini: 1780, claude: 3540, acmeLlm: 910, byoRouter: 380 },
+	{ day: "Wed", openai: 3980, gemini: 2010, claude: 3920, acmeLlm: 1140, byoRouter: 420 },
+	{ day: "Thu", openai: 5100, gemini: 1930, claude: 4180, acmeLlm: 1020, byoRouter: 470 },
+	{ day: "Fri", openai: 5340, gemini: 2240, claude: 4460, acmeLlm: 1310, byoRouter: 510 },
+];
+
+function BrandColorBarChartExample() {
+	return (
+		<BarChart.Root
+			data={requestsByModelProvider}
+			xKey="day"
+			stacked
+			// The canvas probe and the legend swatch both resolve through this
+			// element's own cascade. A theme that needs its own value takes a variant:
+			// `dark:[--provider-claude:…]`.
+			className="[--provider-openai:#10a37f] [--provider-gemini:#3186ff] [--provider-claude:#d97757]"
+			aria-label="Requests by model provider"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis />
+			<BarChart.YAxis tickFormat={(count) => `${count / 1000}k`} />
+			{/* Known providers keep one color for as long as the app declares it. Claude
+			    sits between the other two on purpose, and wears a texture because it runs
+			    close to OpenAI under simulated color vision deficiency — see the note
+			    above. */}
+			<BarChart.Bar dataKey="openai" label="OpenAI" seriesSlot={1} color="var(--provider-openai)" />
+			<BarChart.Bar
+				dataKey="claude"
+				label="Claude"
+				seriesSlot={2}
+				color="var(--provider-claude)"
+				texture="hatch"
+			/>
+			<BarChart.Bar dataKey="gemini" label="Gemini" seriesSlot={3} color="var(--provider-gemini)" />
+			{/* The fixed slots above reserve chart-1 through chart-3, so automatic
+			    bring-your-own providers take chart-4 and chart-5. */}
+			<BarChart.Bar dataKey="acmeLlm" label="Acme LLM" />
+			<BarChart.Bar dataKey="byoRouter" label="BYO Router" />
+			<BarChart.Tooltip />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+```
+
+A named entity that has no brand color needs no `color` at all. Leave both identity props unset to take the next
+unreserved slot. When the entity must keep one built-in identity, set `seriesSlot`.
+
+## Horizontal bars
+
+`orientation` names the direction the bars point, not an axis: `"vertical"` (the default) bars stand up, `"horizontal"` bars lie across. Set `orientation="horizontal"` to grow bars rightward from a left baseline with categories banded down the y axis. Reach for it when category labels are long (they read straight instead of angled or truncated under the axis) or when there are many categories to rank. `xKey` still names the category and `YAxis` still labels the value. Only the drawing flips: the category axis moves to the left gutter, the value axis to the bottom, and the baseline, reference lines, and the two rung textures (`"perpendicular"` and `"parallel"`) all rotate to match. The `"grid"` lattice inks both rung directions, so it looks the same either way. Everything else (grouping, stacking, hover, keyboard, the data table) works unchanged.
+
+<Example>
+	<HorizontalBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const endpointRequests = [
+	{ endpoint: "/api/tunnels", requests: 4820 },
+	{ endpoint: "/api/edges", requests: 3190 },
+	{ endpoint: "/api/domains", requests: 2440 },
+	{ endpoint: "/api/certs", requests: 1210 },
+	{ endpoint: "/api/events", requests: 640 },
+];
+
+function HorizontalBarChartExample() {
+	return (
+		<BarChart.Root
+			data={endpointRequests}
+			xKey="endpoint"
+			orientation="horizontal"
+			aria-label="Requests by endpoint"
+		>
+			<BarChart.Grid lines="vertical" />
+			<BarChart.XAxis />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="requests" label="Requests" />
+			<BarChart.Tooltip />
+		</BarChart.Root>
+	);
+}
+```
+
+## Textures
+
+When a multi-series or stacked chart can't rely on color alone (color-vision deficiencies, grayscale print and exports, forced-colors mode), give each series a fill `texture`. Textures are a redundant identity encoding alongside color: `"hatch"` (diagonal lines at 45°), `"hatch-reverse"` (its 135° mirror), `"crosshatch"` (both), `"perpendicular"` (rungs across the bar's length: horizontal lines on vertical bars), `"parallel"` (rungs along it: vertical lines on vertical bars), `"grid"` (both rung directions crossed), and `"dots"` (an offset dot field). The two rung textures flip with `orientation`, in opposite senses. Every other value draws the same whichever way the bars point, `"grid"` included: it is the orthogonal lattice against `"crosshatch"`'s diagonal one. Counting the default `"solid"`, eight textures match the palette's eight color slots. The ink is tone-on-tone (a darker step of each series' own fill, at equal loudness across slots), and every legend key wears its series' pattern, so the mapping never depends on hue.
+
+Texture is opt-in and purposeful, never decorative. Mantle assigns none of it for you. A line, area, or scatter series takes the [point glyph](/components/charts/scatter-plot#point-shapes) paired to its series slot with no prop at all, and a bar carries no glyph, so the `texture` you set is a bar's only second channel. Keep solid fills when color alone already carries identity. When it does not, either leave the first series solid and texture the rest, or texture only the series in the pair that collides. The [Diverging stacks](#diverging-stacks) and [Fixed colors](#fixed-colors-for-known-entities) examples above take the targeted form.
+
+<Example>
+	<TexturedBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const deviceVisitors = [
+	{ month: "January", desktop: 186, mobile: 80, tablet: 47, tv: 22, kiosk: 14 },
+	{ month: "February", desktop: 305, mobile: 200, tablet: 65, tv: 31, kiosk: 18 },
+	{ month: "March", desktop: 237, mobile: 120, tablet: 52, tv: 26, kiosk: 12 },
+	{ month: "April", desktop: 73, mobile: 190, tablet: 41, tv: 19, kiosk: 9 },
+	{ month: "May", desktop: 209, mobile: 130, tablet: 58, tv: 28, kiosk: 16 },
+	{ month: "June", desktop: 214, mobile: 140, tablet: 63, tv: 34, kiosk: 21 },
+];
+
+function TexturedBarChartExample() {
+	return (
+		<BarChart.Root
+			data={deviceVisitors}
+			xKey="month"
+			stacked
+			aria-label="Visitors by month and device"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" texture="hatch" />
+			<BarChart.Bar dataKey="tablet" label="Tablet" texture="dots" />
+			<BarChart.Bar dataKey="tv" label="TV" texture="parallel" />
+			<BarChart.Bar dataKey="kiosk" label="Kiosk" texture="grid" />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+```
+
+### Sharing one color slot
+
+Several series can share one `seriesSlot`. The group reserves that slot once: the three zones assigned to slot 1 below still leave slot 2 for `eu-west-1`.
+
+When several series belong to one thing (zones of a region, shards of a cluster, tiers of one plan), reach for it. Series that share no family belong in one `"Other"` series instead. Eight is a measured ceiling, not a style preference: the gates validate all 28 pairs of the eight tokens, so a ninth hue has nowhere to sit. Every pair clears, so grouped bars (which compare every series to every other) are as safe as a stack. A shared slot plus one `texture` per member encodes more series than the slots alone reach. It also reads as the family it is.
+
+Two rules make it work.
+
+- **Every member sets the same `seriesSlot`.** Mantle reserves fixed slots before automatic series take the remaining slots.
+- **Every member carries its own `texture`.** Mantle never reads `texture` when it hands out slots. Two series that share a token and a texture paint identically. Nothing warns you. One member may stay solid; the rest take a value each.
+
+Count the costs before you reach for it. One hue no longer names one series, so the legend carries the mapping. Every member needs a `label`. A `texture` is a second encoding on a legal color, never a license to reuse an illegal one. A member that later drops `seriesSlot` takes the next unreserved slot.
+
+<Example>
+	<SharedSlotBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const requestsByZone = [
+	{ day: "Mon", usEast1a: 1240, usEast1b: 1080, usEast1c: 760, euWest1: 1410 },
+	{ day: "Tue", usEast1a: 1310, usEast1b: 1140, usEast1c: 820, euWest1: 1520 },
+	{ day: "Wed", usEast1a: 1190, usEast1b: 1020, usEast1c: 900, euWest1: 1470 },
+	{ day: "Thu", usEast1a: 1420, usEast1b: 1210, usEast1c: 870, euWest1: 1630 },
+	{ day: "Fri", usEast1a: 1580, usEast1b: 1330, usEast1c: 940, euWest1: 1710 },
+];
+
+function SharedSlotBarChartExample() {
+	return (
+		<BarChart.Root
+			data={requestsByZone}
+			xKey="day"
+			stacked
+			aria-label="Requests by availability zone"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis />
+			<BarChart.YAxis tickFormat={(count) => `${count / 1000}k`} />
+			{/* One region, one hue: the three us-east zones share a series slot and
+			    stay apart by texture. The group holds one slot between them, so
+			    eu-west-1 paints chart-2 rather than chart-4. */}
+			<BarChart.Bar dataKey="usEast1a" label="us-east-1a" seriesSlot={1} />
+			<BarChart.Bar dataKey="usEast1b" label="us-east-1b" seriesSlot={1} texture="hatch" />
+			<BarChart.Bar dataKey="usEast1c" label="us-east-1c" seriesSlot={1} texture="dots" />
+			<BarChart.Bar dataKey="euWest1" label="eu-west-1" />
+			<BarChart.Tooltip />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+```
+
+## Single series
+
+A single-series chart draws every bar in one hue: the first categorical slot, `--color-chart-1`. One series means one color: never color bars by their own value, and never assign each category its own hue; that adds a false second encoding to data the bar lengths already show. There is no legend either; `BarChart.Legend` renders nothing for a single series because the chart's title already names it. Here the visible title carries the accessible name via `aria-labelledby`.
+
+<Example>
+	<SingleSeriesBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const endpointRequests = [
+	{ endpoint: "/api/tunnels", requests: 4820 },
+	{ endpoint: "/api/edges", requests: 3190 },
+	{ endpoint: "/api/domains", requests: 2440 },
+	{ endpoint: "/api/certs", requests: 1210 },
+	{ endpoint: "/api/events", requests: 640 },
+];
+
+function SingleSeriesBarChartExample() {
+	return (
+		<div className="w-full">
+			<h4 id="endpoint-requests-title" className="text-strong mb-2 text-sm font-medium">
+				Requests by endpoint (last 24 hours)
+			</h4>
+			<BarChart.Root
+				data={endpointRequests}
+				xKey="endpoint"
+				aria-labelledby="endpoint-requests-title"
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="requests" label="Requests" />
+			</BarChart.Root>
+		</div>
+	);
+}
+```
+
+## Integer counts
+
+Counts are integers, and the value axis knows it: when every series value is a whole number, ticks step by whole numbers. This chart's `[0, 3]` domain ticks at 0, 1, 2, 3 rather than inventing a meaningless "1.5 failures" gridline. Nothing to configure; the behavior follows the data, so a single fractional value (an average, a rate) restores sub-integer ticks. The same guarantee covers the value axis of horizontal bars and linear x axes on the other chart families.
+
+<Example>
+	<IntegerCountsBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const failedDeploys = [
+	{ weekday: "Monday", failures: 1 },
+	{ weekday: "Tuesday", failures: 0 },
+	{ weekday: "Wednesday", failures: 3 },
+	{ weekday: "Thursday", failures: 2 },
+	{ weekday: "Friday", failures: 1 },
+];
+
+function IntegerCountsBarChartExample() {
+	return (
+		<BarChart.Root data={failedDeploys} xKey="weekday" aria-label="Failed deploys by weekday">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(weekday) => String(weekday).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="failures" label="Failures" />
+			<BarChart.Tooltip />
+		</BarChart.Root>
+	);
+}
+```
+
+## Reference lines
+
+Compose `BarChart.ReferenceLine` to mark a threshold, budget, or limit as a dashed horizontal line at a y value, with an optional label painted above its right end.
+
+<Example>
+	<ReferenceLineBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const monthlyVisitors = [
+	{ month: "January", desktop: 186, mobile: 80 },
+	{ month: "February", desktop: 305, mobile: 200 },
+	{ month: "March", desktop: 237, mobile: 120 },
+	{ month: "April", desktop: 73, mobile: 190 },
+	{ month: "May", desktop: 209, mobile: 130 },
+	{ month: "June", desktop: 214, mobile: 140 },
+];
+
+function ReferenceLineBarChartExample() {
+	return (
+		<BarChart.Root data={monthlyVisitors} xKey="month" aria-label="Visitors by month">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" />
+			<BarChart.ReferenceLine y={250} label="Capacity" />
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+```
+
+## Custom tooltip
+
+The tooltip is part of `BarChart.Root`'s interaction contract and is always on: composing `BarChart.Tooltip` never adds or removes it, it only customizes the readout. Use `labelFormat` and `valueFormat` to format the rows, `footer` to append a hint below them, or the render-prop `children` to replace the content entirely.
+
+<Example>
+	<CustomTooltipBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const monthlyVisitors = [
+	{ month: "January", desktop: 186, mobile: 80 },
+	{ month: "February", desktop: 305, mobile: 200 },
+	{ month: "March", desktop: 237, mobile: 120 },
+	{ month: "April", desktop: 73, mobile: 190 },
+	{ month: "May", desktop: 209, mobile: 130 },
+	{ month: "June", desktop: 214, mobile: 140 },
+];
+
+function CustomTooltipBarChartExample() {
+	return (
+		<BarChart.Root data={monthlyVisitors} xKey="month" aria-label="Visitors by month">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" />
+			<BarChart.Tooltip
+				valueFormat={(value) => `${value.toLocaleString()} visits`}
+				footer="Click a month to view traffic logs"
+			/>
+			<BarChart.Legend />
+		</BarChart.Root>
+	);
+}
+```
+
+## Activation
+
+`onDatumActivate` fires when a user clicks a bar or presses Enter or Space with the chart focused. The event carries `{ index, xValue, datum, dataKey }`. On a stacked chart, `dataKey` names the segment the pointer sits in; otherwise it names the series nearest the pointer. Keyboard and whole-band activation set it to `null`. Click a bar (or Tab to the chart, arrow to a month, and press Enter) to update the readout below.
+
+<Example>
+	<ActivationBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+import { useState } from "react";
+
+const monthlyVisitors = [
+	{ month: "January", desktop: 186, mobile: 80 },
+	{ month: "February", desktop: 305, mobile: 200 },
+	{ month: "March", desktop: 237, mobile: 120 },
+	{ month: "April", desktop: 73, mobile: 190 },
+	{ month: "May", desktop: 209, mobile: 130 },
+	{ month: "June", desktop: 214, mobile: 140 },
+];
+
+function ActivationBarChartExample() {
+	const [lastActivated, setLastActivated] = useState("Nothing activated yet.");
+
+	return (
+		<div className="w-full">
+			<BarChart.Root
+				data={monthlyVisitors}
+				xKey="month"
+				aria-label="Visitors by month"
+				onDatumActivate={(event) => {
+					const series = event.dataKey == null ? "whole month" : event.dataKey;
+					setLastActivated(`Activated ${String(event.xValue)} (${series}).`);
+				}}
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="desktop" label="Desktop" />
+				<BarChart.Bar dataKey="mobile" label="Mobile" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			<p className="text-muted mt-3 text-sm">{lastActivated}</p>
+		</div>
+	);
+}
+```
+
+### Activating a stacked segment
+
+On a stacked chart `dataKey` names the segment the pointer sits **in**, never the boundary it sits near, because
+the mark is the filled span. Click the lower third of a band and the readout still names that band. Resolving by
+the nearest cumulative boundary instead would hand the baseline-side half of every segment to the series below
+it.
+
+<Example>
+	<StackedActivationBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+import { useState } from "react";
+
+const requestsByProtocol = [
+	{ month: "January", http: 1240, tcp: 910, tls: 640 },
+	{ month: "February", http: 1385, tcp: 845, tls: 705 },
+	{ month: "March", http: 1520, tcp: 1010, tls: 590 },
+	{ month: "April", http: 1180, tcp: 1145, tls: 820 },
+	{ month: "May", http: 1660, tcp: 980, tls: 735 },
+	{ month: "June", http: 1745, tcp: 1220, tls: 880 },
+];
+
+function StackedActivationBarChartExample() {
+	const [lastActivated, setLastActivated] = useState("Click a segment.");
+	return (
+		<div className="w-full">
+			<BarChart.Root
+				data={requestsByProtocol}
+				xKey="month"
+				stacked
+				aria-label="Requests by protocol"
+				onDatumActivate={(event) => {
+					const series = event.dataKey == null ? "whole month" : event.dataKey;
+					setLastActivated(`Activated ${String(event.xValue)} (${series}).`);
+				}}
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis tickFormat={(value) => `${value}k`} />
+				<BarChart.Bar dataKey="http" label="HTTP" />
+				<BarChart.Bar dataKey="tcp" label="TCP" />
+				<BarChart.Bar dataKey="tls" label="TLS" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			<p className="text-muted mt-3 text-sm">{lastActivated}</p>
+		</div>
+	);
+}
+```
+
+## Controlled hover
+
+Pass `activeIndex` with `onActiveIndexChange` to control the active category from outside the chart: pin a category from a linked table row, or sync hover across sibling charts. Omit `activeIndex` for uncontrolled hover.
+
+<Example>
+	<ControlledHoverBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+import { Button } from "@ngrok/mantle/button";
+import { useState } from "react";
+
+const monthlyVisitors = [
+	{ month: "January", desktop: 186, mobile: 80 },
+	{ month: "February", desktop: 305, mobile: 200 },
+	{ month: "March", desktop: 237, mobile: 120 },
+	{ month: "April", desktop: 73, mobile: 190 },
+	{ month: "May", desktop: 209, mobile: 130 },
+	{ month: "June", desktop: 214, mobile: 140 },
+];
+
+function ControlledHoverBarChartExample() {
+	const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+	return (
+		<div className="w-full">
+			<BarChart.Root
+				data={monthlyVisitors}
+				xKey="month"
+				aria-label="Visitors by month"
+				activeIndex={activeIndex}
+				onActiveIndexChange={setActiveIndex}
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="desktop" label="Desktop" />
+				<BarChart.Bar dataKey="mobile" label="Mobile" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			<div className="mt-3 flex items-center gap-3">
+				<Button
+					type="button"
+					appearance="outlined"
+					onClick={() => setActiveIndex(activeIndex === 1 ? null : 1)}
+				>
+					{activeIndex === 1 ? "Unpin February" : "Pin February"}
+				</Button>
+				<span className="text-muted text-sm">
+					activeIndex: {activeIndex == null ? "null" : activeIndex}
+				</span>
+			</div>
+		</div>
+	);
+}
+```
+
+## Pending data
+
+Set `pending` while a refetch is in flight: the chart holds the previous frame at reduced opacity instead of unmounting. Never swap a chart that has rendered once for a skeleton: the held frame keeps the axes, scales, and the user's place stable while fresh data loads.
+
+<Example>
+	<PendingBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+import { Button } from "@ngrok/mantle/button";
+import { useState } from "react";
+
+const monthlyVisitors = [
+	{ month: "January", desktop: 186, mobile: 80 },
+	{ month: "February", desktop: 305, mobile: 200 },
+	{ month: "March", desktop: 237, mobile: 120 },
+	{ month: "April", desktop: 73, mobile: 190 },
+	{ month: "May", desktop: 209, mobile: 130 },
+	{ month: "June", desktop: 214, mobile: 140 },
+];
+
+function PendingBarChartExample() {
+	const [pending, setPending] = useState(false);
+
+	return (
+		<div className="w-full">
+			<BarChart.Root
+				data={monthlyVisitors}
+				xKey="month"
+				pending={pending}
+				aria-label="Visitors by month"
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="desktop" label="Desktop" />
+				<BarChart.Bar dataKey="mobile" label="Mobile" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			<Button
+				type="button"
+				appearance="outlined"
+				className="mt-3"
+				onClick={() => setPending(!pending)}
+			>
+				{pending ? "Finish refetch" : "Simulate refetch"}
+			</Button>
+		</div>
+	);
+}
+```
+
+## Live data
+
+Live values on a bar chart update in place: the categories are fixed, so bars never scroll. Each update morphs every bar from its current height to its new value with a per-datum tween, while the y axis glides to fit: the domain continuously chases its target and the value tick labels fade between tick sets instead of popping. `prefers-reduced-motion` snaps every update instantly. When the live dimension is time (a sliding window of appends), reach for a [`LineChart`](/components/charts/line-chart) or [`AreaChart`](/components/charts/area-chart) instead: bars at every timestamp read as categories, not a stream.
+
+This demo recomputes all six regions every 400ms from a pure function of a tick counter (offset sine waves per region), so it renders deterministically; a real chart would replace `data` as new readings arrive.
+
+<Example>
+	<LiveBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+import { useEffect, useState } from "react";
+
+/** Deterministic values per tick: offset sine waves per region, no Math.random. */
+function liveConnections(tick: number) {
+	const regions = ["us-east", "us-west", "eu-west", "eu-central", "ap-southeast", "sa-east"];
+	return regions.map((region, index) => ({
+		region,
+		connections: Math.round(
+			900 + 460 * Math.sin(tick / 10 + index * 1.7) + 210 * Math.sin(tick / 3.6 + index * 0.9),
+		),
+	}));
+}
+
+function LiveBarChartExample() {
+	const [tick, setTick] = useState(0);
+
+	useEffect(() => {
+		const interval = setInterval(() => {
+			setTick((current) => current + 1);
+		}, 400);
+		return () => clearInterval(interval);
+	}, []);
+
+	return (
+		<BarChart.Root
+			data={liveConnections(tick)}
+			xKey="region"
+			aria-label="Live connections by region"
+		>
+			<BarChart.Grid />
+			<BarChart.XAxis />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="connections" label="Connections" />
+			<BarChart.Tooltip />
+		</BarChart.Root>
+	);
+}
+```
+
+## Copy as markdown
+
+`BarChart.CopyButton` copies the chart's current rows to the clipboard as a machine-stable, GitHub-flavored markdown table: the category column plus one column per series in paint order (plain un-separated numbers, an em dash for gaps). The table pastes into Slack, issues, spreadsheets, and LLM chats. The button renders in flow where composed; `Root` is relatively positioned, so `className` can dock it over a corner.
+
+<Example>
+	<CopyMarkdownExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const monthlyVisitors = [
+	{ month: "January", desktop: 186, mobile: 80 },
+	{ month: "February", desktop: 305, mobile: 200 },
+	{ month: "March", desktop: 237, mobile: 120 },
+	{ month: "April", desktop: 73, mobile: 190 },
+	{ month: "May", desktop: 209, mobile: 130 },
+	{ month: "June", desktop: 214, mobile: 140 },
+];
+
+function CopyMarkdownExample() {
+	return (
+		<BarChart.Root data={monthlyVisitors} xKey="month" aria-label="Visitors by month, copyable">
+			<BarChart.Grid />
+			<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+			<BarChart.YAxis />
+			<BarChart.Bar dataKey="desktop" label="Desktop" />
+			<BarChart.Bar dataKey="mobile" label="Mobile" />
+			<BarChart.Tooltip />
+			<BarChart.Legend />
+			<BarChart.CopyButton className="absolute right-0 top-0" />
+		</BarChart.Root>
+	);
+}
+```
+
+## Decorative charts
+
+Set `decorative` to render the chart as a placeholder backdrop instead of real data: synthetic bars behind an empty state, an atmospheric hero graphic. A decorative chart keeps its visual rendering and animation but drops every layer that only makes sense for real data: it is hidden from assistive technology, removed from the tab order, and inert to pointer and keyboard, with no hover band, tooltip, sr-only data table, or live region. Because the values aren't information, `decorative` is mutually exclusive with the accessible-name props (`aria-label` / `aria-labelledby`) and the interaction props (`activeIndex`, `onActiveIndexChange`, `onDatumActivate`); the type won't compile with both.
+
+A decorative chart also drops the categorical palette. Every series paints `--color-chart-decorative`, one neutral fill that outranks a series' `color` and `seriesSlot`. A backdrop carries no series identity, and a hue on values that are not information invites a reader to decode it.
+
+**That fill is what keeps an overlaid message readable.** `Empty.Description` sits on `text-muted`, which measures 4.88:1 on a bare light card (0.38 over the 4.5:1 floor for 14px text), so any tint under that copy spends the headroom. `--color-chart-decorative` is the darkest neutral step that still clears the floor in every theme: 4.56:1 in light, 4.93:1 in dark, 9.08:1 and 8.14:1 in the high-contrast pair. The message needs no scrim behind it, no dimming, and no blur. Redeclare the token on the Root to retune the fill (`className="[--color-chart-decorative:var(--color-neutral-100)]"`) and re-measure the copy against the value you pick.
+
+Reach for `decorative` over hand-rolled `inert` + CSS: it removes the interaction overlay at the source, so consumers never target chart internals to neutralize it. Keep the real empty-state message as a sibling of the chart (not inside it) so screen readers still announce it; the decorative chart itself is silent.
+
+`decorative` says the values are not information; it is not a `disabled` flag (a chart is not a form control). For a chart with real data that should stay readable through its data table but skip pointer/keyboard exploration, that's a different, not-yet-shipped concern; don't reach for `decorative`.
+
+<Example>
+	<EmptyStateBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+import { Empty } from "@ngrok/mantle/empty";
+
+/** Synthetic bars — a backdrop, not data — so no Math.random and no real values. */
+const placeholderUsage = [40, 62, 51, 78, 66, 89, 72].map((value, index) => ({
+	day: `Day ${index + 1}`,
+	value,
+}));
+
+function EmptyStateBarChartExample() {
+	return (
+		<div className="relative w-full">
+			<BarChart.Root data={placeholderUsage} xKey="day" decorative>
+				<BarChart.Bar dataKey="value" />
+			</BarChart.Root>
+			{/* The real message is a sibling of the chart, so AT still announces it. */}
+			<Empty.Root className="absolute inset-0 m-auto h-fit w-fit">
+				<Empty.Title>No usage yet</Empty.Title>
+				<Empty.Description>
+					<p>Traffic will appear here once your endpoints start receiving requests.</p>
+				</Empty.Description>
+			</Empty.Root>
+		</div>
+	);
+}
+```
+
+## Composition
+
+Compose the parts of a `BarChart` together to build your own:
+
+```text showLineNumbers=false
+BarChart.Root
+├── BarChart.Grid
+├── BarChart.XAxis
+├── BarChart.YAxis
+├── BarChart.Bar (one per series)
+├── BarChart.ReferenceLine
+├── BarChart.Tooltip
+├── BarChart.Legend
+└── BarChart.CopyButton
+```
+
+## Accessibility
+
+Every interactive chart must have an accessible name: either a direct `aria-label` or an `aria-labelledby` reference to a visible title. This is enforced at the type level: `BarChart.Root` does not compile without exactly one of the two. Prefer `aria-labelledby` when the chart sits under a visible heading, so the name never drifts from the title. The name lands on the focusable interaction overlay, the chart's single named element (the canvas itself is hidden from assistive technology so the chart is never announced twice). [Decorative charts](#decorative-charts) are the exception: they carry no real data, so they take no accessible name and are hidden from assistive technology entirely.
+
+The chart is a single Tab stop with a full keyboard model, and it exposes usage instructions to assistive technology via `aria-describedby`:
+
+- **Left / Right arrows** step between categories.
+- **PageUp / PageDown** jump in larger strides (about a tenth of the data).
+- **Home / End** jump to the first and last category.
+- **Escape** clears the active category.
+- **Enter / Space** activate the current category (fires `onDatumActivate`).
+
+Keyboard stepping announces the category and each series' value through a debounced `aria-live="polite"` region, so rapid arrowing doesn't flood the screen-reader queue.
+
+`BarChart.Root` also renders an sr-only data table twin of the chart (the category column plus one column per series), bounded to the first 150 rows, with a caption stating the summarization when the data is longer. Tooltips enhance, they never gate: every plotted value is reachable through the table or the keyboard point cursor, and no part removal can strip keyboard access to the data.
+
+The twin doubles as the chart's machine-readable surface: value cells carry the raw number in `data-value` (and date row headers, where present, the exact ISO timestamp in `<time dateTime>`), so agents and scrapers read precise data from the DOM without reverse-engineering locale formatting. Assistive tech still hears the human-formatted text, and the twin itself is addressable at `data-slot="bar-chart-data-table"`.
+
+## API Reference
+
+`BarChart.Bar`, `BarChart.Grid`, `BarChart.XAxis`, `BarChart.YAxis`, and `BarChart.ReferenceLine` are renderless: they register configuration with the Root, which paints everything on canvas. They accept no `className` or other DOM props. `BarChart.Tooltip` and `BarChart.Legend` accept div props — the tooltip forwards them to the readout element the Root owns, and the legend renders real DOM in flow below the plot. `BarChart.CopyButton` also renders real DOM — an icon button accepting `button` props.
+
+### BarChart.Root
+
+The root of a bar chart: owns the data, the scales, the canvas renderer, and the entire interaction contract. Renders a `<div>` sized `aspect-video` at full width by default — override with `className`. Bars encode value by length from a shared zero baseline, so the y domain minimum is fixed at `0`.
+
+All props from [div](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/div#attributes), plus:
+
+| Prop                   | Type                               | Default       | Description                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------- | ---------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`                 | `readonly TDatum[]`                |               | Rows of data; each `BarChart.Bar` reads one numeric key per row. Missing keys and `null` values render as gaps.                                                                                                                                                                                                                              |
+| `xKey`                 | `Extract<keyof TDatum, string>`    |               | The key of each row's category (x) value.                                                                                                                                                                                                                                                                                                    |
+| `aria-label`           | `string`                           |               | The chart's accessible name (interactive charts). Exactly one of `aria-label` or `aria-labelledby` is required — enforced at the type level. Forbidden when `decorative`.                                                                                                                                                                    |
+| `aria-labelledby`      | `string`                           |               | ID of a visible title element that names the chart. Preferred when the chart sits under a heading — no drift-prone duplicated text. Forbidden when `decorative`.                                                                                                                                                                             |
+| `decorative?`          | `boolean`                          | `false`       | Render as a placeholder backdrop, not real data: every series paints the neutral `--color-chart-decorative` fill, hidden from assistive tech, out of the tab order, inert to pointer/keyboard, no data table or live region. Mutually exclusive with the accessible-name and interaction props. See [Decorative charts](#decorative-charts). |
+| `yDomain?`             | `[0, number \| "auto"]`            | `[0, "auto"]` | Override the automatic y maximum. The minimum is always the zero baseline.                                                                                                                                                                                                                                                                   |
+| `stacked?`             | `boolean`                          | `false`       | Stack the series from the baseline up in registration order. See [Stacked bars](#stacked-bars).                                                                                                                                                                                                                                              |
+| `orientation?`         | `"vertical" \| "horizontal"`       | `"vertical"`  | The direction the bars point (not an axis): `"vertical"` bars stand up from a bottom baseline (categories along x); `"horizontal"` bars run rightward from a left baseline (categories down y). See [Horizontal bars](#horizontal-bars).                                                                                                     |
+| `animate?`             | `boolean`                          | `true`        | Animate enter/update transitions. `prefers-reduced-motion` always wins.                                                                                                                                                                                                                                                                      |
+| `pending?`             | `boolean`                          | `false`       | Hold the previous render at reduced opacity while fresh data loads — never swap a chart that has rendered once for a skeleton.                                                                                                                                                                                                               |
+| `activeIndex?`         | `number \| null`                   |               | Controlled active datum index (`null` = none). Omit for uncontrolled hover. Forbidden when `decorative`.                                                                                                                                                                                                                                     |
+| `onActiveIndexChange?` | `(index: number \| null) => void`  |               | Notified when hover/keyboard moves the active index. Forbidden when `decorative`.                                                                                                                                                                                                                                                            |
+| `onDatumActivate?`     | `(event: ChartDatumEvent) => void` |               | Notified on datum activation: bar click, or Enter/Space on the focused chart. The event carries `{ index, xValue, datum, dataKey }`; `dataKey` is the stacked segment the pointer sits in, else the series nearest the pointer, and `null` for keyboard/whole-band activation. Forbidden when `decorative`.                                  |
+
+**Data attributes**
+
+| Data Attribute | Value                    | Description                                                                                                     |
+| -------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `data-slot`    | `"bar-chart"`            | The Root wrapper, with any forwarded chain ahead of it.                                                         |
+| `data-slot`    | `"bar-chart-plot"`       | The plot box. Every overlay layer positions against it, and the resize observer measures it.                    |
+| `data-slot`    | `"bar-chart-canvas"`     | The `<canvas>` the marks paint on. Always `aria-hidden`.                                                        |
+| `data-slot`    | `"bar-chart-crosshair"`  | The vertical hairline. Mounted on every kind; a bar chart never shows it.                                       |
+| `data-slot`    | `"bar-chart-hover-band"` | The highlight behind the active category, one category wide. The engine writes its geometry as an inline style. |
+| `data-slot`    | `"bar-chart-markers"`    | The container for the per-series hover dots. Mounted on every kind; a bar chart never fills it.                 |
+| `data-slot`    | `"bar-chart-tooltip"`    | The tooltip surface. The Root renders it; `BarChart.Tooltip` configures it.                                     |
+| `data-slot`    | `"bar-chart-data-table"` | The `sr-only` table twin. Omitted when `decorative`.                                                            |
+
+### BarChart.Bar
+
+One bar series. Renders nothing itself — it registers the series with the chart, which paints it on canvas. Compose one `Bar` per series; with `stacked` on the Root, bars stack from the baseline up in registration order. Accepts no `className` or DOM props.
+
+**Bar thickness follows the category spacing; there is no `barSize` prop.** A bar fills its slot up to a cap of 60% of one category's step, floored at 24px and ceilinged at 64px. Few categories therefore grow the bars rather than the air between them — seven days across a 93px step paint ~56px bars, not 24px bars in 69px of air — while a dense chart keeps filling its slot exactly as before. Grouped series split the band and each bar fills its own slot, so a group tightens instead of outgrowing its category. The rule reads the step alone, so the same data at the same width always paints the same pixels, and thickness only ever rises as categories thin out.
+
+| Prop          | Type                                                                                                         | Default                      | Description                                                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dataKey`     | `string`                                                                                                     |                              | The row key this series reads its numeric values from.                                                                                                       |
+| `label?`      | `string`                                                                                                     | `dataKey`                    | Display name for the legend, tooltip, and data table.                                                                                                        |
+| `seriesSlot?` | `1 \| 2 \| 3 \| 4 \| 5 \| 6 \| 7 \| 8 \| "other"`                                                            | next unreserved slot         | Give the series a fixed visual identity. Several related series may share one slot. See [Chart color tokens](#chart-color-tokens).                           |
+| `color?`      | `SeriesColor`                                                                                                | color from the resolved slot | Override only the color channel with a chart token or CSS color string. This does not change the series slot. See [Chart color tokens](#chart-color-tokens). |
+| `texture?`    | `"solid" \| "hatch" \| "hatch-reverse" \| "crosshatch" \| "perpendicular" \| "parallel" \| "grid" \| "dots"` | `"solid"`                    | The fill texture the bars and their legend key wear — a redundant identity encoding alongside color. See [Textures](#textures).                              |
+
+### BarChart.Grid
+
+Hairline value gridlines behind the bars (renderless; painted on canvas). The default runs perpendicular to the bars: horizontal lines for vertical bars, vertical lines for horizontal bars. Pass `lines` to force a direction. Omit the part to omit the grid. Accepts no `className` or DOM props.
+
+| Prop     | Type                                   | Default                   | Description              |
+| -------- | -------------------------------------- | ------------------------- | ------------------------ |
+| `lines?` | `"horizontal" \| "vertical" \| "both"` | perpendicular to the bars | Which gridlines to draw. |
+
+### BarChart.XAxis
+
+Category labels for the bars (renderless; painted on canvas): along the bottom for vertical bars, down the left gutter for horizontal bars. Labels that would collide are skipped, never rotated. Accepts no `className` or DOM props.
+
+| Prop          | Type                                          | Default | Description                                                                                                                               |
+| ------------- | --------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `tickFormat?` | `(value: string \| number \| Date) => string` |         | Format a tick label. Receives the row's category value.                                                                                   |
+| `tickCount?`  | `number`                                      |         | Target tick count (continuous scales only). Bar charts use a band scale, where label density is automatic — colliding labels are skipped. |
+
+### BarChart.YAxis
+
+Value tick labels (renderless; painted on canvas): along the left for vertical bars, across the bottom for horizontal bars. Ticks land on clean thousands-separated numbers. Accepts no `className` or DOM props.
+
+| Prop          | Type                        | Default                     | Description                                                                                             |
+| ------------- | --------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `tickFormat?` | `(value: number) => string` | thousands-separated numbers | Format a tick label.                                                                                    |
+| `tickCount?`  | `number`                    |                             | Target tick count. Approximate: integer-valued data never renders fractional ticks, whatever the count. |
+
+### BarChart.ReferenceLine
+
+A dashed marker at the value `y`, such as an SLO threshold, a budget, or a limit (renderless; painted on canvas). It crosses the value axis: a horizontal line for vertical bars, a vertical line for horizontal bars. Accepts no `className` or DOM props.
+
+| Prop     | Type          | Default                 | Description                                       |
+| -------- | ------------- | ----------------------- | ------------------------------------------------- |
+| `y`      | `number`      |                         | The y value the line marks.                       |
+| `label?` | `string`      |                         | A short label painted above the line's right end. |
+| `color?` | `SeriesColor` | neutral reference color | Line color.                                       |
+
+### BarChart.Tooltip
+
+Customizes the hover/keyboard tooltip readout. The tooltip itself is part of `BarChart.Root`'s interaction contract and renders even when this part is absent — compose it to format the label or values, append a footer, or replace the content entirely.
+
+A `children` readout renders inside a `<div data-slot="bar-chart-tooltip-label">`. When it goes away, React removes that div instead of your own text nodes: a browser translation engine reparents text nodes, and a removal aimed at one throws. The div is `display: contents`, so it adds no box and your content stays a direct layout child of the parent. To style it as a box, set a display of your own on it first. [Browser translation](/browser-translation) covers the mechanism and the rules your own components need.
+
+The `HoverSnapshot` passed to `footer` and `children` describes the active category: `{ index, xValue, datum, points, viaKeyboard }`, where `points` lists every series' value at the active index. Stacked, the rows run from the far end of the pile back to the baseline; unstacked, they follow registration order.
+
+All props from [div](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/div#attributes) (forwarded to the tooltip element the Root owns) except `children`, plus:
+
+| Prop           | Type                                                    | Default  | Description                                                             |
+| -------------- | ------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
+| `labelFormat?` | `(value: string \| number \| Date) => ReactNode`        |          | Format the x/label row of the readout.                                  |
+| `valueFormat?` | `(value: number, dataKey: string) => ReactNode`         |          | Format each series value.                                               |
+| `indicator?`   | `"line" \| "none"`                                      | `"line"` | The per-series color key: a short stroke (default) or nothing.          |
+| `footer?`      | `ReactNode \| ((snapshot: HoverSnapshot) => ReactNode)` |          | Extra content appended below the series rows (e.g. a "view logs" hint). |
+| `children?`    | `(snapshot: HoverSnapshot) => ReactNode`                |          | Replace the entire readout.                                             |
+
+**Data attributes**
+
+| Data Attribute | Value                       | Description                                                                 |
+| -------------- | --------------------------- | --------------------------------------------------------------------------- |
+| `data-slot`    | `"bar-chart-tooltip-label"` | On the `<div>` wrapping a `children` readout. The default readout has none. |
+
+### BarChart.Legend
+
+The legend: series names keyed by color swatches, rendered as real DOM in flow below the plot. Always compose it on multi-series charts — identity must never rely on color-matching alone. It renders nothing for a single series (the chart's title already names it).
+
+A `children` render prop renders inside a `<div data-slot="bar-chart-legend-label">`. When it goes away, React removes that div instead of your own text nodes: a browser translation engine reparents text nodes, and a removal aimed at one throws. The div is `display: contents`, so it adds no box and your content stays a direct layout child of the parent. To style it as a box, set a display of your own on it first. [Browser translation](/browser-translation) covers the mechanism and the rules your own components need.
+
+All props from [div](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/div#attributes) except `children`, plus:
+
+| Prop        | Type                                  | Default | Description                                                       |
+| ----------- | ------------------------------------- | ------- | ----------------------------------------------------------------- |
+| `children?` | `(series: SeriesMeta[]) => ReactNode` |         | Replace the default legend items; receives the registered series. |
+
+**Data attributes**
+
+| Data Attribute | Value                                                                                                        | Description                                                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data-slot`    | `"bar-chart-legend"`                                                                                         | The legend list. `BarChart.Legend` renders it in flow below the plot.                                                                                                 |
+| `data-slot`    | `"bar-chart-legend-label"`                                                                                   | On the `<div>` wrapping a `children` render prop. The default legend has none.                                                                                        |
+| `data-texture` | `"solid" \| "hatch" \| "hatch-reverse" \| "crosshatch" \| "perpendicular" \| "parallel" \| "grid" \| "dots"` | On each series' swatch, naming the `texture` its [BarChart.Bar](#barchartbar) registered. The swatch paints the pattern itself, so target this only to restyle a key. |
+
+### BarChart.CopyButton
+
+A button that copies the chart's current data to the clipboard as a GitHub-flavored markdown table: the category column plus one column per series in paint order. Values are machine-stable — plain un-separated numbers, an em dash for gaps — so the paste target receives parseable data, not locale formatting. Renders an icon button in flow where composed; `Root` is relatively positioned, so `className` can dock it over a corner (e.g. `absolute right-0 top-0`).
+
+All props from [button](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/button#attributes), plus:
+
+| Prop           | Type                       | Default                   | Description                                                                    |
+| -------------- | -------------------------- | ------------------------- | ------------------------------------------------------------------------------ |
+| `label?`       | `string`                   | `"Copy data as Markdown"` | The accessible name, rendered as the button's `aria-label`.                    |
+| `onCopy?`      | `(value: string) => void`  |                           | Callback fired after a successful copy, passes the serialized markdown.        |
+| `onCopyError?` | `(error: unknown) => void` |                           | Callback fired when an error occurs during copying.                            |
+| `asChild?`     | `boolean`                  | `false`                   | Compose the copy behavior onto your own element instead of the default button. |
+
+While a copy is fresh, an always-mounted `role="status"` element beside the button announces "Copied" to a screen reader.
+
+| Data Attribute | Value                     | Description                  |
+| -------------- | ------------------------- | ---------------------------- |
+| `data-slot`    | `"bar-chart-copy-button"` | The button the part renders. |
+
+### Chart color tokens
+
+Series colors default to the ordered `--color-chart-1` through `--color-chart-8` tokens. Each of the four themes (light, dark, and both high-contrast variants) authors its own eight `oklch()` literals, measured against mantle's palette validation gates: all 28 pairs hold 15 ΔE apart for full-color vision and 8 ΔE under simulated protanopia or deuteranopia, and every slot clears 3:1 against that theme's card surface.
+
+Series receive unreserved slots in composition order. Set `seriesSlot` to give a series a fixed visual identity. Mantle reserves fixed slots before automatic series take the remaining slots. Several related series may share one. `seriesSlot="other"` selects the neutral tail treatment without reserving a categorical slot. Removing an automatic series closes the gap. The `color` and `shape` props override only their own channels and never change slot assignment. When the chart runs out of unreserved categorical slots, later automatic series paint with `--color-chart-other`. Prefer folding the long tail into a single "Other" series over plotting nine-plus indistinguishable ones.
+
+| CSS Variable               | Description                                                                                                                |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `--color-chart-1`          | Categorical series slot 1 (blue) — the first slot a chart assigns.                                                         |
+| `--color-chart-2`          | Categorical series slot 2 (green).                                                                                         |
+| `--color-chart-3`          | Categorical series slot 3 (pink).                                                                                          |
+| `--color-chart-4`          | Categorical series slot 4 (red-orange).                                                                                    |
+| `--color-chart-5`          | Categorical series slot 5 (teal).                                                                                          |
+| `--color-chart-6`          | Categorical series slot 6 (magenta).                                                                                       |
+| `--color-chart-7`          | Categorical series slot 7 (violet).                                                                                        |
+| `--color-chart-8`          | Categorical series slot 8 (amber).                                                                                         |
+| `--color-chart-other`      | The neutral overflow slot, worn once more than eight series show at once — prefer folding the tail into an "Other" series. |
+| `--color-chart-decorative` | The neutral fill every series wears on a [decorative chart](#decorative-charts), in place of its categorical slot.         |
+
+What each theme measures across its eight slots:
+
+| Theme                 | Closest pair, full-color vision | Closest pair, simulated CVD | Lowest contrast on the card |
+| --------------------- | ------------------------------- | --------------------------- | --------------------------- |
+| `light`               | 15.475 ΔE                       | 9.580 ΔE                    | 3.610:1                     |
+| `dark`                | 15.072 ΔE                       | 9.551 ΔE                    | 3.652:1                     |
+| `light-high-contrast` | 15.145 ΔE                       | 9.617 ΔE                    | 3.696:1                     |
+| `dark-high-contrast`  | 15.054 ΔE                       | 9.572 ΔE                    | 6.763:1                     |
+
+The `color` prop on `BarChart.Bar` accepts any CSS color string as an escape hatch, but a static color (raw hex) does not adapt across themes — custom palettes must be theme-aware, and validated for surface contrast and for colorblind-safe separation from every other color on the chart, just like the built-in tokens. A series that _means_ good or bad — error rate, pass/fail — should wear the semantic status colors (e.g. `var(--color-danger-500)`), never a categorical slot.
+
+#### Series identity and color
+
+Three public paths control a series identity or color.
+
+- **Fixed identity** — pass `seriesSlot` on `BarChart.Bar`. It reserves one built-in color identity before automatic series take the remaining slots.
+- **One color channel** — pass `color` on `BarChart.Bar`. It takes a chart token by name or any CSS color string without changing slot assignment.
+- **One chart** — redeclare the token on `BarChart.Root`: `className="[--color-chart-1:var(--color-brand)]"`. Every series that lands in slot 1 picks the new value up. So do its legend swatch and tooltip stroke.
+
+The chart resolves every token through a probe element it appends inside `Root`. The probe sits in that Root's own cascade, so a declaration scoped to one Root wins for that chart alone. Sibling charts on the page keep the theme value. Declare the same custom property higher up — on a dashboard wrapper, or at `:root` — to retheme a whole subtree.
+
+Both paths want a `var()` reference rather than a raw hex, for the reason [Fixed colors for known entities](#fixed-colors-for-known-entities) gives. An overridden slot leaves mantle's gates behind, so the measurement is yours. Grouped bars compare every series to every other, so measure your color against every slot the chart hands out — not only the two beside it. The `#d07c00` below clears 8 ΔE from `chart-2` under simulated protanopia and deuteranopia in all four themes, and 3.19:1 on the white card surface.
+
+<Example>
+	<SeriesIdentityBarChartExample />
+</Example>
+
+```tsx
+import { BarChart } from "@ngrok/mantle/bar-chart";
+
+const monthlyVisitors = [
+	{ month: "January", desktop: 186, mobile: 80 },
+	{ month: "February", desktop: 305, mobile: 200 },
+	{ month: "March", desktop: 237, mobile: 120 },
+	{ month: "April", desktop: 73, mobile: 190 },
+	{ month: "May", desktop: 209, mobile: 130 },
+	{ month: "June", desktop: 214, mobile: 140 },
+];
+
+function SeriesIdentityBarChartExample() {
+	return (
+		// An app declares its brand token once, high in the tree. This example
+		// declares it on the wrapper so it stands alone. A theme that needs its own
+		// value takes a variant: `dark:[--color-brand:…]`.
+		<div className="grid w-full gap-6 [--color-brand:#d07c00] sm:grid-cols-2">
+			<BarChart.Root
+				data={monthlyVisitors}
+				xKey="month"
+				className="[--color-chart-1:var(--color-brand)]"
+				aria-label="Visitors by month, first slot rethemed"
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="desktop" label="Desktop" />
+				<BarChart.Bar dataKey="mobile" label="Mobile" />
+				<BarChart.Legend />
+			</BarChart.Root>
+			{/* The sibling never sees the declaration above, so its Desktop series
+			    keeps the chart-1 blue. */}
+			<BarChart.Root
+				data={monthlyVisitors}
+				xKey="month"
+				aria-label="Visitors by month, one color overridden"
+			>
+				<BarChart.Grid />
+				<BarChart.XAxis tickFormat={(month) => String(month).slice(0, 3)} />
+				<BarChart.YAxis />
+				<BarChart.Bar dataKey="desktop" label="Desktop" />
+				<BarChart.Bar dataKey="mobile" label="Mobile" color="var(--color-brand)" />
+				<BarChart.Legend />
+			</BarChart.Root>
+		</div>
+	);
+}
+```

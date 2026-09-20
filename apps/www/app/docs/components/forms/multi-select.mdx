@@ -1,0 +1,1315 @@
+---
+title: Multi Select
+description: A typeahead multi-select combobox that allows users to select multiple values with filtering. Selected values are displayed as removable tags.
+---
+
+import { Field } from "@ngrok/mantle/field";
+import { MultiSelect } from "@ngrok/mantle/multi-select";
+import { matchSorter } from "match-sorter";
+import { useMemo, useState, useTransition } from "react";
+import { Example } from "~/components/example";
+import { InSheetDemo } from "~/examples/multi-select/multi-select-in-sheet-demo";
+import { RegionPinningDemo } from "~/examples/multi-select/multi-select-region-pinning-demo";
+import { TanStackFormDemo } from "~/examples/multi-select/multi-select-tanstack-form-demo";
+
+export const fruits = [
+	"Apple",
+	"Banana",
+	"Blueberry",
+	"Cherry",
+	"Grapes",
+	"Kiwi",
+	"Lemon",
+	"Mango",
+	"Orange",
+	"Peach",
+	"Pear",
+	"Pineapple",
+	"Strawberry",
+	"Watermelon",
+];
+
+export function BasicDemo() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const matches = useMemo(() => matchSorter(fruits, searchValue), [searchValue]);
+
+    return (
+    	<Field.Item name="fruits" className="max-w-96">
+    		<Field.Label>Fruits</Field.Label>
+    		<Field.Control>
+    			<MultiSelect.Root
+    				setOpen={() => {
+    					setSearchValue("");
+    				}}
+    			>
+    				<MultiSelect.Trigger>
+    					<MultiSelect.TagValues />
+    					<MultiSelect.Input
+    						onValueChange={(value) => startTransition(() => setSearchValue(value))}
+    						placeholder="Select fruits..."
+    					/>
+    				</MultiSelect.Trigger>
+    				<MultiSelect.Content aria-busy={isPending}>
+    					{matches.map((value) => (
+    						<MultiSelect.Item key={value} value={value}>
+    							{value}
+    						</MultiSelect.Item>
+    					))}
+    					{matches.length === 0 && (
+    						<MultiSelect.Empty>No results found</MultiSelect.Empty>
+    					)}
+    				</MultiSelect.Content>
+    			</MultiSelect.Root>
+    		</Field.Control>
+    	</Field.Item>
+    );
+
+}
+
+export function GroupedDemo() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const fruitList = ["Apple", "Banana", "Cherry", "Grapes", "Orange", "Strawberry"];
+	const veggieList = ["Carrot", "Cucumber", "Lettuce", "Tomato", "Zucchini"];
+	const filteredFruits = useMemo(() => matchSorter(fruitList, searchValue), [searchValue]);
+	const filteredVeggies = useMemo(() => matchSorter(veggieList, searchValue), [searchValue]);
+
+    return (
+    	<Field.Item name="produce" className="max-w-96">
+    		<Field.Label>Produce</Field.Label>
+    		<Field.Control>
+    			<MultiSelect.Root
+    				setOpen={() => {
+    					setSearchValue("");
+    				}}
+    			>
+    				<MultiSelect.Trigger>
+    					<MultiSelect.TagValues />
+    					<MultiSelect.Input
+    						onValueChange={(value) => startTransition(() => setSearchValue(value))}
+    						placeholder="Select items..."
+    					/>
+    				</MultiSelect.Trigger>
+    				<MultiSelect.Content aria-busy={isPending}>
+    					{filteredFruits.length > 0 && (
+    						<MultiSelect.Group>
+    							<MultiSelect.GroupLabel>Fruits</MultiSelect.GroupLabel>
+    							{filteredFruits.map((value) => (
+    								<MultiSelect.Item key={value} value={value}>
+    									{value}
+    								</MultiSelect.Item>
+    							))}
+    						</MultiSelect.Group>
+    					)}
+    					{filteredFruits.length > 0 && filteredVeggies.length > 0 && (
+    						<MultiSelect.Separator />
+    					)}
+    					{filteredVeggies.length > 0 && (
+    						<MultiSelect.Group>
+    							<MultiSelect.GroupLabel>Vegetables</MultiSelect.GroupLabel>
+    							{filteredVeggies.map((value) => (
+    								<MultiSelect.Item key={value} value={value}>
+    									{value}
+    								</MultiSelect.Item>
+    							))}
+    						</MultiSelect.Group>
+    					)}
+    					{filteredFruits.length === 0 && filteredVeggies.length === 0 && (
+    						<MultiSelect.Empty>No results found</MultiSelect.Empty>
+    					)}
+    				</MultiSelect.Content>
+    			</MultiSelect.Root>
+    		</Field.Control>
+    	</Field.Item>
+    );
+
+}
+
+export function ControlledDemo() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const [selected, setSelected] = useState(["Apple", "Cherry"]);
+	const matches = useMemo(() => matchSorter(fruits, searchValue), [searchValue]);
+
+    return (
+    	<Field.Item name="fruits-controlled" className="max-w-96">
+    		<Field.Label>Fruits</Field.Label>
+    		<Field.Control>
+    			<MultiSelect.Root
+    				selectedValue={selected}
+    				setOpen={() => {
+    					setSearchValue("");
+    				}}
+    				setSelectedValue={setSelected}
+    			>
+    				<MultiSelect.Trigger>
+    					<MultiSelect.TagValues />
+    					<MultiSelect.Input
+    						onValueChange={(value) => startTransition(() => setSearchValue(value))}
+    						placeholder="Select fruits..."
+    					/>
+    				</MultiSelect.Trigger>
+    				<MultiSelect.Content aria-busy={isPending}>
+    					{matches.map((value) => (
+    						<MultiSelect.Item key={value} value={value}>
+    							{value}
+    						</MultiSelect.Item>
+    					))}
+    					{matches.length === 0 && (
+    						<MultiSelect.Empty>No results found</MultiSelect.Empty>
+    					)}
+    				</MultiSelect.Content>
+    			</MultiSelect.Root>
+    		</Field.Control>
+    	</Field.Item>
+    );
+
+}
+
+export function CreatableDemo() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const [selected, setSelected] = useState(["Apple", "Cherry"]);
+	const [options, setOptions] = useState(fruits);
+	const matches = useMemo(() => matchSorter(options, searchValue), [options, searchValue]);
+	const showCreate =
+		searchValue.trim() !== "" &&
+		!options.some((o) => o.toLowerCase() === searchValue.trim().toLowerCase());
+
+    return (
+    	<Field.Item name="fruits-creatable" className="max-w-96">
+    		<Field.Label>Fruits</Field.Label>
+    		<Field.Control>
+    			<MultiSelect.Root
+    				selectedValue={selected}
+    				setOpen={() => {
+    					setSearchValue("");
+    				}}
+    				setSelectedValue={(values) => {
+    					setSelected(values);
+    					startTransition(() => setSearchValue(""));
+    				}}
+    			>
+    				<MultiSelect.Trigger>
+    					<MultiSelect.TagValues />
+    					<MultiSelect.Input
+    						onValueChange={(value) => startTransition(() => setSearchValue(value))}
+    						placeholder="Select or create fruits..."
+    					/>
+    				</MultiSelect.Trigger>
+    				<MultiSelect.Content aria-busy={isPending}>
+    					{matches.map((value) => (
+    						<MultiSelect.Item key={value} value={value}>
+    							{value}
+    						</MultiSelect.Item>
+    					))}
+    					{showCreate && (
+    						<MultiSelect.Item
+    							value={searchValue.trim()}
+    							onClick={() => setOptions((prev) => [...prev, searchValue.trim()])}
+    						>
+    							Create "{searchValue.trim()}"
+    						</MultiSelect.Item>
+    					)}
+    					{matches.length === 0 && !showCreate && (
+    						<MultiSelect.Empty>No results found</MultiSelect.Empty>
+    					)}
+    				</MultiSelect.Content>
+    			</MultiSelect.Root>
+    		</Field.Control>
+    	</Field.Item>
+    );
+
+}
+
+export function LockedValuesDemo() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const [selected, setSelected] = useState(["apple", "banana", "cherry"]);
+	const matches = useMemo(
+		() =>
+			["apple", "banana", "cherry", "grape", "kiwi", "mango"].filter((f) =>
+				f.includes(searchValue.toLowerCase()),
+			),
+		[searchValue],
+	);
+
+    return (
+    	<Field.Item name="fruits-locked" className="max-w-96">
+    		<Field.Label>Fruits</Field.Label>
+    		<Field.Control>
+    			<MultiSelect.Root
+    				selectedValue={selected}
+    				setOpen={() => {
+    					setSearchValue("");
+    				}}
+    				setSelectedValue={setSelected}
+    			>
+    				<MultiSelect.Trigger>
+    					<MultiSelect.TagValues lockedValues={["apple", "cherry"]} />
+    					<MultiSelect.Input
+    						onValueChange={(value) => startTransition(() => setSearchValue(value))}
+    						placeholder="Select fruits..."
+    					/>
+    				</MultiSelect.Trigger>
+    				<MultiSelect.Content aria-busy={isPending}>
+    					{matches.map((value) => (
+    						<MultiSelect.Item key={value} value={value}>
+    							{value}
+    						</MultiSelect.Item>
+    					))}
+    					{matches.length === 0 && <MultiSelect.Empty>No results found</MultiSelect.Empty>}
+    				</MultiSelect.Content>
+    			</MultiSelect.Root>
+    		</Field.Control>
+    	</Field.Item>
+    );
+
+}
+
+export function ValidationDemo() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const matches = useMemo(() => matchSorter(fruits, searchValue), [searchValue]);
+
+    return (
+    	<div className="flex w-full max-w-96 flex-col gap-4">
+    		<Field.Item name="fruits-error">
+    			<Field.Label>Fruits (error)</Field.Label>
+    			<Field.Control>
+    				<MultiSelect.Root
+    					setOpen={() => {
+    						setSearchValue("");
+    					}}
+    				>
+    					<MultiSelect.Trigger validation="error">
+    						<MultiSelect.TagValues />
+    						<MultiSelect.Input
+    							onValueChange={(value) => startTransition(() => setSearchValue(value))}
+    							placeholder="Error state..."
+    						/>
+    					</MultiSelect.Trigger>
+    					<MultiSelect.Content aria-busy={isPending}>
+    						{matches.map((value) => (
+    							<MultiSelect.Item key={value} value={value}>
+    								{value}
+    							</MultiSelect.Item>
+    						))}
+    					</MultiSelect.Content>
+    				</MultiSelect.Root>
+    			</Field.Control>
+    		</Field.Item>
+    		<Field.Item name="fruits-success">
+    			<Field.Label>Fruits (success)</Field.Label>
+    			<Field.Control>
+    				<MultiSelect.Root
+    					setOpen={() => {
+    						setSearchValue("");
+    					}}
+    				>
+    					<MultiSelect.Trigger validation="success">
+    						<MultiSelect.TagValues />
+    						<MultiSelect.Input
+    							onValueChange={(value) => startTransition(() => setSearchValue(value))}
+    							placeholder="Success state..."
+    						/>
+    					</MultiSelect.Trigger>
+    					<MultiSelect.Content aria-busy={isPending}>
+    						{matches.map((value) => (
+    							<MultiSelect.Item key={value} value={value}>
+    								{value}
+    							</MultiSelect.Item>
+    						))}
+    					</MultiSelect.Content>
+    				</MultiSelect.Root>
+    			</Field.Control>
+    		</Field.Item>
+    		<Field.Item name="fruits-warning">
+    			<Field.Label>Fruits (warning)</Field.Label>
+    			<Field.Control>
+    				<MultiSelect.Root
+    					setOpen={() => {
+    						setSearchValue("");
+    					}}
+    				>
+    					<MultiSelect.Trigger validation="warning">
+    						<MultiSelect.TagValues />
+    						<MultiSelect.Input
+    							onValueChange={(value) => startTransition(() => setSearchValue(value))}
+    							placeholder="Warning state..."
+    						/>
+    					</MultiSelect.Trigger>
+    					<MultiSelect.Content aria-busy={isPending}>
+    						{matches.map((value) => (
+    							<MultiSelect.Item key={value} value={value}>
+    								{value}
+    							</MultiSelect.Item>
+    						))}
+    					</MultiSelect.Content>
+    				</MultiSelect.Root>
+    			</Field.Control>
+    		</Field.Item>
+    	</div>
+    );
+
+}
+
+# Multi Select
+
+A typeahead multi-select combobox that allows users to select multiple values with filtering. Selected values are displayed as removable tags. Built on top of [ariakit Combobox](https://ariakit.org/components/combobox) with full keyboard support and [WAI-ARIA Combobox Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/) compliance.
+
+## When to use
+
+Use `Multi Select` when the user can choose multiple values from a list, with selected values rendered as removable tags/chips. For single selection, use [`Combobox`](/components/forms/combobox) (with search) or [`Select`](/components/forms/select) (without).
+
+Pair with `Field.*` for label/description/error wiring in forms: wrap `MultiSelect.Root` in `Field.Control`. `Field.Control` flows the generated `id`, `aria-describedby`, `aria-errormessage`, and `aria-invalid` through to the focusable `MultiSelect.Input` via `FieldControlContext`. The field `name` flows through too, but lands on one hidden input per selected value rather than on the combobox input: the input's value is the typeahead filter text, so a native form submit sends the selected values instead of what the user typed.
+
+<Example>
+	<Field.Item name="fruits" className="max-w-96">
+		<Field.Label>Fruits</Field.Label>
+		<Field.Control>
+			<MultiSelect.Root>
+				<MultiSelect.Trigger>
+					<MultiSelect.TagValues />
+					<MultiSelect.Input placeholder="Select fruits..." />
+				</MultiSelect.Trigger>
+				<MultiSelect.Content>
+					{fruits.map((value) => (
+						<MultiSelect.Item key={value} value={value}>
+							{value}
+						</MultiSelect.Item>
+					))}
+				</MultiSelect.Content>
+			</MultiSelect.Root>
+		</Field.Control>
+		<Field.Description>Pick one or more.</Field.Description>
+	</Field.Item>
+</Example>
+
+```tsx
+import { Field } from "@ngrok/mantle/field";
+import { MultiSelect } from "@ngrok/mantle/multi-select";
+
+<Field.Item name="fruits">
+	<Field.Label>Fruits</Field.Label>
+	<Field.Control>
+		<MultiSelect.Root>
+			<MultiSelect.Trigger>
+				<MultiSelect.TagValues />
+				<MultiSelect.Input placeholder="Select fruits..." />
+			</MultiSelect.Trigger>
+			<MultiSelect.Content>
+				{fruits.map((value) => (
+					<MultiSelect.Item key={value} value={value}>
+						{value}
+					</MultiSelect.Item>
+				))}
+			</MultiSelect.Content>
+		</MultiSelect.Root>
+	</Field.Control>
+	<Field.Description>Pick one or more.</Field.Description>
+</Field.Item>;
+```
+
+Or render the control on its own:
+
+<Example>
+	<BasicDemo />
+</Example>
+
+```tsx
+import { MultiSelect } from "@ngrok/mantle/multi-select";
+import { matchSorter } from "match-sorter";
+import { useMemo, useState, useTransition } from "react";
+
+const fruits = [
+	"Apple",
+	"Banana",
+	"Blueberry",
+	"Cherry",
+	"Grapes",
+	"Kiwi",
+	"Lemon",
+	"Mango",
+	"Orange",
+	"Peach",
+	"Pear",
+	"Pineapple",
+	"Strawberry",
+	"Watermelon",
+];
+
+function Example() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const matches = useMemo(() => matchSorter(fruits, searchValue), [searchValue]);
+
+	return (
+		<MultiSelect.Root
+			setOpen={() => {
+				setSearchValue("");
+			}}
+		>
+			<MultiSelect.Trigger>
+				<MultiSelect.TagValues />
+				<MultiSelect.Input
+					onValueChange={(value) => startTransition(() => setSearchValue(value))}
+					placeholder="Select fruits..."
+				/>
+			</MultiSelect.Trigger>
+			<MultiSelect.Content aria-busy={isPending}>
+				{matches.map((value) => (
+					<MultiSelect.Item key={value} value={value}>
+						{value}
+					</MultiSelect.Item>
+				))}
+				{matches.length === 0 && <MultiSelect.Empty>No results found</MultiSelect.Empty>}
+			</MultiSelect.Content>
+		</MultiSelect.Root>
+	);
+}
+```
+
+## Layering and z-index
+
+`MultiSelect.Content` renders at Tailwind `z-50` and portals into the closest `data-mantle-modal-content` element — an enclosing overlay's content — else the nearest overlay's positioner, else `document.body`. Inside an overlay it paints above the content that contains it. Outside one, an open overlay (`z-60`) covers it.
+
+`MultiSelect` does not render a backdrop by default. Modal layers such as `Dialog`, `Sheet`, and `AlertDialog` do render backdrops, so stacking those layers compounds the dim and blur effect on the layers underneath.
+
+## Examples
+
+### Controlled
+
+Use `selectedValue` and `setSelectedValue` to control the selected values.
+
+<Example>
+	<ControlledDemo />
+</Example>
+
+```tsx
+import { MultiSelect } from "@ngrok/mantle/multi-select";
+import { matchSorter } from "match-sorter";
+import { useMemo, useState, useTransition } from "react";
+
+function Example() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const [selected, setSelected] = useState(["Apple", "Cherry"]);
+	const matches = useMemo(() => matchSorter(fruits, searchValue), [searchValue]);
+
+	return (
+		<MultiSelect.Root
+			selectedValue={selected}
+			setOpen={() => {
+				setSearchValue("");
+			}}
+			setSelectedValue={setSelected}
+		>
+			<MultiSelect.Trigger>
+				<MultiSelect.TagValues />
+				<MultiSelect.Input
+					onValueChange={(value) => startTransition(() => setSearchValue(value))}
+					placeholder="Select fruits..."
+				/>
+			</MultiSelect.Trigger>
+			<MultiSelect.Content aria-busy={isPending}>
+				{matches.map((value) => (
+					<MultiSelect.Item key={value} value={value}>
+						{value}
+					</MultiSelect.Item>
+				))}
+				{matches.length === 0 && <MultiSelect.Empty>No results found</MultiSelect.Empty>}
+			</MultiSelect.Content>
+		</MultiSelect.Root>
+	);
+}
+```
+
+### In a Sheet
+
+Use `@tanstack/react-form` to manage the selected values when a side panel needs validation and submit handling. `MultiSelect.Content` will automatically scope its portal to the surrounding sheet so the default modal behavior works without extra configuration.
+
+<Example>
+	<InSheetDemo />
+</Example>
+
+```tsx
+import { Button } from "@ngrok/mantle/button";
+import { Field, toErrorMessages } from "@ngrok/mantle/field";
+import { MultiSelect } from "@ngrok/mantle/multi-select";
+import { Sheet } from "@ngrok/mantle/sheet";
+import { useForm } from "@tanstack/react-form";
+import { matchSorter } from "match-sorter";
+import { useId, useMemo, useState, useTransition } from "react";
+import { z } from "zod";
+
+const formSchema = z.object({
+	favorites: z.string().array().min(1, "Select at least one fruit."),
+});
+
+type FormValues = z.infer<typeof formSchema>;
+
+const [isPending, startTransition] = useTransition();
+const formId = useId();
+const [searchValue, setSearchValue] = useState("");
+const defaultValues: FormValues = {
+	favorites: ["Cherry"],
+};
+const form = useForm({
+	defaultValues,
+	validators: {
+		onSubmit: formSchema,
+	},
+	onSubmit: ({ value }) => {
+		window.alert(`Submitted: ${JSON.stringify(value, null, 2)}`);
+	},
+});
+
+const filteredFruits = useMemo(
+	() => matchSorter(["Apple", "Banana", "Cherry", "Grapes", "Orange", "Strawberry"], searchValue),
+	[searchValue],
+);
+const filteredVeggies = useMemo(
+	() => matchSorter(["Carrot", "Cucumber", "Lettuce", "Tomato", "Zucchini"], searchValue),
+	[searchValue],
+);
+
+<Sheet.Root>
+	<Sheet.Trigger asChild>
+		<Button type="button" appearance="filled" intent="neutral">
+			Assign fruits
+		</Button>
+	</Sheet.Trigger>
+	<Sheet.Content preferredWidth="sm:max-w-[560px]">
+		<Sheet.Header>
+			<Sheet.TitleGroup>
+				<Sheet.Title>Assign fruits</Sheet.Title>
+				<Sheet.Actions>
+					<Sheet.CloseIconButton />
+				</Sheet.Actions>
+			</Sheet.TitleGroup>
+			<Sheet.Description>
+				Use TanStack Form to validate and submit a multi-select inside a sheet workflow.
+			</Sheet.Description>
+		</Sheet.Header>
+		<form
+			className="contents"
+			id={formId}
+			onSubmit={(event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				void form.handleSubmit();
+			}}
+		>
+			<Sheet.Body>
+				<form.Field name="favorites">
+					{(field) => (
+						<Field.Item name={field.name}>
+							<Field.Label>Fruits</Field.Label>
+							<Field.Control>
+								<MultiSelect.Root
+									selectedValue={field.state.value}
+									setSelectedValue={field.handleChange}
+									setOpen={() => {
+										setSearchValue("");
+									}}
+								>
+									<MultiSelect.Trigger onBlur={field.handleBlur}>
+										<MultiSelect.TagValues />
+										<MultiSelect.Input
+											onValueChange={(value) => startTransition(() => setSearchValue(value))}
+											placeholder="Select fruits and vegetables..."
+										/>
+									</MultiSelect.Trigger>
+									<MultiSelect.Content aria-busy={isPending}>
+										{filteredFruits.length > 0 && (
+											<MultiSelect.Group>
+												<MultiSelect.GroupLabel>Fruits</MultiSelect.GroupLabel>
+												{filteredFruits.map((value) => (
+													<MultiSelect.Item key={value} value={value}>
+														{value}
+													</MultiSelect.Item>
+												))}
+											</MultiSelect.Group>
+										)}
+										{filteredFruits.length > 0 && filteredVeggies.length > 0 && (
+											<MultiSelect.Separator />
+										)}
+										{filteredVeggies.length > 0 && (
+											<MultiSelect.Group>
+												<MultiSelect.GroupLabel>Vegetables</MultiSelect.GroupLabel>
+												{filteredVeggies.map((value) => (
+													<MultiSelect.Item key={value} value={value}>
+														{value}
+													</MultiSelect.Item>
+												))}
+											</MultiSelect.Group>
+										)}
+										{filteredFruits.length === 0 && filteredVeggies.length === 0 && (
+											<MultiSelect.Empty>No results found</MultiSelect.Empty>
+										)}
+									</MultiSelect.Content>
+								</MultiSelect.Root>
+							</Field.Control>
+							<Field.Errors messages={toErrorMessages(field.state.meta.errors)} />
+						</Field.Item>
+					)}
+				</form.Field>
+			</Sheet.Body>
+			<Sheet.Footer>
+				<Sheet.Close asChild>
+					<Button type="button" appearance="outlined" intent="neutral">
+						Cancel
+					</Button>
+				</Sheet.Close>
+				<form.Subscribe selector={(state) => state.isDirty}>
+					{(isDirty) => (
+						<Button
+							type="submit"
+							form={formId}
+							appearance="filled"
+							intent="neutral"
+							disabled={!isDirty}
+						>
+							Save
+						</Button>
+					)}
+				</form.Subscribe>
+			</Sheet.Footer>
+		</form>
+	</Sheet.Content>
+</Sheet.Root>;
+```
+
+### Locked values
+
+Use `lockedValues` on `MultiSelect.TagValues` to pin specific tags that cannot be removed. Locked tags display a lock icon instead of an ✕ and shake when the user tries to remove them. Locked values also cannot be deselected by clicking them in the popover.
+
+<Example>
+	<LockedValuesDemo />
+</Example>
+
+```tsx
+import { MultiSelect } from "@ngrok/mantle/multi-select";
+import { useMemo, useState, useTransition } from "react";
+
+function Example() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const [selected, setSelected] = useState(["apple", "banana", "cherry"]);
+	const matches = useMemo(
+		() =>
+			["apple", "banana", "cherry", "grape", "kiwi", "mango"].filter((value) =>
+				value.includes(searchValue.toLowerCase()),
+			),
+		[searchValue],
+	);
+
+	return (
+		<MultiSelect.Root
+			selectedValue={selected}
+			setOpen={() => {
+				setSearchValue("");
+			}}
+			setSelectedValue={setSelected}
+		>
+			<MultiSelect.Trigger>
+				<MultiSelect.TagValues lockedValues={["apple", "cherry"]} />
+				<MultiSelect.Input
+					onValueChange={(value) => startTransition(() => setSearchValue(value))}
+					placeholder="Select fruits..."
+				/>
+			</MultiSelect.Trigger>
+			<MultiSelect.Content aria-busy={isPending}>
+				{matches.map((value) => (
+					<MultiSelect.Item key={value} value={value}>
+						{value}
+					</MultiSelect.Item>
+				))}
+				{matches.length === 0 && <MultiSelect.Empty>No results found</MultiSelect.Empty>}
+			</MultiSelect.Content>
+		</MultiSelect.Root>
+	);
+}
+```
+
+### Creatable
+
+Render a dynamic "Create …" item when the search text doesn't match any existing option. When selected, add the new value to both your options list and the selection. No component changes needed: consumers own the items rendered in `Content`.
+
+<Example>
+	<CreatableDemo />
+</Example>
+
+```tsx
+import { MultiSelect } from "@ngrok/mantle/multi-select";
+import { matchSorter } from "match-sorter";
+import { useMemo, useState, useTransition } from "react";
+
+function Example() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const [selected, setSelected] = useState(["Apple", "Cherry"]);
+	const [options, setOptions] = useState(fruits);
+	const matches = useMemo(() => matchSorter(options, searchValue), [options, searchValue]);
+	const showCreate =
+		searchValue.trim() !== "" &&
+		!options.some((option) => option.toLowerCase() === searchValue.trim().toLowerCase());
+
+	return (
+		<MultiSelect.Root
+			selectedValue={selected}
+			setOpen={() => {
+				setSearchValue("");
+			}}
+			setSelectedValue={(values) => {
+				setSelected(values);
+				startTransition(() => setSearchValue(""));
+			}}
+		>
+			<MultiSelect.Trigger>
+				<MultiSelect.TagValues />
+				<MultiSelect.Input
+					onValueChange={(value) => startTransition(() => setSearchValue(value))}
+					placeholder="Select or create fruits..."
+				/>
+			</MultiSelect.Trigger>
+			<MultiSelect.Content aria-busy={isPending}>
+				{matches.map((value) => (
+					<MultiSelect.Item key={value} value={value}>
+						{value}
+					</MultiSelect.Item>
+				))}
+				{showCreate && (
+					<MultiSelect.Item
+						value={searchValue.trim()}
+						onClick={() => setOptions((prev) => [...prev, searchValue.trim()])}
+					>
+						Create "{searchValue.trim()}"
+					</MultiSelect.Item>
+				)}
+				{matches.length === 0 && !showCreate && (
+					<MultiSelect.Empty>No results found</MultiSelect.Empty>
+				)}
+			</MultiSelect.Content>
+		</MultiSelect.Root>
+	);
+}
+```
+
+### With groups
+
+Use `MultiSelect.Group`, `MultiSelect.GroupLabel`, and `MultiSelect.Separator` to organize items.
+
+<Example>
+	<GroupedDemo />
+</Example>
+
+```tsx
+import { MultiSelect } from "@ngrok/mantle/multi-select";
+import { matchSorter } from "match-sorter";
+import { useMemo, useState, useTransition } from "react";
+
+function Example() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const fruitList = ["Apple", "Banana", "Cherry", "Grapes", "Orange", "Strawberry"];
+	const veggieList = ["Carrot", "Cucumber", "Lettuce", "Tomato", "Zucchini"];
+	const filteredFruits = useMemo(() => matchSorter(fruitList, searchValue), [searchValue]);
+	const filteredVeggies = useMemo(() => matchSorter(veggieList, searchValue), [searchValue]);
+
+	return (
+		<MultiSelect.Root
+			setOpen={() => {
+				setSearchValue("");
+			}}
+		>
+			<MultiSelect.Trigger>
+				<MultiSelect.TagValues />
+				<MultiSelect.Input
+					onValueChange={(value) => startTransition(() => setSearchValue(value))}
+					placeholder="Select items..."
+				/>
+			</MultiSelect.Trigger>
+			<MultiSelect.Content aria-busy={isPending}>
+				{filteredFruits.length > 0 && (
+					<MultiSelect.Group>
+						<MultiSelect.GroupLabel>Fruits</MultiSelect.GroupLabel>
+						{filteredFruits.map((value) => (
+							<MultiSelect.Item key={value} value={value}>
+								{value}
+							</MultiSelect.Item>
+						))}
+					</MultiSelect.Group>
+				)}
+				{filteredFruits.length > 0 && filteredVeggies.length > 0 && <MultiSelect.Separator />}
+				{filteredVeggies.length > 0 && (
+					<MultiSelect.Group>
+						<MultiSelect.GroupLabel>Vegetables</MultiSelect.GroupLabel>
+						{filteredVeggies.map((value) => (
+							<MultiSelect.Item key={value} value={value}>
+								{value}
+							</MultiSelect.Item>
+						))}
+					</MultiSelect.Group>
+				)}
+				{filteredFruits.length === 0 && filteredVeggies.length === 0 && (
+					<MultiSelect.Empty>No results found</MultiSelect.Empty>
+				)}
+			</MultiSelect.Content>
+		</MultiSelect.Root>
+	);
+}
+```
+
+### With TanStack Form
+
+Use `@tanstack/react-form` with `zod` to wire selected values into form state. Pass `field.state.value` to `selectedValue` and `field.handleChange` to `setSelectedValue`.
+
+<Example className="w-full">
+	<TanStackFormDemo />
+</Example>
+
+```tsx
+import { Button } from "@ngrok/mantle/button";
+import { Field, toErrorMessages } from "@ngrok/mantle/field";
+import { MultiSelect } from "@ngrok/mantle/multi-select";
+import { useForm } from "@tanstack/react-form";
+import { z } from "zod";
+
+const fruits = ["Apple", "Banana", "Cherry", "Grapes", "Orange", "Strawberry"];
+
+const formSchema = z.object({
+	favorites: z.string().array().min(1, "Select at least one fruit."),
+});
+
+type FormValues = z.infer<typeof formSchema>;
+
+function Example() {
+	const defaultValues: FormValues = {
+		favorites: [],
+	};
+	const form = useForm({
+		defaultValues,
+		validators: {
+			onSubmit: formSchema,
+		},
+		onSubmit: ({ value }) => {
+			// Handle form submission here
+		},
+	});
+
+	return (
+		<form
+			className="space-y-4"
+			onSubmit={(event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				void form.handleSubmit();
+			}}
+		>
+			<form.Field name="favorites">
+				{(field) => (
+					<Field.Item name={field.name}>
+						<Field.Label>Favorites</Field.Label>
+						<Field.Control>
+							<MultiSelect.Root
+								selectedValue={field.state.value}
+								setSelectedValue={field.handleChange}
+							>
+								<MultiSelect.Trigger onBlur={field.handleBlur}>
+									<MultiSelect.TagValues />
+									<MultiSelect.Input placeholder="Select fruits..." />
+								</MultiSelect.Trigger>
+								<MultiSelect.Content>
+									{fruits.map((value) => (
+										<MultiSelect.Item key={value} value={value}>
+											{value}
+										</MultiSelect.Item>
+									))}
+								</MultiSelect.Content>
+							</MultiSelect.Root>
+						</Field.Control>
+						<Field.Errors messages={toErrorMessages(field.state.meta.errors)} />
+					</Field.Item>
+				)}
+			</form.Field>
+			<Button type="submit" appearance="filled" intent="neutral">
+				Submit
+			</Button>
+		</form>
+	);
+}
+```
+
+### Validation states
+
+Use the `validation` prop on `MultiSelect.Trigger` to show validation states.
+
+<Example>
+	<ValidationDemo />
+</Example>
+
+```tsx
+<MultiSelect.Root>
+	<MultiSelect.Trigger validation="error">
+		<MultiSelect.TagValues />
+		<MultiSelect.Input placeholder="Error state..." />
+	</MultiSelect.Trigger>
+	<MultiSelect.Content>
+		<MultiSelect.Item value="Apple">Apple</MultiSelect.Item>
+	</MultiSelect.Content>
+</MultiSelect.Root>
+```
+
+### Region pinning
+
+A real-world example with three groups (regional aliases, PoPs, dedicated IPs), disabled items, secondary metadata per item, a stacked item description layout, a trailing link in the trigger, and a sticky footer CTA inside the content.
+
+<Example>
+	<RegionPinningDemo />
+</Example>
+
+```tsx
+import { Anchor } from "@ngrok/mantle/anchor";
+import { Button } from "@ngrok/mantle/button";
+import { Field } from "@ngrok/mantle/field";
+import { MultiSelect } from "@ngrok/mantle/multi-select";
+import { matchSorter } from "match-sorter";
+import { useMemo, useState, useTransition } from "react";
+import { href, Link } from "react-router";
+
+const regionalAliases = [
+	{ value: "global", popCount: "All PoPs" },
+	{ value: "united-states", popCount: "2 PoPs" },
+	{ value: "european-union", popCount: "1 PoP" },
+];
+
+const pointsOfPresence = [
+	{ value: "sg-sin-1", location: "Asia / Pacific (Singapore)" },
+	{ value: "au-syd-1", location: "Australia (Sydney)" },
+	{ value: "de-fra-1", location: "European Union (Frankfurt)" },
+	{ value: "in-mum-1", location: "India (Mumbai)" },
+	{ value: "jp-tokyo-1", location: "Japan (Tokyo)" },
+	{ value: "br-sao-1", location: "South America (São Paulo)" },
+	{ value: "us-ohio-1", location: "United States (Ohio)" },
+	{ value: "us-cal-1", location: "United States (California)" },
+];
+
+const dedicatedIPs = [
+	{ ip: "52.191.171.57", description: "this is a helpful description that is exceedingly lengthy" },
+	{ ip: "40.95.110.217", description: "this is a helpful description" },
+	{ ip: "63.243.178.35", description: "" },
+];
+
+function Example() {
+	const [isPending, startTransition] = useTransition();
+	const [searchValue, setSearchValue] = useState("");
+	const [selected, setSelected] = useState(["global"]);
+	const filteredAliases = useMemo(
+		() => matchSorter(regionalAliases, searchValue, { keys: ["value"] }),
+		[searchValue],
+	);
+	const filteredPops = useMemo(
+		() => matchSorter(pointsOfPresence, searchValue, { keys: ["value"] }),
+		[searchValue],
+	);
+	const filteredDedicatedIPs = useMemo(
+		() => matchSorter(dedicatedIPs, searchValue, { keys: ["ip"] }),
+		[searchValue],
+	);
+
+	return (
+		<Field.Item name="regions" className="max-w-lg">
+			<Field.Label>Resolves to</Field.Label>
+			<Field.Control>
+				<MultiSelect.Root
+					selectedValue={selected}
+					setOpen={() => {
+						setSearchValue("");
+					}}
+					setSelectedValue={setSelected}
+				>
+					<MultiSelect.Trigger>
+						<MultiSelect.TagValues />
+						<MultiSelect.Input
+							onValueChange={(value) => startTransition(() => setSearchValue(value))}
+							placeholder="Select regions..."
+						/>
+						{/* Input is flex-1 so this sibling is pushed to the right */}
+						<Anchor className="shrink-0 whitespace-nowrap text-xs" href="#">
+							Requires Upgrade
+						</Anchor>
+					</MultiSelect.Trigger>
+					<MultiSelect.Content aria-busy={isPending}>
+						{filteredAliases.length > 0 && (
+							<MultiSelect.Group>
+								<MultiSelect.GroupLabel>Regional Aliases</MultiSelect.GroupLabel>
+								<MultiSelect.GroupDescription>
+									Include all points of presence that are geographically within the region.
+								</MultiSelect.GroupDescription>
+								{filteredAliases.map(({ value, popCount }) => (
+									<MultiSelect.Item key={value} value={value}>
+										<span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+											<span className="font-mono">{value}</span>
+											<span className="text-muted font-sans text-xs font-normal">{popCount}</span>
+										</span>
+									</MultiSelect.Item>
+								))}
+							</MultiSelect.Group>
+						)}
+						{filteredAliases.length > 0 && filteredPops.length > 0 && <MultiSelect.Separator />}
+						{filteredPops.length > 0 && (
+							<MultiSelect.Group>
+								<MultiSelect.GroupLabel>Points of presence</MultiSelect.GroupLabel>
+								<MultiSelect.GroupDescription>
+									If you've included a region, you cannot include PoPs that are within it.
+								</MultiSelect.GroupDescription>
+								{filteredPops.map(({ value, location }) => (
+									<MultiSelect.Item key={value} value={value} disabled>
+										<span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+											<span className="font-mono">{value}</span>
+											<span className="text-muted font-sans text-xs font-normal">{location}</span>
+										</span>
+									</MultiSelect.Item>
+								))}
+							</MultiSelect.Group>
+						)}
+						{(filteredAliases.length > 0 || filteredPops.length > 0) &&
+							filteredDedicatedIPs.length > 0 && <MultiSelect.Separator />}
+						{filteredDedicatedIPs.length > 0 && (
+							<MultiSelect.Group>
+								<MultiSelect.GroupLabel>Dedicated IPs</MultiSelect.GroupLabel>
+								{filteredDedicatedIPs.map(({ ip, description }) => (
+									<MultiSelect.Item key={ip} value={ip} disabled>
+										<span className="flex min-w-0 flex-1 flex-col">
+											<span className="font-mono">{ip}</span>
+											{description && (
+												<span className="text-muted font-sans text-xs font-normal">
+													{description}
+												</span>
+											)}
+										</span>
+									</MultiSelect.Item>
+								))}
+							</MultiSelect.Group>
+						)}
+						{filteredAliases.length === 0 &&
+							filteredPops.length === 0 &&
+							filteredDedicatedIPs.length === 0 && (
+								<MultiSelect.Empty>No results found</MultiSelect.Empty>
+							)}
+						<MultiSelect.ContentFooter>
+							<div className="flex items-center justify-between gap-3 bg-accent-600/10 px-3 py-3">
+								<p className="text-accent-600 text-sm font-medium">
+									Upgrade your plan to specify regions, PoPs, and dedicated IPs.
+								</p>
+								<Button appearance="filled" intent="neutral" className="shrink-0" asChild>
+									<Link
+										to={{
+											pathname: href("/billing/choose-a-plan"),
+											search: "?plan=paygo",
+										}}
+									>
+										Upgrade to Pay-as-you-go
+									</Link>
+								</Button>
+							</div>
+						</MultiSelect.ContentFooter>
+					</MultiSelect.Content>
+				</MultiSelect.Root>
+			</Field.Control>
+		</Field.Item>
+	);
+}
+```
+
+## Composition
+
+Compose the parts of a `MultiSelect` together to build your own:
+
+```text showLineNumbers=false
+MultiSelect.Root
+├── MultiSelect.Trigger
+│   ├── MultiSelect.TagValues
+│   └── MultiSelect.Input
+└── MultiSelect.Content
+    ├── MultiSelect.Group
+    │   ├── MultiSelect.GroupLabel
+    │   ├── MultiSelect.GroupDescription
+    │   └── MultiSelect.Item
+    ├── MultiSelect.Separator
+    ├── MultiSelect.Empty
+    └── MultiSelect.ContentFooter
+```
+
+## Polymorphism
+
+`MultiSelect.Item`, `MultiSelect.Content`, `MultiSelect.Group`, `MultiSelect.GroupLabel`, and `MultiSelect.Separator` accept `asChild`, rendering your single child in place of the part's default element while keeping its selection and keyboard behavior.
+
+`MultiSelect.GroupLabel asChild` is the useful one: reach for it when a group heading must be a specific element for the page's outline. `MultiSelect.Content asChild` lets you own the popover panel element.
+
+The trigger-side parts (`MultiSelect.Root`, `Trigger`, `Input`, `Tag`, `TagValues`) own input and tag behavior that depends on the elements they render, so they do not accept `asChild`.
+
+`MultiSelect.Item asChild` clones your single child as the option element and moves the label div and the check indicator inside it, so the [translation guarantee](/browser-translation) holds on both paths. To give an option a custom layout inside the default element, pass it as `children` (a [`MediaObject`](/components/structure/media-object) with an avatar, say), which is unrestricted.
+
+## API Reference
+
+The `MultiSelect` components are built on top of [ariakit Combobox](https://ariakit.org/components/combobox).
+
+### MultiSelect.Root
+
+Root component for a multi-select combobox. Owns the selected values and the typeahead query.
+
+`MultiSelect.Content` renders at Tailwind `z-50` and portals into the closest `data-mantle-modal-content` element — an enclosing overlay's content — else the nearest overlay's positioner, else `document.body`. Inside an overlay it paints above the content that contains it. Outside one, an open overlay (`z-60`) covers it.
+
+All props from ariakit [ComboboxProvider](https://ariakit.org/reference/combobox-provider) (typed to `string[]` for multi-select), plus:
+
+| Prop                    | Type                        | Default | Description                                           |
+| :---------------------- | :-------------------------- | :------ | :---------------------------------------------------- |
+| `selectedValue?`        | `string[]`                  | `[]`    | The controlled selected values.                       |
+| `setSelectedValue?`     | `(value: string[]) => void` |         | Event handler called when the selected values change. |
+| `defaultSelectedValue?` | `string[]`                  | `[]`    | The default selected values for uncontrolled usage.   |
+
+### MultiSelect.Trigger
+
+The trigger container for the multi-select. Wraps the input and selected value tags in a styled container that looks like a form input. It is `role="presentation"`: the `MultiSelect.Input` combobox and the `MultiSelect.TagValues` list carry the semantics, and the input's label (`Field.Label` or `aria-label`) names the whole control. Give the input a label: the `placeholder` disappears after the first selection, so it cannot be the only name.
+
+| Prop          | Type                                                                                               | Default | Description                                           |
+| :------------ | :------------------------------------------------------------------------------------------------- | :------ | :---------------------------------------------------- |
+| `validation?` | `"error" \| "success" \| "warning" \| false \| (() => "error" \| "success" \| "warning" \| false)` |         | Validation state that changes the border and outline. |
+
+### MultiSelect.TagValues
+
+Renders the selected values as removable tags. Place this inside `MultiSelect.Trigger`, followed by `MultiSelect.Input`.
+
+The tags render inside a `role="list"` named "Selected values" (override it with `aria-label`), and each default tag is a `role="listitem"`. The list uses `display: contents`, so the tags keep the trigger's flex layout. A custom tag from the `children` render function must be a `role="listitem"` too.
+
+| Prop            | Type                                         | Default             | Description                                                                                                                                      |
+| :-------------- | :------------------------------------------- | :------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `aria-label?`   | `string`                                     | `"Selected values"` | The accessible name of the tag list.                                                                                                             |
+| `lockedValues?` | `string[]`                                   | `[]`                | Values that cannot be removed. Locked tags show a lock icon, shake on Backspace/Delete, and shake when Backspace is pressed on an empty input.   |
+| `children?`     | `(props: TagRenderProps) => React.ReactNode` |                     | Render function for each tag. Receives `{ value, onRemove, locked, ref, onKeyDown, onClick }` — spread onto `Tag` for full keyboard-nav support. |
+
+`TagRenderProps`:
+
+| Prop        | Type                                              | Description                                                                                    |
+| :---------- | :------------------------------------------------ | :--------------------------------------------------------------------------------------------- |
+| `value`     | `string`                                          | The selected value this tag represents.                                                        |
+| `onRemove`  | `() => void`                                      | Removes this value from the selection when called.                                             |
+| `locked`    | `boolean`                                         | Whether this tag is locked (cannot be removed). Forwarded from `lockedValues`.                 |
+| `ref`       | `(node: HTMLSpanElement \| null) => void`         | Forward to the tag element to register it for keyboard navigation between tags.                |
+| `onKeyDown` | `(event: KeyboardEvent<HTMLSpanElement>) => void` | Forward to the tag element to enable ArrowLeft/Right/Backspace/Delete navigation between tags. |
+| `onClick`   | `() => void`                                      | Forward to the tag element to focus it and keep the popover open on click.                     |
+
+### MultiSelect.Input
+
+The combobox input for filtering items. Place this inside `MultiSelect.Trigger`, after `MultiSelect.TagValues`.
+
+All props from ariakit [Combobox](https://ariakit.org/reference/combobox). Key props:
+
+| Prop             | Type                      | Default | Description                                                                                                                                                                       |
+| :--------------- | :------------------------ | :------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `onValueChange?` | `(value: string) => void` |         | Called with the raw string value whenever the input text changes. Use this to drive external filtering (e.g. with `matchSorter`). A convenience alternative to `onChange`.        |
+| `placeholder?`   | `string`                  |         | Placeholder text shown when no values are selected.                                                                                                                               |
+| `name?`          | `string`                  |         | Form-value name for the selection. Applied to one hidden input per selected value — not to this input, whose value is the filter text. Flowed automatically from `Field.Control`. |
+
+### MultiSelect.Tag
+
+The default tag component rendered inside `MultiSelect.TagValues` for each selected value. Displays the value label with a remove button. Renders a `role="listitem"` inside the `role="list"` that `MultiSelect.TagValues` renders, and marks itself `data-active` while it has focus.
+
+Arrow-key navigation and Backspace/Delete removal come from the `MultiSelect.TagValues` render props; spread them onto the tag to get them. On its own, `Tag` only blocks Backspace and Delete on a locked tag.
+
+Use this when building a custom `TagValues`-like component and you want the default tag chrome with consistent styling.
+
+Also accepts all standard `span` element props (except `children`). The `onKeyDown` prop is supported and is called after the internal locked-key handling.
+
+| Prop        | Type         | Default | Description                                                                                                                                      |
+| :---------- | :----------- | :------ | :----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `value`     | `string`     |         | The value to display in the tag label.                                                                                                           |
+| `onRemove?` | `() => void` |         | Called when the remove button is clicked. `MultiSelect.TagValues` passes one through its render props that removes the value from the selection. |
+| `locked?`   | `boolean`    | `false` | When true, shows a lock icon, disables the remove button, and shakes on Delete/Backspace key presses.                                            |
+
+| Data Attribute | Value                 | Description                             |
+| :------------- | :-------------------- | :-------------------------------------- |
+| `data-active`  | present while focused | The tag that keyboard navigation is on. |
+| `data-locked`  | present when `locked` | The tag cannot be removed.              |
+
+### MultiSelect.Content
+
+Renders a popover that contains multi-select content.
+
+`MultiSelect.Content` renders at Tailwind `z-50` and portals into the closest `data-mantle-modal-content` element — an enclosing overlay's content — else the nearest overlay's positioner, else `document.body`. Inside an overlay it paints above the content that contains it. Outside one, an open overlay (`z-60`) covers it.
+
+All props from ariakit [ComboboxPopover](https://ariakit.org/reference/combobox-popover), plus:
+
+| Prop             | Type      | Default | Description                                                                                                                 |
+| :--------------- | :-------- | :------ | :-------------------------------------------------------------------------------------------------------------------------- |
+| `asChild?`       | `boolean` | `false` | Compose onto an alternative element type or your own React component.                                                       |
+| `backdrop?`      | `boolean` | `false` | Whether to render a backdrop behind the popover.                                                                            |
+| `modal?`         | `boolean` | `true`  | Renders the popover as a modal layer: Escape and a click outside close it. Focus stays on the input, so Tab is not trapped. |
+| `sameWidth?`     | `boolean` | `true`  | Whether the popover should be the same width as the trigger.                                                                |
+| `unmountOnHide?` | `boolean` | `true`  | Whether the popover should unmount when hidden.                                                                             |
+
+### MultiSelect.Item
+
+Renders a selectable item with a checkbox indicator inside a `MultiSelect.Content`.
+
+`children` render inside a `<div data-slot="multi-select-item-label">`. The selected-state check is a permanent element sibling, so without the wrapper a bare text label is never a lone child: a browser translation engine reparents that text node, and the removal React runs when the label changes shape or goes away throws. The wrapper is a `<div>` because a custom option layout is often a `MediaObject`, whose root is a `<div>` that a `<span>` may not contain. It is `display: contents`, so a child of your own stays a flex item of the option and any `flex-1` on it still resolves. [Browser translation](/browser-translation) covers the mechanism and the rules your own components need.
+
+All props from ariakit [ComboboxItem](https://ariakit.org/reference/combobox-item), except `render`, plus:
+
+| Prop            | Type      | Default | Description                                                           |
+| :-------------- | :-------- | :------ | :-------------------------------------------------------------------- |
+| `asChild?`      | `boolean` | `false` | Compose onto an alternative element type or your own React component. |
+| `focusOnHover?` | `boolean` | `true`  | Whether the item should receive focus on hover.                       |
+
+| Data Attribute | Value                       | Description                         |
+| :------------- | :-------------------------- | :---------------------------------- |
+| `data-slot`    | `"multi-select-item"`       | On the option element.              |
+| `data-slot`    | `"multi-select-item-label"` | On the `<div>` wrapping `children`. |
+
+### MultiSelect.Group
+
+Renders a group for `MultiSelect.Item` elements. Optionally, render a `MultiSelect.GroupLabel` as a child to label the group.
+
+All props from ariakit [ComboboxGroup](https://ariakit.org/reference/combobox-group), plus:
+
+| Prop       | Type      | Default | Description                                                           |
+| :--------- | :-------- | :------ | :-------------------------------------------------------------------- |
+| `asChild?` | `boolean` | `false` | Compose onto an alternative element type or your own React component. |
+
+### MultiSelect.GroupLabel
+
+Renders a label in a multi-select group. Should be wrapped with `MultiSelect.Group` so the `aria-labelledby` is correctly set on the group element.
+
+All props from ariakit [ComboboxGroupLabel](https://ariakit.org/reference/combobox-group-label), plus:
+
+| Prop       | Type      | Default | Description                                                           |
+| :--------- | :-------- | :------ | :-------------------------------------------------------------------- |
+| `asChild?` | `boolean` | `false` | Compose onto an alternative element type or your own React component. |
+
+### MultiSelect.GroupDescription
+
+Renders a descriptive paragraph inside a `MultiSelect.Group`, placed after `MultiSelect.GroupLabel`. Adds context about the group's items.
+
+Standard `p` element props.
+
+### MultiSelect.Separator
+
+Renders a separator between `MultiSelect.Item`s or `MultiSelect.Group`s.
+
+All props from [Separator](/components/structure/separator).
+
+### MultiSelect.Empty
+
+Renders a message when no items match the current filter.
+
+Standard `div` element props.
+
+### MultiSelect.ContentFooter
+
+Renders a sticky footer inside `MultiSelect.Content` that stays pinned to the bottom edge of the content area. Place it as the last child of `MultiSelect.Content`.
+
+Standard `div` element props.

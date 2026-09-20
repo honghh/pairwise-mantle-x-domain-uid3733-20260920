@@ -1,0 +1,887 @@
+"use client";
+
+import { Radio as HeadlessRadio, RadioGroup as HeadlessRadioGroup } from "@headlessui/react";
+import type {
+	RadioGroupProps as HeadlessRadioGroupProps,
+	RadioProps as HeadlessRadioProps,
+} from "@headlessui/react";
+import {
+	Children,
+	cloneElement,
+	createContext,
+	isValidElement,
+	useCallback,
+	useContext,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import type {
+	ComponentProps,
+	ElementType,
+	HTMLAttributes,
+	PropsWithChildren,
+	ReactNode,
+	Ref,
+} from "react";
+import type { WithAsChild } from "../../types/as-child.js";
+import { clsx } from "../../utils/cx/clsx.js";
+import { cx } from "../../utils/cx/cx.js";
+import { FieldControlContext } from "../field/field-context.js";
+import { isInput } from "../input/is-input.js";
+import { Slot } from "../slot/index.js";
+import { RadioItemContext, type RadioItemContextValue } from "./radio-item-context.js";
+
+type RadioGroupProps = PropsWithChildren<Omit<HeadlessRadioGroupProps, "as" | "children">> & {
+	ref?: Ref<HTMLElement>;
+};
+
+/**
+ * A group of radio items. It manages the state of the children radios. Unstyled and simple.
+ * Used as the root component for grouping related radio items where only one can be selected.
+ *
+ * The recommended Field composition is `Field.Set` + `Field.Legend` + `RadioGroup.Root`,
+ * which uses fieldset semantics so all radios share a single accessible name from the
+ * legend. As an alternative, when individual items render inside a `Field.Control`,
+ * each item picks up `aria-invalid`, `aria-errormessage`, and `aria-describedby` from
+ * `FieldControlContext`. Inside any item, a `Choice.Title` names the option through
+ * `aria-labelledby` and a `Choice.Description` describes it through `aria-describedby`.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogrouproot
+ *
+ * @example
+ * ```tsx
+ * <RadioGroup.Root value={value} onChange={setValue}>
+ *   <RadioGroup.Item value="option1">
+ *     <RadioGroup.Indicator />
+ *     <span>Option 1</span>
+ *   </RadioGroup.Item>
+ *   <RadioGroup.Item value="option2">
+ *     <RadioGroup.Indicator />
+ *     <span>Option 2</span>
+ *   </RadioGroup.Item>
+ * </RadioGroup.Root>
+ * ```
+ */
+const Root = ({ ref, ...props }: RadioGroupProps) => (
+	<HeadlessRadioGroup data-slot="radio-group" {...props} ref={ref} />
+);
+
+/**
+ * The shape of the radio state context.
+ */
+type RadioStateContextValue = {
+	autofocus: boolean;
+	checked: boolean;
+	disabled: boolean;
+	focus: boolean;
+	hover: boolean;
+};
+
+/**
+ * The radio state. It's used to pass the state of the radio to its children components.
+ * It's used internally by the radio components to manage the state/style of the radio items.
+ * Used in place of css classes to avoid specificity issues and slightly improve performance.
+ */
+const RadioStateContext = createContext<RadioStateContextValue>({
+	autofocus: false,
+	checked: false,
+	disabled: false,
+	focus: false,
+	hover: false,
+});
+
+/**
+ * Joins element ids into one IDREF list. Returns `undefined` when there are
+ * none, so the attribute is omitted.
+ */
+function joinIds(ids: readonly (string | undefined)[]): string | undefined {
+	const present = ids.filter((id): id is string => id != null && id !== "");
+	return present.length > 0 ? present.join(" ") : undefined;
+}
+
+/**
+ * A list of registered element ids and a stable callback that adds one and
+ * returns the cleanup that removes it.
+ */
+function useRegisteredIds(): [readonly string[], (id: string) => () => void] {
+	const [ids, setIds] = useState<readonly string[]>([]);
+	const register = useCallback((id: string) => {
+		setIds((current) => [...current, id]);
+		return () => {
+			setIds((current) => current.filter((candidate) => candidate !== id));
+		};
+	}, []);
+	return [ids, register];
+}
+
+/**
+ * The element every radio item variant renders through Headless UI's `as`.
+ * Headless UI's `Radio` owns `aria-labelledby` and `aria-describedby`. It reads
+ * them from its own `Label` / `Description` context, which mantle does not use.
+ * It then writes the result over the caller's props, `undefined` included.
+ * Because mantle renders the element, the item stamps these after that spread:
+ * - `aria-labelledby` and `aria-describedby`, from the ids its text registered
+ * - `aria-describedby`, `aria-invalid`, and `aria-errormessage`, from a
+ *   surrounding `Field.Control`
+ *
+ * It also publishes `RadioItemContext` to the children, so `Choice.Title` and
+ * `Choice.Description` can register. The item's `as` arrives as `tag`, so a
+ * consumer's element choice keeps this wiring.
+ */
+type RadioElementProps = ComponentProps<"div"> & {
+	/** The element the item's `as` prop asked for. */
+	tag?: ElementType;
+};
+
+const RadioElement = ({ children, ref, tag: Tag = "div", ...props }: RadioElementProps) => {
+	const fieldControl = useContext(FieldControlContext);
+	const [labelIds, registerLabelId] = useRegisteredIds();
+	const [descriptionIds, registerDescriptionId] = useRegisteredIds();
+	const context = useMemo<RadioItemContextValue>(
+		() => ({ registerLabelId, registerDescriptionId }),
+		[registerLabelId, registerDescriptionId],
+	);
+	return (
+		<Tag
+			{...props}
+			{...(fieldControl
+				? {
+						"aria-errormessage": fieldControl["aria-errormessage"],
+						"aria-invalid": fieldControl["aria-invalid"],
+					}
+				: undefined)}
+			aria-labelledby={joinIds(labelIds)}
+			aria-describedby={joinIds([fieldControl?.["aria-describedby"], ...descriptionIds])}
+			ref={ref}
+		>
+			<RadioItemContext.Provider value={context}>{children}</RadioItemContext.Provider>
+		</Tag>
+	);
+};
+
+type RadioItemProps = Omit<HeadlessRadioProps, "children"> &
+	PropsWithChildren & {
+		ref?: Ref<HTMLDivElement>;
+	};
+
+/**
+ * A simple radio item that can be used inside a radio group. The "conventional" use-case.
+ * Must be a child of `RadioGroup`.
+ *
+ * When rendered inside `Field.Control` (an alternative to the recommended
+ * `Field.Set` / `Field.Legend` composition), picks up `aria-invalid`,
+ * `aria-errormessage`, and `aria-describedby` from `FieldControlContext`. A
+ * `Choice.Title` inside the item names it through `aria-labelledby`, and a
+ * `Choice.Description` describes it through `aria-describedby`. The option's
+ * accessible name is then the title alone.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupitem
+ *
+ * @example
+ * ```tsx
+ * <RadioGroup.Root value={value} onChange={setValue}>
+ *   <RadioGroup.Item value="option1">
+ *     <RadioGroup.Indicator />
+ *     <span>Option 1</span>
+ *   </RadioGroup.Item>
+ * </RadioGroup.Root>
+ * ```
+ */
+const Item = ({ as: tag, children, className, ref, ...props }: RadioItemProps) => {
+	return (
+		<HeadlessRadio
+			data-slot="radio-group-item"
+			className={cx(
+				"group/radio cursor-pointer aria-disabled:cursor-default [&_label]:cursor-inherit flex gap-2 py-1 text-sm focus:outline-hidden",
+				// Why the gate: the default indicator draws the focus ring on its circle.
+				// An item with a custom indicator, or none, has no other focus treatment.
+				"not-has-data-[radio-default-indicator]:focus-visible:ring-focus-accent not-has-data-[radio-default-indicator]:focus-visible:ring-4 not-has-data-[radio-default-indicator]:focus-visible:rounded-md",
+				className,
+			)}
+			{...props}
+			as={RadioElement}
+			tag={tag}
+			ref={ref}
+		>
+			{(ctx) => <RadioStateContext.Provider value={ctx}>{children}</RadioStateContext.Provider>}
+		</HeadlessRadio>
+	);
+};
+
+type RadioIndicatorProps = Omit<HTMLAttributes<HTMLDivElement>, "children"> & {
+	children?: ReactNode | ((context: RadioStateContextValue) => ReactNode);
+	/**
+	 * Never rendered. `Choice.Indicator` injects the field's `name` for a
+	 * control, and a `<div>` has no `name` attribute.
+	 */
+	name?: string;
+};
+
+/**
+ * The circle `RadioGroup.Indicator` draws when a consumer passes no children.
+ * @private
+ */
+const DefaultRadioIndicator = ({ checked, disabled, focus, hover }: RadioStateContextValue) => (
+	<span
+		// Why: `RadioGroup.Item` reads this attribute to skip its own focus ring.
+		data-radio-default-indicator=""
+		className={cx(
+			"border-form flex size-4 items-center justify-center rounded-full border shrink-0",
+			disabled && "cursor-default opacity-50",
+			checked && "border-accent-600 bg-accent-600",
+			focus && !disabled && "border-accent-600 ring-focus-accent ring-4",
+			hover && "border-accent-600",
+		)}
+	>
+		{checked && <span className="size-2 rounded-full bg-white shrink-0" />}
+	</span>
+);
+
+/**
+ * The selection indicator for any radio item.
+ * Use it as a child of `RadioGroup.Item`, `RadioGroup.ListItem`, or `RadioGroup.Card`.
+ * By default, it's a circle that changes color when checked.
+ * You can customize the indicator by passing children:
+ * - a different component
+ * - a render-props function that receives the radio state context and should return a component.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupindicator
+ *
+ * @example
+ * ```tsx
+ * <RadioGroup.Item value="option1">
+ *   <RadioGroup.Indicator />
+ *   <span>Option 1</span>
+ * </RadioGroup.Item>
+ * ```
+ */
+const Indicator = ({ children, className, name: _name, ...props }: RadioIndicatorProps) => {
+	const ctx = useContext(RadioStateContext);
+
+	return (
+		<div
+			data-slot="radio-group-indicator"
+			className={cx(
+				"radio-indicator inline-flex size-5 select-none items-center justify-center shrink-0",
+				className,
+			)}
+			{...props}
+		>
+			{children == null ? (
+				<DefaultRadioIndicator {...ctx} />
+			) : typeof children === "function" ? (
+				children(ctx)
+			) : (
+				children
+			)}
+		</div>
+	);
+};
+
+/**
+ * A group of radio list items. Use RadioGroup.ListItem as direct children.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogrouplist
+ *
+ * @example
+ * ```tsx
+ * <RadioGroup.Root defaultValue="option1">
+ *   <RadioGroup.List>
+ *     <RadioGroup.ListItem value="option1">
+ *       <RadioGroup.ItemContent>
+ *         <Text>Option 1</Text>
+ *       </RadioGroup.ItemContent>
+ *     </RadioGroup.ListItem>
+ *     <RadioGroup.ListItem value="option2">
+ *       <RadioGroup.ItemContent>
+ *         <Text>Option 2</Text>
+ *       </RadioGroup.ItemContent>
+ *     </RadioGroup.ListItem>
+ *   </RadioGroup.List>
+ * </RadioGroup.Root>
+ * ```
+ */
+const List = ({ className, ref, ...props }: RadioGroupProps) => {
+	return (
+		<Root
+			data-slot="radio-group-list"
+			className={clsx("-space-y-px", className)}
+			{...props}
+			ref={ref}
+		/>
+	);
+};
+
+type RadioListItemProps = RadioItemProps;
+
+/**
+ * A radio list item that is used inside a `RadioGroup.List`.
+ *
+ * When rendered inside `Field.Control` (an alternative to the recommended
+ * `Field.Set` / `Field.Legend` composition), picks up `aria-invalid`,
+ * `aria-errormessage`, and `aria-describedby` from `FieldControlContext`. A
+ * `Choice.Title` inside the item names it through `aria-labelledby`, and a
+ * `Choice.Description` describes it through `aria-describedby`. The option's
+ * accessible name is then the title alone.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogrouplistitem
+ *
+ * @example
+ * ```tsx
+ * <RadioGroup.Root defaultValue="item1">
+ *   <RadioGroup.List>
+ *     <RadioGroup.ListItem value="item1">
+ *       <RadioGroup.ItemContent>
+ *         <Text>List Item 1</Text>
+ *         <Text size="sm" className="text-muted">First option</Text>
+ *       </RadioGroup.ItemContent>
+ *     </RadioGroup.ListItem>
+ *     <RadioGroup.ListItem value="item2">
+ *       <RadioGroup.ItemContent>
+ *         <Text>List Item 2</Text>
+ *         <Text size="sm" className="text-muted">Second option</Text>
+ *       </RadioGroup.ItemContent>
+ *     </RadioGroup.ListItem>
+ *   </RadioGroup.List>
+ * </RadioGroup.Root>
+ * ```
+ */
+const ListItem = ({ as: tag, children, className, ref, ...props }: RadioListItemProps) => {
+	return (
+		<HeadlessRadio
+			data-slot="radio-group-list-item"
+			className={cx(
+				"group/radio border-form [&_label]:cursor-inherit relative flex select-none gap-2 border px-3 py-2 text-sm",
+				"cursor-pointer aria-disabled:cursor-default focus:outline-hidden",
+				"focus-visible:ring-focus-accent not-aria-disabled:focus-visible:border-accent-600 focus-visible:ring-4",
+				"first-of-type:rounded-tl-md first-of-type:rounded-tr-md last-of-type:rounded-bl-md last-of-type:rounded-br-md",
+				"aria-disabled:border-form/50 not-aria-disabled:hover:z-1 not-aria-disabled:hover:border-accent-600",
+				"aria-checked:z-1 aria-checked:border-accent-500/40 aria-checked:bg-accent-500/10 dark-high-contrast:aria-checked:border-accent-400 high-contrast:aria-checked:border-accent-400 not-aria-disabled:hover:aria-checked:border-accent-600",
+				"has-[.radio-indicator:first-child]:pl-2 has-[.radio-indicator:last-child]:pr-2",
+				className,
+			)}
+			{...props}
+			as={RadioElement}
+			tag={tag}
+			ref={ref}
+		>
+			{(ctx) => <RadioStateContext.Provider value={ctx}>{children}</RadioStateContext.Provider>}
+		</HeadlessRadio>
+	);
+};
+
+type RadioItemContentProps = HTMLAttributes<HTMLDivElement> & WithAsChild;
+
+type RadioCardProps = RadioItemProps;
+
+/**
+ * A radio card item. Use it as a child of `RadioGroup`
+ *
+ * When rendered inside `Field.Control` (an alternative to the recommended
+ * `Field.Set` / `Field.Legend` composition), picks up `aria-invalid`,
+ * `aria-errormessage`, and `aria-describedby` from `FieldControlContext`. A
+ * `Choice.Title` inside the item names it through `aria-labelledby`, and a
+ * `Choice.Description` describes it through `aria-describedby`. The option's
+ * accessible name is then the title alone.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupcard
+ *
+ * @example
+ * ```tsx
+ * <RadioGroup.Root defaultValue="basic">
+ *   <div className="space-y-3">
+ *     <RadioGroup.Card value="basic">
+ *       <RadioGroup.ItemContent>
+ *         <Text weight="strong">Basic Plan</Text>
+ *         <Text>$10/month</Text>
+ *       </RadioGroup.ItemContent>
+ *     </RadioGroup.Card>
+ *     <RadioGroup.Card value="pro">
+ *       <RadioGroup.ItemContent>
+ *         <Text weight="strong">Pro Plan</Text>
+ *         <Text>$25/month</Text>
+ *       </RadioGroup.ItemContent>
+ *     </RadioGroup.Card>
+ *   </div>
+ * </RadioGroup.Root>
+ * ```
+ */
+const Card = ({ as: tag, children, className, ref, ...props }: RadioCardProps) => {
+	return (
+		<HeadlessRadio
+			data-slot="radio-group-card"
+			className={clsx(
+				"group/radio border-card bg-card [&_label]:cursor-inherit relative rounded-md border p-4 text-sm",
+				"cursor-pointer aria-disabled:cursor-default focus:outline-hidden",
+				"focus-visible:ring-focus-accent not-aria-disabled:focus-visible:border-accent-600 focus-visible:ring-4",
+				"first-of-type:rounded-tl-md first-of-type:rounded-tr-md last-of-type:rounded-bl-md last-of-type:rounded-br-md",
+				"aria-disabled:border-form/50 not-aria-disabled:hover:z-1 not-aria-disabled:hover:border-accent-600",
+				"aria-checked:z-1 aria-checked:border-accent-600/50 aria-checked:bg-accent-500/10 not-aria-disabled:hover:aria-checked:border-accent-600 dark-high-contrast:aria-checked:border-accent-600 high-contrast:aria-checked:border-accent-600",
+				className,
+			)}
+			{...props}
+			as={RadioElement}
+			tag={tag}
+			ref={ref}
+		>
+			{(ctx) => <RadioStateContext.Provider value={ctx}>{children}</RadioStateContext.Provider>}
+		</HeadlessRadio>
+	);
+};
+
+/**
+ * The content of any radio item. Use it to wrap any labels, descriptions, or content of a radio item.
+ * Use it as a child of `RadioGroup.Item`, `RadioGroup.ListItem`, or `RadioGroup.Card`.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupitemcontent
+ *
+ * @example
+ * ```tsx
+ * <RadioGroup.Root defaultValue="option1">
+ *   <RadioGroup.Item value="option1">
+ *     <RadioGroup.Indicator />
+ *     <RadioGroup.ItemContent>
+ *       <Text weight="strong">Option 1</Text>
+ *       <Text size="sm">Description for option 1</Text>
+ *     </RadioGroup.ItemContent>
+ *   </RadioGroup.Item>
+ * </RadioGroup.Root>
+ * ```
+ */
+const ItemContent = ({ asChild = false, children, className, ...props }: RadioItemContentProps) => {
+	const ctx = useContext(RadioStateContext);
+	const Component = asChild ? Slot : "div";
+
+	return (
+		<Component
+			data-slot="radio-group-item-content"
+			className={clsx("min-w-0 flex-1", ctx.disabled && "opacity-50", className)}
+			{...props}
+		>
+			{children}
+		</Component>
+	);
+};
+
+/**
+ * An inline group of radio buttons. Use RadioGroup.Button as direct children.
+ * Renders the radio group itself (it wraps `Root`) — use it *in place of*
+ * `RadioGroup.Root`, never nested inside one, or the buttons bind to an
+ * inner, uncontrolled group and outer `value`/`onChange` props are ignored.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupbuttongroup
+ *
+ * @example
+ * ```tsx
+ * <Label id="size-label">Size</Label>
+ * <RadioGroup.ButtonGroup aria-labelledby="size-label" defaultValue="small">
+ *   <RadioGroup.Button value="small">Small</RadioGroup.Button>
+ *   <RadioGroup.Button value="medium">Medium</RadioGroup.Button>
+ *   <RadioGroup.Button value="large">Large</RadioGroup.Button>
+ * </RadioGroup.ButtonGroup>
+ * ```
+ */
+const ButtonGroup = ({ className, ref, ...props }: RadioGroupProps) => {
+	return (
+		<Root
+			data-slot="radio-group-button-group"
+			className={clsx("flex flex-row flex-nowrap -space-x-px", className)}
+			{...props}
+			ref={ref}
+		/>
+	);
+};
+
+type RadioButtonProps = RadioItemProps;
+
+/**
+ * A radio button that is used inside a `RadioGroup.ButtonGroup`.
+ *
+ * When rendered inside `Field.Control` (an alternative to the recommended
+ * `Field.Set` / `Field.Legend` composition), picks up `aria-invalid`,
+ * `aria-errormessage`, and `aria-describedby` from `FieldControlContext`. A
+ * `Choice.Title` inside the item names it through `aria-labelledby`, and a
+ * `Choice.Description` describes it through `aria-describedby`. The option's
+ * accessible name is then the title alone.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupbutton
+ *
+ * @example
+ * ```tsx
+ * <RadioGroup.ButtonGroup defaultValue="option1">
+ *   <RadioGroup.Button value="option1">Option 1</RadioGroup.Button>
+ *   <RadioGroup.Button value="option2">Option 2</RadioGroup.Button>
+ *   <RadioGroup.Button value="option3">Option 3</RadioGroup.Button>
+ * </RadioGroup.ButtonGroup>
+ * ```
+ */
+const Button = ({ as: tag, children, className, ref, ...props }: RadioButtonProps) => {
+	return (
+		<HeadlessRadio
+			data-slot="radio-group-button"
+			className={cx(
+				"group/radio border-form [&_label]:cursor-inherit relative flex flex-1 select-none items-center justify-center gap-2 border px-3 text-sm",
+				"h-9",
+				"focus-visible:ring-focus-accent not-aria-disabled:focus-visible:border-accent-600 focus-visible:ring-4",
+				"cursor-pointer aria-disabled:cursor-default focus:outline-hidden",
+				"first-of-type:rounded-bl-md first-of-type:rounded-tl-md last-of-type:rounded-br-md last-of-type:rounded-tr-md",
+				"not-aria-disabled:hover:z-1 not-aria-disabled:hover:border-accent-600 aria-disabled:opacity-50",
+				"aria-checked:z-1 aria-checked:border-accent-600/40 aria-checked:bg-accent-500/10 not-aria-disabled:hover:aria-checked:border-accent-600",
+				"has-[.radio-indicator:first-child]:pl-2 has-[.radio-indicator:last-child]:pr-2",
+				className,
+			)}
+			{...props}
+			as={RadioElement}
+			tag={tag}
+			ref={ref}
+		>
+			{(ctx) => <RadioStateContext.Provider value={ctx}>{children}</RadioStateContext.Provider>}
+		</HeadlessRadio>
+	);
+};
+
+type RadioInputSandboxProps = HTMLAttributes<HTMLDivElement>;
+
+/**
+ * A sandbox container for input elements composed within radio group items.
+ * A click inside it still selects the radio, then focus returns to the input.
+ * Keys other than Enter and Tab stop here, so typing does not move the
+ * selection. When the item is disabled or unchecked, the input leaves the tab
+ * order.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupinputsandbox
+ *
+ * @example
+ * ```tsx
+ * <RadioGroup.Root defaultValue="custom">
+ *   <RadioGroup.Item value="custom">
+ *     <RadioGroup.Indicator />
+ *     <RadioGroup.ItemContent>
+ *       <Text>Custom amount</Text>
+ *       <RadioGroup.InputSandbox>
+ *         <Input type="number" placeholder="Enter amount" />
+ *       </RadioGroup.InputSandbox>
+ *     </RadioGroup.ItemContent>
+ *   </RadioGroup.Item>
+ * </RadioGroup.Root>
+ * ```
+ */
+const InputSandbox = ({ children, onClick, onKeyDown, ...props }: RadioInputSandboxProps) => {
+	const ref = useRef<HTMLDivElement>(null);
+	const ctx = useContext(RadioStateContext);
+
+	const singleChild = Children.only(children);
+
+	// Prevent the child input from receiving focus when the parent radio group item is disabled or unchecked.
+	const shouldPreventTabIndex = ctx.disabled || !ctx.checked;
+
+	return (
+		<div
+			role="none"
+			data-slot="radio-group-input-sandbox"
+			ref={ref}
+			onKeyDown={(event) => {
+				if (ctx.disabled) {
+					event.stopPropagation();
+					event.preventDefault();
+					return;
+				}
+				switch (event.key) {
+					case "Enter":
+					case "Tab":
+						break;
+					default:
+						event.stopPropagation();
+				}
+				onKeyDown?.(event);
+			}}
+			onClick={(event) => {
+				if (ctx.disabled) {
+					event.stopPropagation();
+					event.preventDefault();
+					return;
+				}
+				const target = event.target;
+				if (isInput(target)) {
+					window.requestAnimationFrame(() => {
+						target.focus();
+					});
+				}
+				onClick?.(event);
+			}}
+			{...props}
+		>
+			{isValidElement<HTMLInputElement>(singleChild)
+				? cloneElement(singleChild, {
+						disabled: ctx.disabled || singleChild.props.disabled,
+						tabIndex: shouldPreventTabIndex ? -1 : singleChild.props.tabIndex,
+					})
+				: null}
+		</div>
+	);
+};
+
+/**
+ * A group of radio items. It manages the state of the children radios.
+ *
+ * @see https://mantle.ngrok.com/components/forms/radio-group#radiogrouproot
+ *
+ * @example
+ * Composition:
+ * ```
+ * # Default radios
+ * RadioGroup.Root
+ * └── RadioGroup.Item
+ *     ├── RadioGroup.Indicator
+ *     └── RadioGroup.ItemContent
+ *
+ * # List layout with descriptions
+ * RadioGroup.List
+ * └── RadioGroup.ListItem
+ *     ├── RadioGroup.Indicator
+ *     └── RadioGroup.ItemContent
+ *
+ * # Segmented button group
+ * RadioGroup.ButtonGroup
+ * └── RadioGroup.Button
+ *
+ * # Card-style radios
+ * RadioGroup.Root
+ * └── RadioGroup.Card
+ *     └── RadioGroup.Indicator
+ *
+ * # Rich option layout (Choice)
+ * RadioGroup.Root
+ * └── RadioGroup.Item
+ *     └── Choice.Root
+ *         ├── Choice.Indicator
+ *         │   └── RadioGroup.Indicator
+ *         └── Choice.Content
+ *             ├── Choice.Title
+ *             └── Choice.Description
+ * ```
+ *
+ * @example
+ * ```tsx
+ * <RadioGroup.Root value={value} onChange={setValue}>
+ *   <RadioGroup.Item value="option1">
+ *     <RadioGroup.Indicator />
+ *     <span>Option 1</span>
+ *   </RadioGroup.Item>
+ *   <RadioGroup.Item value="option2">
+ *     <RadioGroup.Indicator />
+ *     <span>Option 2</span>
+ *   </RadioGroup.Item>
+ * </RadioGroup.Root>
+ * ```
+ */
+const RadioGroup = {
+	/**
+	 * A radio button that is used inside a RadioGroup.ButtonGroup for inline grouped radio options.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupbutton
+	 *
+	 * @example
+	 * ```tsx
+	 * <RadioGroup.ButtonGroup defaultValue="option1">
+	 *   <RadioGroup.Button value="option1">Option 1</RadioGroup.Button>
+	 *   <RadioGroup.Button value="option2">Option 2</RadioGroup.Button>
+	 *   <RadioGroup.Button value="option3">Option 3</RadioGroup.Button>
+	 * </RadioGroup.ButtonGroup>
+	 * ```
+	 */
+	Button,
+	/**
+	 * An inline group of radio buttons. Use RadioGroup.Button as direct children for horizontal radio layouts.
+	 * Renders the radio group itself — use it in place of `RadioGroup.Root`, never nested inside one.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupbuttongroup
+	 *
+	 * @example
+	 * ```tsx
+	 * <Label id="size-label">Size</Label>
+	 * <RadioGroup.ButtonGroup aria-labelledby="size-label" defaultValue="small">
+	 *   <RadioGroup.Button value="small">Small</RadioGroup.Button>
+	 *   <RadioGroup.Button value="medium">Medium</RadioGroup.Button>
+	 *   <RadioGroup.Button value="large">Large</RadioGroup.Button>
+	 * </RadioGroup.ButtonGroup>
+	 * ```
+	 */
+	ButtonGroup,
+	/**
+	 * A radio card item with enhanced styling. Use it as a child of RadioGroup for card-based radio options.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupcard
+	 *
+	 * @example
+	 * ```tsx
+	 * <RadioGroup.Root defaultValue="basic">
+	 *   <div className="space-y-3">
+	 *     <RadioGroup.Card value="basic">
+	 *       <RadioGroup.ItemContent>
+	 *         <Text weight="strong">Basic Plan</Text>
+	 *         <Text>$10/month</Text>
+	 *       </RadioGroup.ItemContent>
+	 *     </RadioGroup.Card>
+	 *     <RadioGroup.Card value="pro">
+	 *       <RadioGroup.ItemContent>
+	 *         <Text weight="strong">Pro Plan</Text>
+	 *         <Text>$25/month</Text>
+	 *       </RadioGroup.ItemContent>
+	 *     </RadioGroup.Card>
+	 *   </div>
+	 * </RadioGroup.Root>
+	 * ```
+	 */
+	Card,
+	/**
+	 * The selection indicator for any radio item.
+	 * Use it as a child of `RadioGroup.Item`, `RadioGroup.ListItem`, or `RadioGroup.Card`.
+	 * By default, it's a circle that changes color when checked.
+	 * You can customize the indicator by passing children:
+	 * - a different component
+	 * - a render-props function that receives the radio state context and should return a component.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupindicator
+	 *
+	 * @example
+	 * ```tsx
+	 * <RadioGroup.Item value="option1">
+	 *   <RadioGroup.Indicator />
+	 *   <span>Option 1</span>
+	 * </RadioGroup.Item>
+	 * ```
+	 */
+	Indicator,
+	/**
+	 * A sandbox container for input elements composed within radio group items.
+	 * A click inside it still selects the radio, then focus returns to the input.
+	 * Keys other than Enter and Tab stop here, so typing does not move the
+	 * selection. When the item is disabled or unchecked, the input leaves the tab
+	 * order.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupinputsandbox
+	 *
+	 * @example
+	 * ```tsx
+	 * <RadioGroup.Root defaultValue="custom">
+	 *   <RadioGroup.Item value="custom">
+	 *     <RadioGroup.Indicator />
+	 *     <RadioGroup.ItemContent>
+	 *       <Text>Custom amount</Text>
+	 *       <RadioGroup.InputSandbox>
+	 *         <Input type="number" placeholder="Enter amount" />
+	 *       </RadioGroup.InputSandbox>
+	 *     </RadioGroup.ItemContent>
+	 *   </RadioGroup.Item>
+	 * </RadioGroup.Root>
+	 * ```
+	 */
+	InputSandbox,
+	/**
+	 * A simple radio item that can be used inside a radio group. The conventional use-case for basic radio options.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupitem
+	 *
+	 * @example
+	 * ```tsx
+	 * <RadioGroup.Item value="option1">
+	 *   <RadioGroup.Indicator />
+	 *   <span>Option 1</span>
+	 * </RadioGroup.Item>
+	 * ```
+	 */
+	Item,
+	/**
+	 * The content wrapper for any radio item. Use it to wrap labels, descriptions, or content of a radio item.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/radio-group#radiogroupitemcontent
+	 *
+	 * @example
+	 * ```tsx
+	 * <RadioGroup.Root defaultValue="option1">
+	 *   <RadioGroup.Item value="option1">
+	 *     <RadioGroup.Indicator />
+	 *     <RadioGroup.ItemContent>
+	 *       <Text weight="strong">Option 1</Text>
+	 *       <Text size="sm">Description for option 1</Text>
+	 *     </RadioGroup.ItemContent>
+	 *   </RadioGroup.Item>
+	 * </RadioGroup.Root>
+	 * ```
+	 */
+	ItemContent,
+	/**
+	 * A group of radio list items with connected borders. Use RadioGroup.ListItem as direct children.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/radio-group#radiogrouplist
+	 *
+	 * @example
+	 * ```tsx
+	 * <RadioGroup.Root defaultValue="option1">
+	 *   <RadioGroup.List>
+	 *     <RadioGroup.ListItem value="option1">
+	 *       <RadioGroup.ItemContent>
+	 *         <Text>Option 1</Text>
+	 *       </RadioGroup.ItemContent>
+	 *     </RadioGroup.ListItem>
+	 *     <RadioGroup.ListItem value="option2">
+	 *       <RadioGroup.ItemContent>
+	 *         <Text>Option 2</Text>
+	 *       </RadioGroup.ItemContent>
+	 *     </RadioGroup.ListItem>
+	 *   </RadioGroup.List>
+	 * </RadioGroup.Root>
+	 * ```
+	 */
+	List,
+	/**
+	 * A radio list item that is used inside a RadioGroup.List for connected list-style radio options.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/radio-group#radiogrouplistitem
+	 *
+	 * @example
+	 * ```tsx
+	 * <RadioGroup.Root defaultValue="item1">
+	 *   <RadioGroup.List>
+	 *     <RadioGroup.ListItem value="item1">
+	 *       <RadioGroup.ItemContent>
+	 *         <Text>List Item 1</Text>
+	 *         <Text size="sm" className="text-muted">First option</Text>
+	 *       </RadioGroup.ItemContent>
+	 *     </RadioGroup.ListItem>
+	 *     <RadioGroup.ListItem value="item2">
+	 *       <RadioGroup.ItemContent>
+	 *         <Text>List Item 2</Text>
+	 *         <Text size="sm" className="text-muted">Second option</Text>
+	 *       </RadioGroup.ItemContent>
+	 *     </RadioGroup.ListItem>
+	 *   </RadioGroup.List>
+	 * </RadioGroup.Root>
+	 * ```
+	 */
+	ListItem,
+	/**
+	 * A group of radio items. It manages the state of the children radios. Unstyled and simple.
+	 * Used as the root component for grouping related radio items where only one can be selected.
+	 *
+	 * @see https://mantle.ngrok.com/components/forms/radio-group#radiogrouproot
+	 *
+	 * @example
+	 * ```tsx
+	 * <RadioGroup.Root value={value} onChange={setValue}>
+	 *   <RadioGroup.Item value="option1">
+	 *     <RadioGroup.Indicator />
+	 *     <span>Option 1</span>
+	 *   </RadioGroup.Item>
+	 * </RadioGroup.Root>
+	 * ```
+	 */
+	Root,
+} as const;
+
+export {
+	//
+	RadioGroup,
+};
