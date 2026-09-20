@@ -477,3 +477,57 @@ describe("AreaChart decorative mode", () => {
 		expect(screen.queryByRole("status")).not.toBeInTheDocument();
 	});
 });
+
+describe("AreaChart xDomain window", () => {
+	const seriesData = Array.from({ length: 20 }, (_, index) => ({
+		x: index,
+		a: index === 0 ? 1000 : index,
+	}));
+
+	test("Home and End target the window edges and the zero baseline is kept", async () => {
+		const user = userEvent.setup();
+		render(
+			<AreaChart.Root data={seriesData} xKey="x" xScale="linear" xDomain={[10, 14]} aria-label="Windowed area">
+				<AreaChart.Area dataKey="a" label="a" />
+				<AreaChart.Tooltip />
+			</AreaChart.Root>,
+		);
+		await user.tab();
+		await user.keyboard("{Home}");
+		const tooltip = document.querySelector('[data-slot="area-chart-tooltip"]');
+		expect(tooltip?.textContent).toContain("10");
+		await user.keyboard("{End}");
+		expect(tooltip?.textContent).toContain("14");
+	});
+
+	test("a one-sided auto end keeps the data extent", async () => {
+		const user = userEvent.setup();
+		render(
+			<AreaChart.Root data={seriesData} xKey="x" xScale="linear" xDomain={[15, "auto"]} aria-label="Tail area">
+				<AreaChart.Area dataKey="a" label="a" />
+				<AreaChart.Tooltip />
+			</AreaChart.Root>,
+		);
+		await user.tab();
+		await user.keyboard("{End}");
+		const tooltip = document.querySelector('[data-slot="area-chart-tooltip"]');
+		expect(tooltip?.textContent).toContain("19");
+		await user.keyboard("{Home}");
+		expect(tooltip?.textContent).toContain("15");
+	});
+
+	test("a categorical point axis ignores xDomain", async () => {
+		const user = userEvent.setup();
+		const categories = Array.from({ length: 6 }, (_, index) => ({ day: `d${index}`, a: index }));
+		render(
+			<AreaChart.Root data={categories} xKey="day" xDomain={[2, 4]} aria-label="Categorical area">
+				<AreaChart.Area dataKey="a" label="a" />
+				<AreaChart.Tooltip />
+			</AreaChart.Root>,
+		);
+		await user.tab();
+		await user.keyboard("{End}");
+		const tooltip = document.querySelector('[data-slot="area-chart-tooltip"]');
+		expect(tooltip?.textContent).toContain("d5");
+	});
+});

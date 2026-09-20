@@ -847,3 +847,125 @@ describe("LineChart decorative mode", () => {
 		expect(screen.queryByRole("status")).not.toBeInTheDocument();
 	});
 });
+
+describe("LineChart xDomain window", () => {
+	const seriesData = Array.from({ length: 20 }, (_, index) => ({
+		x: index,
+		a: index === 0 ? 1000 : index,
+	}));
+
+	const renderWindow = (xDomain: [number | "auto", number | "auto"]) =>
+		render(
+			<LineChart.Root data={seriesData} xKey="x" xScale="linear" xDomain={xDomain} aria-label="Windowed">
+				<LineChart.Line dataKey="a" label="a" />
+				<LineChart.Tooltip />
+			</LineChart.Root>,
+		);
+
+	test("Home and End target the window edges, not the data edges", async () => {
+		const user = userEvent.setup();
+		renderWindow([10, 14]);
+		await user.tab();
+		await user.keyboard("{Home}");
+		const tooltip = document.querySelector('[data-slot="line-chart-tooltip"]');
+		expect(tooltip?.textContent).toContain("10");
+		await user.keyboard("{End}");
+		expect(tooltip?.textContent).toContain("14");
+	});
+
+	test("arrow stepping never leaves the window", async () => {
+		const user = userEvent.setup();
+		renderWindow([10, 11]);
+		await user.tab();
+		await user.keyboard("{Home}");
+		const tooltip = document.querySelector('[data-slot="line-chart-tooltip"]');
+		expect(tooltip?.textContent).toContain("10");
+		await user.keyboard("{ArrowRight}");
+		expect(tooltip?.textContent).toContain("11");
+		await user.keyboard("{ArrowRight}");
+		expect(tooltip?.textContent).toContain("11");
+		await user.keyboard("{Home}{ArrowLeft}");
+		expect(tooltip?.textContent).toContain("10");
+	});
+
+	test("accepts Date endpoints on a time scale", async () => {
+		const user = userEvent.setup();
+		const start = Date.UTC(2026, 6, 18, 10, 0, 0);
+		const timeData = Array.from({ length: 10 }, (_, index) => ({
+			time: new Date(start + index * 60_000),
+			a: index,
+		}));
+		render(
+			<LineChart.Root
+				data={timeData}
+				xKey="time"
+				xDomain={[new Date(start + 2 * 60_000), new Date(start + 4 * 60_000)]}
+				aria-label="Time window"
+			>
+				<LineChart.Line dataKey="a" label="a" />
+				<LineChart.Tooltip />
+			</LineChart.Root>,
+		);
+		await user.tab();
+		await user.keyboard("{Home}");
+		const tooltip = document.querySelector('[data-slot="line-chart-tooltip"]');
+		expect(tooltip?.textContent).toContain("2");
+		await user.keyboard("{End}");
+		expect(tooltip?.textContent).toContain("4");
+	});
+
+	test("a runtime window change drops an active point outside the new window", async () => {
+		const user = userEvent.setup();
+		const onActiveIndexChange = vi.fn<(index: number | null) => void>();
+		const WindowedChart = () => {
+			const [domain, setDomain] = useState<[number | "auto", number | "auto"]>([0, 19]);
+			return (
+				<>
+					<button type="button" onClick={() => setDomain([10, 14])}>
+						zoom
+					</button>
+					<LineChart.Root
+						data={seriesData}
+						xKey="x"
+						xScale="linear"
+						xDomain={domain}
+						aria-label="Windowed"
+						onActiveIndexChange={onActiveIndexChange}
+					>
+						<LineChart.Line dataKey="a" label="a" />
+						<LineChart.Tooltip />
+					</LineChart.Root>
+				</>
+			);
+		};
+		render(<WindowedChart />);
+		await user.tab();
+		await user.keyboard("{Home}");
+		const tooltip = document.querySelector('[data-slot="line-chart-tooltip"]');
+		expect(tooltip?.textContent).toContain("1000");
+		onActiveIndexChange.mockClear();
+		await user.click(screen.getByRole("button", { name: "zoom" }));
+		// The spike row (x=0) is outside the new window; the tooltip must clear.
+		await vi.waitFor(() => {
+			expect(tooltip?.textContent).not.toContain("1000");
+		});
+		expect(onActiveIndexChange).toHaveBeenCalledWith(null);
+	});
+
+	test("a categorical point axis ignores xDomain", async () => {
+		const user = userEvent.setup();
+		const categories = Array.from({ length: 6 }, (_, index) => ({ day: `d${index}`, a: index }));
+		render(
+			<LineChart.Root data={categories} xKey="day" xDomain={[2, 4]} aria-label="Categorical">
+				<LineChart.Line dataKey="a" label="a" />
+				<LineChart.Tooltip />
+			</LineChart.Root>,
+		);
+		await user.tab();
+		await user.keyboard("{End}");
+		const tooltip = document.querySelector('[data-slot="line-chart-tooltip"]');
+		expect(tooltip?.textContent).toContain("d5");
+		await user.keyboard("{Home}");
+		expect(tooltip?.textContent).toContain("d0");
+	});
+});

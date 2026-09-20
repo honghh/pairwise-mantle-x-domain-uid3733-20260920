@@ -182,6 +182,7 @@ class ChartEngine {
 		xKey: "",
 		xScale: "linear",
 		yDomain: ["auto", "auto"],
+		xDomain: ["auto", "auto"],
 		orientation: "vertical",
 		zKey: null,
 		dimensions: 3,
@@ -219,8 +220,6 @@ class ChartEngine {
 	#xHasTimeOfDay = false;
 	#pendingIngest = false;
 	#columns = new Map<string, Float64Array>();
-	#valueMin = 0;
-	#valueMax = 0;
 	/**
 	 * Every finite series value is an integer. Integer-count data (requests,
 	 * errors) never renders fractional value ticks — a "1.5" label on a count
@@ -467,6 +466,35 @@ class ChartEngine {
 				}
 			}
 		}
+		if (previous.xDomain[0] !== options.xDomain[0] || previous.xDomain[1] !== options.xDomain[1]) {
+			// A window change moves the x tween's target and, on an auto y axis,
+			// the value tween's target (the auto domain fits the visible slice).
+			// No re-ingest: the columns, the stack, and the sort order describe
+			// every row; the window only selects which rows are visible.
+			this.#activeScreen = null;
+			if (this.#hasIngested) {
+				const instant = this.#tweenDuration() === 0;
+				if (instant) {
+					this.#xTween.jump(this.#targetXDomain());
+					this.#yTween.jump(this.#targetYDomain());
+				} else {
+					this.#xTween.aim(this.#targetXDomain(), performance.now());
+					this.#yTween.aim(this.#targetYDomain(), performance.now());
+				}
+			}
+			// The active point must never describe a row the new window hides.
+			// Clamp against the SETTLED target (not the gliding tween) so a
+			// shrinking window clears its out-of-window tooltip immediately.
+			this.#constrainActiveToWindow();
+			// A pointer still inside the plot re-hits the settled window: the
+			// tooltip follows the cursor onto a visible row instead of lingering
+			// on the old sample. During the glide the crosshair chases the
+			// tweened domain; hit-testing here uses the settled target.
+			if (this.#pointerX != null && this.#pointerY != null && this.#kind !== "scatter") {
+				const index = this.#indexAtTargetPixel(this.#pointerX);
+				this.#setActive(index, { viaKeyboard: false, notify: true });
+			}
+		}
 		this.#schedule();
 	}
 
@@ -649,29 +677,34 @@ class ChartEngine {
 		if (this.#rowCount === 0) {
 			return false;
 		}
-		const last = this.#rowCount - 1;
+		const { start: firstVisible, end: lastVisible } = this.#windowIndexRange();
+		if (firstVisible > lastVisible) {
+			return false;
+		}
+		const last = lastVisible;
 		const current = this.#effectiveIndex();
+		const visibleCount = lastVisible - firstVisible + 1;
 		const stride = this.#decimated
-			? Math.max(1, Math.floor(this.#rowCount / Math.max(1, this.#plot.width * this.#dpr)))
+			? Math.max(1, Math.floor(visibleCount / Math.max(1, this.#plot.width * this.#dpr)))
 			: 1;
-		const pageStride = Math.max(1, Math.floor(this.#rowCount / 10));
+		const pageStride = Math.max(1, Math.floor(visibleCount / 10));
 
 		const target = (() => {
 			switch (key) {
 				case "ArrowLeft": {
-					return Math.max(0, (current ?? this.#rowCount) - stride);
+					return Math.max(firstVisible, (current ?? lastVisible + 1) - stride);
 				}
 				case "ArrowRight": {
-					return Math.min(last, (current ?? -1) + stride);
+					return Math.min(last, (current ?? firstVisible - 1) + stride);
 				}
 				case "PageUp": {
-					return Math.min(last, (current ?? 0) + pageStride);
+					return Math.min(last, (current ?? firstVisible) + pageStride);
 				}
 				case "PageDown": {
-					return Math.max(0, (current ?? last) - pageStride);
+					return Math.max(firstVisible, (current ?? last) - pageStride);
 				}
 				case "Home": {
-					return 0;
+					return firstVisible;
 				}
 				case "End": {
 					return last;
@@ -919,11 +952,9 @@ class ChartEngine {
 			}
 		}
 
-		// Per-series columns (NaN = gap) + extent + fail-fast key validation.
+		// Per-series columns (NaN = gap) + fail-fast key validation.
 		const previousColumns = this.#columns;
 		this.#columns = new Map();
-		let min = Number.POSITIVE_INFINITY;
-		let max = Number.NEGATIVE_INFINITY;
 		// Stacked sums of integers are integers, so scanning the raw per-series
 		// values covers stacked domains too.
 		let valuesAllIntegers = true;
@@ -944,16 +975,8 @@ class ChartEngine {
 				// into NaN and blank the entire chart.
 				const value = typeof raw === "number" && Number.isFinite(raw) ? raw : Number.NaN;
 				values[index] = value;
-				if (!Number.isNaN(value)) {
-					if (value < min) {
-						min = value;
-					}
-					if (value > max) {
-						max = value;
-					}
-					if (!Number.isInteger(value)) {
-						valuesAllIntegers = false;
-					}
+				if (!Number.isNaN(value) && !Number.isInteger(value)) {
+					valuesAllIntegers = false;
 				}
 			}
 			invariant(
@@ -962,8 +985,6 @@ class ChartEngine {
 			);
 			this.#columns.set(spec.dataKey, values);
 		}
-		this.#valueMin = min === Number.POSITIVE_INFINITY ? 0 : min;
-		this.#valueMax = max === Number.NEGATIVE_INFINITY ? 0 : max;
 		this.#valuesAllIntegers = valuesAllIntegers;
 
 		// 3D scatter: the depth column, sorted-aligned like every series column.
@@ -1013,7 +1034,9 @@ class ChartEngine {
 			: null;
 
 		this.#decimated = shouldDecimate({
-			pointCount: count,
+			// A zoomed window decimates by its VISIBLE point count, so zooming into
+			// 1k of a 100k-row series exits decimation and paints full resolution.
+			pointCount: this.#visiblePointCount(),
 			columnCount: Math.max(1, Math.round(this.#plot.width * this.#dpr)),
 			wasDecimated: this.#decimated,
 		});
@@ -1038,7 +1061,7 @@ class ChartEngine {
 		// so the snapshot reflects the fresh rows even at an unchanged index.
 		const active = this.#effectiveIndex();
 		if (active != null) {
-			this.#setActive(Math.min(active, Math.max(0, count - 1)), {
+			this.#setActive(active, {
 				viaKeyboard: this.#viaKeyboard,
 				notify: false,
 			});
@@ -1158,17 +1181,21 @@ class ChartEngine {
 
 	#targetYDomain(): [number, number] {
 		const [minOverride, maxOverride] = this.#options.yDomain;
+		const extent = this.#visibleExtent();
+		if (this.#rowCount === 0) {
+			return [0, 1];
+		}
 		let min: number;
 		let max: number;
 		if (this.#stack != null) {
-			min = Math.min(0, this.#stack.min);
-			max = Math.max(0, this.#stack.max);
+			min = Math.min(0, extent.min);
+			max = Math.max(0, extent.max);
 		} else if (this.#kind === "line" || this.#kind === "scatter") {
-			min = this.#valueMin;
-			max = this.#valueMax;
+			min = extent.min;
+			max = extent.max;
 		} else {
-			min = Math.min(0, this.#valueMin);
-			max = Math.max(0, this.#valueMax);
+			min = Math.min(0, extent.min);
+			max = Math.max(0, extent.max);
 		}
 		if (typeof minOverride === "number") {
 			min = minOverride;
@@ -1176,8 +1203,11 @@ class ChartEngine {
 		if (typeof maxOverride === "number") {
 			max = maxOverride;
 		}
-		if (this.#rowCount === 0) {
-			return [0, 1];
+		// A window covering no finite value: an explicit yDomain still paints
+		// its exact bounds; an auto axis has nothing visible to fit and falls
+		// back to [0, 1].
+		if (!extent.hasData) {
+			return [minOverride ?? 0, maxOverride ?? 1];
 		}
 		// Bars and areas measure length from zero, so both document an axis minimum
 		// fixed at the baseline. A line or a scatter may float its domain.
@@ -1196,10 +1226,28 @@ class ChartEngine {
 		if (this.#rowCount === 0) {
 			return [0, 1];
 		}
-		const first = this.#xs[0] ?? 0;
-		const last = this.#xs[this.#rowCount - 1] ?? 0;
+		const isContinuous = this.#options.xScale === "linear" || this.#options.xScale === "time";
+		let first = this.#xs[0] ?? 0;
+		let last = this.#xs[this.#rowCount - 1] ?? 0;
+		if (isContinuous) {
+			const [startOverride, endOverride] = this.#options.xDomain;
+			if (typeof startOverride === "number") {
+				first = startOverride;
+			}
+			if (typeof endOverride === "number") {
+				last = endOverride;
+			}
+		}
+		// An inverted override (the ends swap) renders right-side-up, matching
+		// the y axis's treatment of a reversed override.
+		if (first > last) {
+			[first, last] = [last, first];
+		}
 		if (first === last) {
-			return [first - 0.5, last + 0.5];
+			// Time values are epoch milliseconds: a millisecond is the smallest
+			// meaningful pad there; numeric x keeps the classic half-unit.
+			const pad = this.#options.xScale === "time" ? 1 : 0.5;
+			return [first - pad, last + pad];
 		}
 		if (this.#kind === "scatter") {
 			// Points on the exact plot edge get half-clipped; give scatter niced
@@ -1207,6 +1255,108 @@ class ChartEngine {
 			return niceDomain([first, last], Y_TICK_COUNT);
 		}
 		return [first, last];
+	}
+
+	/**
+	 * The inclusive view-index span a continuous-x window currently covers, in
+	 * the SETTLED target domain. Categorical scales and an unset window cover
+	 * every row. The span is clamped against the sorted columns, so a window
+	 * beyond the data still reports its nearest rows instead of an empty range.
+	 */
+	#windowIndexRange(): { start: number; end: number } {
+		if (this.#rowCount === 0) {
+			return { start: 0, end: -1 };
+		}
+		const { xScale, xDomain } = this.#options;
+		if (xScale !== "linear" && xScale !== "time") {
+			return { start: 0, end: this.#rowCount - 1 };
+		}
+		let low = xDomain[0];
+		let high = xDomain[1];
+		if (typeof low !== "number") {
+			low = this.#xs[0] ?? 0;
+		}
+		if (typeof high !== "number") {
+			high = this.#xs[this.#rowCount - 1] ?? 0;
+		}
+		if (low > high) {
+			[low, high] = [high, low];
+		}
+		return {
+			start: lowerBoundIndex(this.#xs, this.#rowCount, low),
+			end: upperBoundIndex(this.#xs, this.#rowCount, high),
+		};
+	}
+
+	/**
+	 * The finite value extent inside the current window. The auto y domain fits
+	 * the VISIBLE slice, so a zoom hides a distant spike; an explicit `yDomain`
+	 * still wins in {@link #targetYDomain}. `hasData` is false when the window
+	 * contains no row carrying any finite value, which reads as an empty chart
+	 * (`[0, 1]`) rather than a zero-flat one.
+	 */
+	#visibleExtent(): { min: number; max: number; hasData: boolean } {
+		if (this.#rowCount === 0) {
+			return { min: 0, max: 0, hasData: false };
+		}
+		const { start, end } = this.#windowIndexRange();
+		let min = Number.POSITIVE_INFINITY;
+		let max = Number.NEGATIVE_INFINITY;
+		if (this.#stack != null) {
+			for (let index = start; index <= end; index++) {
+				for (const upper of this.#stack.upper) {
+					const value = upper[index] ?? Number.NaN;
+					if (!Number.isNaN(value)) {
+						if (value < min) {
+							min = value;
+						}
+						if (value > max) {
+							max = value;
+						}
+					}
+				}
+				for (const lower of this.#stack.lower) {
+					const value = lower[index] ?? Number.NaN;
+					if (!Number.isNaN(value)) {
+						if (value < min) {
+							min = value;
+						}
+						if (value > max) {
+							max = value;
+						}
+					}
+				}
+			}
+		} else {
+			for (const values of this.#columns.values()) {
+				for (let index = start; index <= end; index++) {
+					const value = values[index] ?? Number.NaN;
+					if (Number.isNaN(value)) {
+						continue;
+					}
+					if (value < min) {
+						min = value;
+					}
+					if (value > max) {
+						max = value;
+					}
+				}
+			}
+		}
+		return {
+			min: min === Number.POSITIVE_INFINITY ? 0 : min,
+			max: max === Number.NEGATIVE_INFINITY ? 0 : max,
+			hasData: min !== Number.POSITIVE_INFINITY,
+		};
+	}
+
+	/**
+	 * The number of samples inside the current window (all rows for a
+	 * categorical axis or an unset window).
+	 */
+	#visiblePointCount(): number {
+		const { start, end } = this.#windowIndexRange();
+		return Math.max(0, end - start + 1);
 	}
 
 	#is3d(): boolean {
@@ -1473,7 +1623,9 @@ class ChartEngine {
 		}
 
 		this.#decimated = shouldDecimate({
-			pointCount: this.#rowCount,
+			// Visible samples drive the tier (see #ingest): a zoomed window may
+			// hold too few points to decimate even when the full series is huge.
+			pointCount: this.#visiblePointCount(),
 			columnCount: Math.max(1, Math.round(this.#plot.width * this.#dpr)),
 			wasDecimated: this.#decimated,
 		});
@@ -1949,6 +2101,37 @@ class ChartEngine {
 	}
 
 	/**
+	 * The indexes the full-resolution path visits this frame: the samples
+	 * inside the current TWEENED window plus one neighbor past each edge, so a
+	 * segment crossing the boundary reaches the plot edge before the clip.
+	 * Based on the tweened domain (not the settled target) so a zoom glide keeps
+	 * painting segments until they slide out — the streaming behavior the
+	 * decimated path already has. `connectNulls` filters to finite indexes so
+	 * its path bridges gaps; otherwise NaN indexes stay and `defined()` breaks.
+	 */
+	#paintedIndexSlice(values: Float64Array, connectNulls: boolean): number[] {
+		const indexes: number[] = [];
+		if (this.#rowCount === 0) {
+			return indexes;
+		}
+		let start = 0;
+		let end = this.#rowCount - 1;
+		if (this.#bandLayout == null) {
+			const domain = this.#xTween.values();
+			const low = domain[0] ?? 0;
+			const high = domain[1] ?? 1;
+			start = Math.max(0, lowerBoundIndex(this.#xs, this.#rowCount, low) - 1);
+			end = Math.min(this.#rowCount - 1, upperBoundIndex(this.#xs, this.#rowCount, high) + 1);
+		}
+		for (let index = start; index <= end; index++) {
+			if (!connectNulls || !Number.isNaN(values[index] ?? Number.NaN)) {
+				indexes.push(index);
+			}
+		}
+		return indexes;
+	}
+
+	/**
 	 * The baseline-side boundary of one bar segment: the stacked lower boundary,
 	 * or the zero baseline when the chart does not stack. `computeStackBoundaries`
 	 * pairs its `NaN`s, so a defined upper implies a defined lower — the fallback
@@ -2146,17 +2329,19 @@ class ChartEngine {
 				return;
 			}
 			const isArea = spec.mark === "area";
-			const upper = this.#paintedValues(spec, this.#stack != null ? "upper" : "value", seriesIndex);
+			const upper = this.#paintedValues(
+				spec,
+				this.#stack != null ? "upper" : "value",
+				seriesIndex,
+			);
 			const lower = this.#stack != null ? this.#paintedValues(spec, "lower", seriesIndex) : null;
 			const definedAt = (index: number): boolean => !Number.isNaN(upper[index] ?? Number.NaN);
-			// connectNulls joins across gaps by drawing only the finite indexes;
-			// without it, NaN indexes stay in the list and defined() breaks the path.
-			const indexes: number[] = [];
-			for (let index = 0; index < this.#rowCount; index++) {
-				if (!spec.connectNulls || definedAt(index)) {
-					indexes.push(index);
-				}
-			}
+			// Draw the windowed slice plus one crossing sample per edge. The
+			// plot rect then clips the line/area exactly at the boundary: a
+			// segment crossing the edge reaches the edge itself instead of
+			// stopping at the last in-window sample, and outside data folds in
+			// only as the edge-crossing segment that gets clipped.
+			const indexes = this.#paintedIndexSlice(upper, spec.connectNulls);
 			const yAt = (index: number): number => (upper[index] ?? 0) * yCo.k + yCo.b;
 			if (isArea) {
 				const y0At =
@@ -2174,7 +2359,7 @@ class ChartEngine {
 				});
 			} else {
 				drawLinePath(ctx, { color, curve: spec.curve, indexes, xAt, yAt, definedAt });
-				if (spec.markers && this.#plot.width / this.#rowCount >= 12) {
+				if (spec.markers && this.#plot.width / Math.max(1, indexes.length) >= 12) {
 					drawMarkers(ctx, {
 						color,
 						surface: colors.chrome.surface,
@@ -2200,11 +2385,8 @@ class ChartEngine {
 		const columnCount = Math.max(1, Math.round(this.#plot.width * this.#dpr));
 		const columnToX = (column: number): number => this.#plot.left + (column + 0.5) / this.#dpr;
 		if (spec.mark === "area") {
-			const upper = this.#decimatedFor(
-				`${spec.dataKey}:upper`,
-				this.#paintedValues(spec, this.#stack != null ? "upper" : "value", seriesIndex),
-				columnCount,
-			);
+			const upperValues = this.#paintedValues(spec, this.#stack != null ? "upper" : "value", seriesIndex);
+			const upper = this.#decimatedFor(`${spec.dataKey}:upper`, upperValues, columnCount);
 			const lower =
 				this.#stack != null
 					? this.#decimatedFor(
@@ -2214,19 +2396,29 @@ class ChartEngine {
 						)
 					: null;
 			if (lower == null) {
+				const zeroY = 0 * yCo.k + yCo.b;
 				drawDecimatedArea(ctx, {
 					color,
 					lowerColumns: zeroColumns(upper, 0),
 					upperColumns: upper,
+					startUpperEdge: this.#edgeAnchor(upperValues, "start", yCo),
+					startLowerEdge: this.#baselineEdgeAnchor(upperValues, "start", zeroY),
+					endUpperEdge: this.#edgeAnchor(upperValues, "end", yCo),
+					endLowerEdge: this.#baselineEdgeAnchor(upperValues, "end", zeroY),
 					columnToX,
 					valueK: yCo.k,
 					valueB: yCo.b,
 				});
 			} else {
+				const lowerValues = this.#paintedValues(spec, "lower", seriesIndex);
 				drawDecimatedArea(ctx, {
 					color,
 					lowerColumns: lower,
 					upperColumns: upper,
+					startUpperEdge: this.#edgeAnchor(upperValues, "start", yCo),
+					startLowerEdge: this.#stackEdgeAnchor(lowerValues, upperValues, "start", yCo),
+					endUpperEdge: this.#edgeAnchor(upperValues, "end", yCo),
+					endLowerEdge: this.#stackEdgeAnchor(lowerValues, upperValues, "end", yCo),
 					columnToX,
 					valueK: yCo.k,
 					valueB: yCo.b,
@@ -2234,12 +2426,17 @@ class ChartEngine {
 			}
 			return;
 		}
-		const columns = this.#decimatedFor(
-			spec.dataKey,
-			this.#paintedValues(spec, "value", seriesIndex),
-			columnCount,
-		);
-		drawDecimatedLine(ctx, { color, columns, columnToX, valueK: yCo.k, valueB: yCo.b });
+		const values = this.#paintedValues(spec, "value", seriesIndex);
+		const columns = this.#decimatedFor(spec.dataKey, values, columnCount);
+		drawDecimatedLine(ctx, {
+			color,
+			columns,
+			startEdge: this.#edgeAnchor(values, "start", yCo),
+			endEdge: this.#edgeAnchor(values, "end", yCo),
+			columnToX,
+			valueK: yCo.k,
+			valueB: yCo.b,
+		});
 	}
 
 	#decimatedFor(cacheKey: string, values: Float64Array, columnCount: number): DecimatedColumns {
@@ -2254,17 +2451,96 @@ class ChartEngine {
 		}
 		const range: [number, number] = [domain[0] ?? 0, domain[1] ?? 1];
 		const co = linearCoefficients(range, [0, columnCount]);
+		// Scan only the slice the window shows, plus one crossing sample per
+		// edge: an O(window) accumulator on a 100k-row zoom keeps the large-data
+		// performance contract, and the crossing samples let the edge anchors
+		// interpolate a value exactly on the boundary.
+		let startIndex = lowerBoundIndex(this.#xs, this.#rowCount, range[0]);
+		let endIndex = upperBoundIndex(this.#xs, this.#rowCount, range[1]);
+		startIndex = Math.max(0, startIndex - 1);
+		endIndex = Math.min(this.#rowCount - 1, endIndex + 1);
 		const columns = decimateColumns({
 			xs: this.#xs,
 			values,
-			startIndex: 0,
-			endIndex: this.#rowCount - 1,
+			startIndex,
+			endIndex,
 			positionK: co.k,
 			positionB: co.b,
 			columnCount,
 		});
 		this.#decimationCache.set(cacheKey, { key, columns });
 		return columns;
+	}
+
+	/**
+	 * The linearly interpolated data value of one boundary-crossing segment at
+	 * the exact window edge — the vertex that starts (or ends) a decimated path
+	 * ON the plot boundary instead of at the first visible pixel column.
+	 * `null` when no finite segment crosses that edge or the crossing segment
+	 * is a gap; the renderer then leaves the edge unanchored, preserving the
+	 * null-break semantics.
+	 */
+	#edgeAnchorValue(values: Float64Array, edge: "start" | "end"): number | null {
+		if (this.#rowCount === 0 || this.#bandLayout != null) {
+			return null;
+		}
+		const domain = this.#xTween.values();
+		const boundary = edge === "start" ? (domain[0] ?? 0) : (domain[1] ?? 1);
+		if (edge === "start") {
+			const after = lowerBoundIndex(this.#xs, this.#rowCount, boundary);
+			const before = after - 1;
+			return segmentValueAt(this.#xs, values, before, after, boundary);
+		}
+		const before = upperBoundIndex(this.#xs, this.#rowCount, boundary);
+		const after = before + 1;
+		return segmentValueAt(this.#xs, values, before, after, boundary);
+	}
+
+	#edgeAnchor(
+		values: Float64Array,
+		edge: "start" | "end",
+		yCo: { k: number; b: number },
+	): { x: number; y: number } | null {
+		const value = this.#edgeAnchorValue(values, edge);
+		if (value == null) {
+			return null;
+		}
+		const x = edge === "start" ? this.#plot.left : this.#plot.left + this.#plot.width;
+		return { x, y: value * yCo.k + yCo.b };
+	}
+
+	#stackEdgeAnchor(
+		lowerValues: Float64Array,
+		upperValues: Float64Array,
+		edge: "start" | "end",
+		yCo: { k: number; b: number },
+	): { x: number; y: number } | null {
+		// The lower edge anchor closes the fill on the lower envelope. An area
+		// edge exists only where the UPPER boundary crosses it; the lower
+		// boundary interpolates independently and falls to the zero baseline
+		// through a gap (the first stacked series starts inside the window).
+		if (this.#edgeAnchorValue(upperValues, edge) == null) {
+			return null;
+		}
+		const lowerValue = this.#edgeAnchorValue(lowerValues, edge);
+		const value = lowerValue ?? 0;
+		const x = edge === "start" ? this.#plot.left : this.#plot.left + this.#plot.width;
+		return { x, y: value * yCo.k + yCo.b };
+	}
+
+	#baselineEdgeAnchor(
+		upperValues: Float64Array,
+		edge: "start" | "end",
+		zeroY: number,
+	): { x: number; y: number } | null {
+		// An unstacked area closes on the zero baseline. The baseline anchor
+		// exists wherever the upper edge crosses, so the fill ends in a vertical
+		// edge instead of a diagonal to the first column.
+		if (this.#edgeAnchorValue(upperValues, edge) == null) {
+			return null;
+		}
+		const x = edge === "start" ? this.#plot.left : this.#plot.left + this.#plot.width;
+		return { x, y: zeroY };
 	}
 
 	// ---- hover / keyboard / overlay -------------------------------------------
@@ -2285,7 +2561,13 @@ class ChartEngine {
 			return null;
 		}
 		// Clamp at the read so an out-of-range controlled index (or one stranded
-		// by a data shrink) never positions the overlay off-plot.
+		// by a data shrink) never positions the overlay off-plot — then clamp it
+		// to the visible window so no crosshair, marker, or tooltip names a row
+		// the current xDomain hides.
+		const { start, end } = this.#windowIndexRange();
+		if (raw < start || raw > end) {
+			return null;
+		}
 		return Math.min(Math.max(0, raw), this.#rowCount - 1);
 	}
 
@@ -2334,6 +2616,22 @@ class ChartEngine {
 	}
 
 	#indexAtPixel(cssX: number, cssY: number): number | null {
+		return this.#indexAtPixelWithDomain(cssX, cssY, this.#xTween.values());
+	}
+
+	/**
+	 * {@link #indexAtPixel} against the settled target domain, for a pointer
+	 * re-hit the instant a window option changes — before the glide lands.
+	 */
+	#indexAtTargetPixel(cssX: number): number | null {
+		return this.#indexAtPixelWithDomain(cssX, 0, this.#targetXDomain());
+	}
+
+	#indexAtPixelWithDomain(
+		cssX: number,
+		cssY: number,
+		domain: ArrayLike<number>,
+	): number | null {
 		if (this.#rowCount === 0) {
 			return null;
 		}
@@ -2343,9 +2641,13 @@ class ChartEngine {
 			// position along the band's own axis.
 			return invertBand(layout, this.#horizontalBars() ? cssY : cssX);
 		}
-		const { k, b } = this.#xCoefficients();
-		if (k === 0) {
-			return 0;
+		const co = linearCoefficients(
+			[domain[0] ?? 0, domain[1] ?? 1],
+			[this.#plot.left, this.#plot.left + this.#plot.width],
+		);
+		if (co.k === 0) {
+			const flat = this.#windowIndexRange();
+			return flat.start <= flat.end ? flat.start : null;
 		}
 		let x = cssX;
 		if (this.#decimated) {
@@ -2354,7 +2656,21 @@ class ChartEngine {
 			const column = Math.floor((cssX - this.#plot.left) * this.#dpr);
 			x = this.#plot.left + (column + 0.5) / this.#dpr;
 		}
-		return nearestIndex(this.#xs, this.#rowCount, (x - b) / k);
+		const dataX = (x - co.b) / co.k;
+		// A pointer outside the plot projects beyond the current (possibly
+		// gliding) window: no hit, so no tooltip folds an outside row in.
+		if (dataX < (domain[0] ?? 0) || dataX > (domain[1] ?? 1)) {
+			return null;
+		}
+		// The nearest sample can sit just outside the window when the boundary
+		// falls between two near-equal-distance samples; clamp the pick to the
+		// visible slice so the crosshair never names a hidden row.
+		const nearest = nearestIndex(this.#xs, this.#rowCount, dataX);
+		if (nearest == null) {
+			return null;
+		}
+		const { start, end } = this.#windowIndexRange();
+		return Math.min(Math.max(nearest, start), end);
 	}
 
 	#nearestSeries(index: number, cssX: number, cssY: number): string | null {
@@ -2413,6 +2729,33 @@ class ChartEngine {
 			}
 		});
 		return nearest;
+	}
+
+	/**
+	 * Clear an active position the settled window hides (called after a
+	 * `xDomain` change), keeping the keyboard flag so an arrow-driven cursor
+	 * that a window switch dismisses stays keyboard-flavored. Notifies the
+	 * consumer so a controlled chart receives the null and no tooltip, marker,
+	 * or snapshot names an outside row.
+	 */
+	#constrainActiveToWindow(): void {
+		if (this.#rowCount === 0) {
+			return;
+		}
+		const current = this.#effectiveIndex();
+		if (current != null) {
+			return;
+		}
+		const raw =
+			this.#controlledIndex !== undefined
+				? this.#controlledIndex == null
+					? null
+					: this.#toViewIndex(this.#controlledIndex)
+				: this.#activeIndex;
+		if (raw == null) {
+			return;
+		}
+		this.#setActive(null, { viaKeyboard: this.#viaKeyboard, notify: true });
 	}
 
 	/**
@@ -3101,6 +3444,84 @@ const toEpochOrNumber = (raw: unknown, isTime: boolean): number => {
 		return new Date(raw).getTime();
 	}
 	return Number.NaN;
+};
+
+/**
+ * The first index whose x is greater than or equal to `x` — the lower bound
+ * of the samples a window starting at `x` contains. `#xs` is ascending
+ * (continuous scales sort at ingest).
+ */
+const lowerBoundIndex = (xs: Float64Array, length: number, x: number): number => {
+	if (length <= 0 || x <= (xs[0] ?? 0)) {
+		return 0;
+	}
+	if (x > (xs[length - 1] ?? 0)) {
+		return length;
+	}
+	let low = 0;
+	let high = length;
+	while (low < high) {
+		const mid = (low + high) >> 1;
+		if ((xs[mid] ?? 0) < x) {
+			low = mid + 1;
+		} else {
+			high = mid;
+		}
+	}
+	return low;
+};
+
+/**
+ * The last index whose x is less than or equal to `x` — the upper bound of
+ * the samples a window ending at `x` contains. Returns `-1` when every
+ * sample lies past `x`.
+ */
+const upperBoundIndex = (xs: Float64Array, length: number, x: number): number => {
+	if (length <= 0 || x < (xs[0] ?? 0)) {
+		return -1;
+	}
+	if (x >= (xs[length - 1] ?? 0)) {
+		return length - 1;
+	}
+	let low = 0;
+	let high = length - 1;
+	while (high - low > 1) {
+		const mid = (low + high) >> 1;
+		if ((xs[mid] ?? 0) <= x) {
+			low = mid;
+		} else {
+			high = mid;
+		}
+	}
+	return low;
+};
+
+/**
+ * The linearly interpolated value at x `at` along the segment from sample
+ * `first` to sample `second` — `null` when either sample is missing, not
+ * finite, or the segment is degenerate (a zero-width segment cannot
+ * interpolate). This is the exact edge vertex a boundary-clipped line needs;
+ * d3-shape curves approximate it, but the decimated path is piecewise-linear
+ * by construction.
+ */
+const segmentValueAt = (
+	xs: Float64Array,
+	values: Float64Array,
+	first: number,
+	second: number,
+	at: number,
+): number | null => {
+	const x0 = xs[first];
+	const x1 = xs[second];
+	const v0 = values[first];
+	const v1 = values[second];
+	if (x0 == null || x1 == null || v0 == null || v1 == null) {
+		return null;
+	}
+	if (Number.isNaN(v0) || Number.isNaN(v1) || x1 === x0) {
+		return null;
+	}
+	return v0 + ((at - x0) / (x1 - x0)) * (v1 - v0);
 };
 
 /**

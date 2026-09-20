@@ -499,6 +499,61 @@ function ReferenceLineExample() {
 }
 ```
 
+## Windowing the x axis
+
+`xDomain` shows an interval of a continuous (`"linear"` or `"time"`) axis without cropping `data`. Each end accepts a `number`, a `Date`, or `"auto"`: an explicit end is the exact visual boundary, and `"auto"` keeps that end at the data extent. The example below keeps the whole 60-minute series in memory and changes only the window, so the data table, copy output, and any linked chart still see every row.
+
+The window drives every layer at once: x ticks regenerate for the interval, the lines project against it, the automatic y range fits the VISIBLE rows only (an explicit `yDomain` still wins), and hover plus keyboard stepping hit-test inside it. A segment that crosses a boundary clips exactly on the edge, in both the normal and the high-density decimated paths. Switching the interval reuses the enter/update animation and honors `prefers-reduced-motion`. A tooltip or active point the new interval hides clears on the switch.
+
+<Example>
+	<WindowedLineExample />
+</Example>
+
+```tsx
+import { LineChart } from "@ngrok/mantle/line-chart";
+import { useState } from "react";
+
+const windowStart = new Date("2026-07-18T10:00:00Z");
+const windowedData = Array.from({ length: 60 }, (_, minute) => ({
+	time: new Date(windowStart.getTime() + minute * 60_000),
+	requests: Math.round(1200 + 260 * Math.sin(minute / 5) + 90 * Math.sin(minute / 1.9)),
+}));
+
+function WindowedLineExample() {
+	const [windowMinutes, setWindowMinutes] = useState(15);
+	return (
+		<div className="flex w-full flex-col gap-3">
+			<div className="flex gap-2">
+				{[15, 30, 60].map((minutes) => (
+					<button key={minutes} type="button" onClick={() => setWindowMinutes(minutes)}>
+						{minutes === 60 ? "All 60 minutes" : `Last ${minutes} minutes`}
+					</button>
+				))}
+			</div>
+			<LineChart.Root
+				data={windowedData}
+				xKey="time"
+				aria-label="Requests per minute"
+				xDomain={
+					windowMinutes === 60
+						? undefined
+						: [new Date(windowStart.getTime() + (60 - windowMinutes) * 60_000), "auto"]
+				}
+				className="aspect-[3/1]"
+			>
+				<LineChart.Grid />
+				<LineChart.XAxis />
+				<LineChart.YAxis />
+				<LineChart.Line dataKey="requests" label="Requests" />
+				<LineChart.Tooltip />
+			</LineChart.Root>
+		</div>
+	);
+}
+```
+
+`xDomain` applies to continuous axes only. A categorical (`"point"`) axis ignores it, and there are no explicit tick positions or x reference lines in this API — the interval changes what is visible, never where ticks are placed inside it.
+
 ## Linked charts
 
 The active position is controllable: pass `activeIndex` and `onActiveIndexChange` to share one crosshair across charts plotted over the same rows (the dashboard "linked crosshair" pattern). Hover or arrow through either chart and both move together, so a latency spike and its error spike line up without eyeballing timestamps.
@@ -748,6 +803,7 @@ All props from [div](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/d
 | `aria-labelledby`      | `string`                               |                    | The id of a visible element that names the chart. Preferred over `aria-label` when the chart sits under a heading. Forbidden when `decorative`.                                                                                                                                                                                              |
 | `decorative?`          | `boolean`                              | `false`            | Render as a placeholder backdrop, not real data: every series paints the neutral `--color-chart-decorative` fill, hidden from assistive tech, out of the tab order, inert to pointer/keyboard, no data table or live region. Mutually exclusive with the accessible-name and interaction props. See [Decorative charts](#decorative-charts). |
 | `xScale?`              | `"time"` \| `"linear"` \| `"point"`    | auto-detected      | Override the auto-detected x scale (`Date` values → `"time"`, numbers → `"linear"`, strings → `"point"`).                                                                                                                                                                                                                                    |
+| `xDomain?`             | `[number \| Date \| "auto", number \| Date \| "auto"]` | `["auto", "auto"]` | The interval a continuous (`"linear"` or `"time"`) x axis currently shows, as `[start, end]`. An explicit end is the exact visual boundary; `"auto"` keeps that end at the data extent, so `[new Date(...), "auto"]` shows a fixed-width trailing window without cropping `data`. Ignored on categorical (`"point"`) axes. Ticks, line projection, the automatic y range (visible rows only; `yDomain` still wins), hover and keyboard hit-testing, and the enter/update animation all follow the interval; a line crossing a boundary clips exactly on it. |
 | `yDomain?`             | `[number \| "auto", number \| "auto"]` | `["auto", "auto"]` | Override the automatic y domain at either end.                                                                                                                                                                                                                                                                                               |
 | `animate?`             | `boolean`                              | `true`             | Animate enter/update transitions. `prefers-reduced-motion` always wins.                                                                                                                                                                                                                                                                      |
 | `pending?`             | `boolean`                              | `false`            | Hold the previous render at reduced opacity while fresh data loads — never swap a chart that has rendered once for a skeleton.                                                                                                                                                                                                               |

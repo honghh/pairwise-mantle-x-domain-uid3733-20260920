@@ -19,4 +19,5 @@ export type {
 	LineChartTooltipProps,
 	LineChartXAxisProps,
 	LineChartYAxisProps,
+	XDomain,
 } from "./line-chart.js";

@@ -19,4 +19,5 @@ export type {
 	AreaChartXAxisProps,
 	AreaChartYAxisProps,
 	ChartDatumEvent,
+	XDomain,
 } from "./area-chart.js";

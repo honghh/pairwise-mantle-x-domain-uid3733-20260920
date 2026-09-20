@@ -19,6 +19,7 @@ import type {
 	CurveKind,
 	PointShape,
 	SeriesColor,
+	XDomain,
 } from "../chart/types.js";
 import {
 	ChartCopyButtonPrimitive,
@@ -51,6 +52,32 @@ type AreaChartRootProps<TDatum extends ChartDatum = ChartDatum> = Omit<
 		 * `"linear"`, strings → `"point"`).
 		 */
 		xScale?: ContinuousXScale;
+		/**
+		 * The interval a continuous x axis currently shows, as `[start, end]`.
+		 * Each end accepts a `number`, a `Date`, or `"auto"`: an explicit end is
+		 * the exact visual boundary, and a one-sided `"auto"` keeps that end at
+		 * the data extent. Omit it (or use `["auto", "auto"]`) to show every row
+		 * — no need to crop `data` for a zoomed view.
+		 *
+		 * Applies to the `"linear"` and `"time"` scales only; a categorical
+		 * (`"point"`) axis ignores it. Ticks, area projection, the automatic y
+		 * maximum (visible rows only; the minimum stays the zero baseline and an
+		 * explicit `yDomain` still wins), hover and keyboard hit-testing, and
+		 * the enter/update animation all follow the current interval. An area
+		 * that crosses a boundary clips exactly on it.
+		 *
+		 * @example
+		 * ```tsx
+		 * // Show one day of a longer series, ending at the newest sample.
+		 * <AreaChart.Root
+		 *   data={data}
+		 *   xKey="time"
+		 *   xDomain={[new Date("2026-07-17T00:00:00Z"), "auto"]}
+		 *   aria-label="Requests"
+		 * />
+		 * ```
+		 */
+		xDomain?: XDomain;
 		/** Override the automatic y maximum. The minimum is always the zero baseline. */
 		yDomain?: [0, number | "auto"];
 	};
@@ -644,6 +671,7 @@ export type {
 	AreaChartXAxisProps,
 	AreaChartYAxisProps,
 	ChartDatumEvent,
+	XDomain,
 };
 export {
 	//,

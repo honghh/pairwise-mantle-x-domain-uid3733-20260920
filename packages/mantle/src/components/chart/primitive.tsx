@@ -44,6 +44,7 @@ import type {
 	SeriesColor,
 	SeriesMark,
 	SeriesMeta,
+	XDomain,
 	XScaleKind,
 	XValue,
 	YDomain,
@@ -299,6 +300,14 @@ type ChartRootPrimitiveProps = ChartRootBaseProps &
 		/** The key of each row's x value. */
 		xKey: string;
 		/**
+		 * The visible interval of a continuous x axis (`"linear"` or `"time"`),
+		 * as `[start, end]`; each end is a number, a `Date`, or `"auto"`. An
+		 * explicit end is the exact visual boundary; `"auto"` keeps that end at
+		 * the data extent. Omit for the full data extent. Ignored on categorical
+		 * (`"point"`) axes and by bar charts.
+		 */
+		xDomain?: XDomain;
+		/**
 		 * Override the auto-detected x scale (`Date` values → `"time"`, numbers →
 		 * `"linear"`, strings → `"point"`). Bar charts are always `"band"`.
 		 */
@@ -352,6 +361,14 @@ const detectXScale = (data: readonly ChartDatum[], xKey: string): ContinuousXSca
 };
 
 const AUTO_Y_DOMAIN: YDomain = ["auto", "auto"];
+const AUTO_X_DOMAIN = ["auto", "auto"] as const;
+
+/**
+ * Coerce one {@link XDomain} end to the numeric form the engine speaks:
+ * a `Date` becomes epoch milliseconds, a number stays, and `"auto"` stays.
+ */
+const coerceXDomainEnd = (end: XDomain[0]): number | "auto" =>
+	end instanceof Date ? end.getTime() : end;
 
 /**
  * The chart Root implementation: renders the canvas, the interaction overlay,
@@ -378,6 +395,7 @@ const ChartRootPrimitive = ({
 	zKey,
 	dimensions = 3,
 	yDomain = AUTO_Y_DOMAIN,
+	xDomain = AUTO_X_DOMAIN,
 	stacked = false,
 	orientation = "vertical",
 	animate = true,
@@ -437,6 +455,13 @@ const ChartRootPrimitive = ({
 		`${componentName}.Root requires numeric or Date x values — the "${xKey}" values are not numbers or dates, so they have no position on a continuous scatter axis.`,
 	);
 	const [yDomainMin, yDomainMax] = yDomain;
+	const [xDomainStart, xDomainEnd] = xDomain;
+	// Categorical axes never read xDomain; coerce once here (Date → epoch ms)
+	// so the effect below keys on stable primitives instead of fresh Dates.
+	const resolvedXDomain: [number | "auto", number | "auto"] = [
+		coerceXDomainEnd(xDomainStart),
+		coerceXDomainEnd(xDomainEnd),
+	];
 
 	// Date label granularity is a property of the dataset, not the sample: the
 	// midnight point inside an hourly series must keep its time of day, while
@@ -491,6 +516,10 @@ const ChartRootPrimitive = ({
 			xKey,
 			xScale: resolvedXScale,
 			yDomain: [yDomainMin, yDomainMax],
+			xDomain:
+				resolvedXScale === "linear" || resolvedXScale === "time"
+					? resolvedXDomain
+					: ["auto", "auto"],
 			zKey: zKey ?? null,
 			dimensions,
 			stacked,
@@ -508,6 +537,8 @@ const ChartRootPrimitive = ({
 		decorative,
 		xKey,
 		resolvedXScale,
+		resolvedXDomain[0],
+		resolvedXDomain[1],
 		yDomainMin,
 		yDomainMax,
 		zKey,

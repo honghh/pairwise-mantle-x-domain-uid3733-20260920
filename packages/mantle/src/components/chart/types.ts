@@ -302,6 +302,21 @@ type ChartDatumEvent<TDatum extends ChartDatum = ChartDatum> = {
 type YDomain = [number | "auto", number | "auto"];
 
 /**
+ * The visible interval of a continuous x axis, as `[start, end]`. Each end is
+ * a `number` (a value on a linear axis, or epoch milliseconds on a time
+ * axis), a `Date`, or `"auto"` to keep that end at the data extent. An
+ * explicit end is the exact visual boundary; the auto end fills from the
+ * data. Applies to `"linear"` and `"time"` scales only — categorical
+ * (`"point"`, `"band"`) axes ignore it.
+ */
+type XDomainEnd = number | Date | "auto";
+
+/**
+ * {@link XDomainEnd} paired as the two ends of a continuous x interval.
+ */
+type XDomain = readonly [XDomainEnd, XDomainEnd];
+
+/**
  * Everything the engine needs that comes from Root props (as opposed to
  * registered parts).
  */
@@ -309,6 +324,12 @@ type ChartOptions = {
 	xKey: string;
 	xScale: XScaleKind;
 	yDomain: YDomain;
+	/**
+	 * The visible continuous-x interval, each end already coerced to a number
+	 * (`"auto"` stays the string). `["auto", "auto"]` is the full data extent.
+	 * Categorical scales ignore the field.
+	 */
+	xDomain: [number | "auto", number | "auto"];
 	/** Bar charts only: the direction the bars run. */
 	orientation: BarOrientation;
 	/** Scatter plots only: the row key of the depth value; enables the 3D projection. */
@@ -344,6 +365,7 @@ export type {
 	SeriesSpec,
 	XAxisSpec,
 	XScaleKind,
+	XDomain,
 	XValue,
 	YAxisSpec,
 	YDomain,

@@ -19,6 +19,7 @@ import type {
 	CurveKind,
 	PointShape,
 	SeriesColor,
+	XDomain,
 } from "../chart/types.js";
 import {
 	ChartCopyButtonPrimitive,
@@ -51,6 +52,31 @@ type LineChartRootProps<TDatum extends ChartDatum = ChartDatum> = Omit<
 		 * `"linear"`, strings → `"point"`).
 		 */
 		xScale?: ContinuousXScale;
+		/**
+		 * The interval a continuous x axis currently shows, as `[start, end]`.
+		 * Each end accepts a `number`, a `Date`, or `"auto"`: an explicit end is
+		 * the exact visual boundary, and a one-sided `"auto"` keeps that end at
+		 * the data extent. Omit it (or use `["auto", "auto"]`) to show every row
+		 * — no need to crop `data` for a zoomed view.
+		 *
+		 * Applies to the `"linear"` and `"time"` scales only; a categorical
+		 * (`"point"`) axis ignores it. Ticks, line projection, the automatic y
+		 * range (visible rows only; an explicit `yDomain` still wins), hover and
+		 * keyboard hit-testing, and the enter/update animation all follow the
+		 * current interval. A line that crosses a boundary clips exactly on it.
+		 *
+		 * @example
+		 * ```tsx
+		 * // Show the last hour of a time series, keeping the full data array.
+		 * <LineChart.Root
+		 *   data={data}
+		 *   xKey="time"
+		 *   xDomain={[new Date(Date.now() - 60 * 60_000), "auto"]}
+		 *   aria-label="Requests"
+		 * />
+		 * ```
+		 */
+		xDomain?: XDomain;
 	};
 
 /**
@@ -629,6 +655,7 @@ export type {
 	LineChartTooltipProps,
 	LineChartXAxisProps,
 	LineChartYAxisProps,
+	XDomain,
 };
 export {
 	//,

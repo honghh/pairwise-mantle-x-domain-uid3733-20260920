@@ -305,47 +305,83 @@ const drawAreaPath = (
  * (entry, min, max, exit) — O(plot width) regardless of point count.
  * `valueK`/`valueB` map data values to pixel y; `columnToX` maps a column
  * index to pixel x.
+ *
+ * `startEdge`/`endEdge` are optional vertices exactly on the plot boundaries:
+ * when a segment crosses a window edge, its column buckets start one column
+ * in, so without the anchor the stroke would begin/end midway and the visible
+ * line would stop short of the boundary. Gap columns break runs, and an
+ * anchor attaches only to the run that reaches that edge.
  */
+type EdgeAnchor = { x: number; y: number } | null;
+
 const drawDecimatedLine = (
 	ctx: CanvasRenderingContext2D,
 	options: {
 		color: string;
 		columns: DecimatedColumns;
+		startEdge: EdgeAnchor;
+		endEdge: EdgeAnchor;
 		columnToX: (column: number) => number;
 		valueK: number;
 		valueB: number;
 	},
 ): void => {
-	const { color, columns, columnToX, valueK, valueB } = options;
+	const { color, columns, startEdge, endEdge, columnToX, valueK, valueB } = options;
 	ctx.strokeStyle = color;
 	ctx.lineWidth = LINE_WIDTH;
 	ctx.lineJoin = "round";
 	ctx.lineCap = "round";
 	ctx.beginPath();
-	let penDown = false;
+	const traceRun = (runStart: number, runEnd: number): void => {
+		for (let column = runStart; column <= runEnd; column++) {
+			const x = columnToX(column);
+			const inY = (columns.inValue[column] ?? 0) * valueK + valueB;
+			if (column === runStart) {
+				if (startEdge != null && runStart === firstDataColumn) {
+					ctx.moveTo(startEdge.x, startEdge.y);
+					ctx.lineTo(x, inY);
+				} else {
+					ctx.moveTo(x, inY);
+				}
+			} else {
+				ctx.lineTo(x, inY);
+			}
+			const minY = (columns.minValue[column] ?? 0) * valueK + valueB;
+			const maxY = (columns.maxValue[column] ?? 0) * valueK + valueB;
+			if (minY !== inY || maxY !== inY) {
+				ctx.lineTo(x, minY);
+				ctx.lineTo(x, maxY);
+			}
+			const outY = (columns.outValue[column] ?? 0) * valueK + valueB;
+			if (outY !== maxY) {
+				ctx.lineTo(x, outY);
+			}
+		}
+		if (endEdge != null && runEnd === lastDataColumn) {
+			ctx.lineTo(endEdge.x, endEdge.y);
+		}
+	};
+	let firstDataColumn = -1;
+	let lastDataColumn = -1;
+	let runStart = -1;
 	for (let column = 0; column < columns.columnCount; column++) {
 		if (columns.hasData[column] === 0) {
-			penDown = false;
+			if (runStart >= 0) {
+				traceRun(runStart, column - 1);
+				runStart = -1;
+			}
 			continue;
 		}
-		const x = columnToX(column);
-		const inY = (columns.inValue[column] ?? 0) * valueK + valueB;
-		const minY = (columns.minValue[column] ?? 0) * valueK + valueB;
-		const maxY = (columns.maxValue[column] ?? 0) * valueK + valueB;
-		const outY = (columns.outValue[column] ?? 0) * valueK + valueB;
-		if (penDown) {
-			ctx.lineTo(x, inY);
-		} else {
-			ctx.moveTo(x, inY);
-			penDown = true;
+		if (firstDataColumn < 0) {
+			firstDataColumn = column;
 		}
-		if (minY !== inY || maxY !== inY) {
-			ctx.lineTo(x, minY);
-			ctx.lineTo(x, maxY);
+		lastDataColumn = column;
+		if (runStart < 0) {
+			runStart = column;
 		}
-		if (outY !== maxY) {
-			ctx.lineTo(x, outY);
-		}
+	}
+	if (runStart >= 0) {
+		traceRun(runStart, lastDataColumn);
 	}
 	ctx.stroke();
 };
@@ -361,24 +397,59 @@ const drawDecimatedArea = (
 		color: string;
 		lowerColumns: DecimatedColumns;
 		upperColumns: DecimatedColumns;
+		startUpperEdge: EdgeAnchor;
+		startLowerEdge: EdgeAnchor;
+		endUpperEdge: EdgeAnchor;
+		endLowerEdge: EdgeAnchor;
 		columnToX: (column: number) => number;
 		valueK: number;
 		valueB: number;
 	},
 ): void => {
-	const { color, lowerColumns, upperColumns, columnToX, valueK, valueB } = options;
+	const {
+		color,
+		lowerColumns,
+		upperColumns,
+		startUpperEdge,
+		startLowerEdge,
+		endUpperEdge,
+		endLowerEdge,
+		columnToX,
+		valueK,
+		valueB,
+	} = options;
 	// Fill per contiguous run of data columns so gap columns stay unpainted —
 	// bridging an outage window would fabricate data presence.
 	ctx.beginPath();
-	let runStart = -1;
-	const closeRun = (runEnd: number): void => {
-		if (runStart < 0) {
+	let firstDataColumn = -1;
+	let lastDataColumn = -1;
+	for (let column = 0; column < upperColumns.columnCount; column++) {
+		if (upperColumns.hasData[column] !== 0) {
+			firstDataColumn = column;
+			break;
+		}
+	}
+	for (let column = upperColumns.columnCount - 1; column >= 0; column--) {
+		if (upperColumns.hasData[column] !== 0) {
+			lastDataColumn = column;
+			break;
+		}
+	}
+	const traceRun = (runStartColumn: number, runEnd: number): void => {
+		if (runStartColumn < 0) {
 			return;
 		}
 		let penDown = false;
-		for (let column = runStart; column <= runEnd; column++) {
+		for (let column = runStartColumn; column <= runEnd; column++) {
 			const x = columnToX(column);
 			const y = (upperColumns.maxValue[column] ?? 0) * valueK + valueB;
+			if (!penDown && startUpperEdge != null && runStartColumn === firstDataColumn) {
+				// Begin on the upper boundary exactly at the window edge.
+				ctx.moveTo(startUpperEdge.x, startUpperEdge.y);
+				ctx.lineTo(x, y);
+				penDown = true;
+				continue;
+			}
 			if (penDown) {
 				ctx.lineTo(x, y);
 			} else {
@@ -386,30 +457,54 @@ const drawDecimatedArea = (
 				penDown = true;
 			}
 		}
-		for (let column = runEnd; column >= runStart; column--) {
+		if (endUpperEdge != null && runEnd === lastDataColumn) {
+			// Reach the upper boundary at the right edge, then descend the lower
+			// boundary along that same edge so the fill closes vertically on it.
+			ctx.lineTo(endUpperEdge.x, endUpperEdge.y);
+			if (endLowerEdge != null) {
+				ctx.lineTo(endLowerEdge.x, endLowerEdge.y);
+			}
+		}
+		for (let column = runEnd; column >= runStartColumn; column--) {
 			const x = columnToX(column);
 			const y = (lowerColumns.minValue[column] ?? 0) * valueK + valueB;
 			ctx.lineTo(x, y);
 		}
+		if (startLowerEdge != null && runStartColumn === firstDataColumn) {
+			ctx.lineTo(startLowerEdge.x, startLowerEdge.y);
+		}
 		ctx.closePath();
-		runStart = -1;
 	};
+	let runStart = -1;
 	for (let column = 0; column < upperColumns.columnCount; column++) {
 		if (upperColumns.hasData[column] === 0) {
-			closeRun(column - 1);
+			if (runStart >= 0) {
+				traceRun(runStart, column - 1);
+				runStart = -1;
+			}
 			continue;
 		}
 		if (runStart < 0) {
 			runStart = column;
 		}
 	}
-	closeRun(upperColumns.columnCount - 1);
+	if (runStart >= 0) {
+		traceRun(runStart, upperColumns.columnCount - 1);
+	}
 	ctx.save();
 	ctx.globalAlpha = 0.1;
 	ctx.fillStyle = color;
 	ctx.fill();
 	ctx.restore();
-	drawDecimatedLine(ctx, { color, columns: upperColumns, columnToX, valueK, valueB });
+	drawDecimatedLine(ctx, {
+		color,
+		columns: upperColumns,
+		startEdge: startUpperEdge,
+		endEdge: endUpperEdge,
+		columnToX,
+		valueK,
+		valueB,
+	});
 };
 
 /**

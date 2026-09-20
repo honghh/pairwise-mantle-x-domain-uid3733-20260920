@@ -58,6 +58,7 @@ const baseOptions: ChartOptions = {
 	xKey: "x",
 	xScale: "linear",
 	yDomain: ["auto", "auto"],
+	xDomain: ["auto", "auto"],
 	orientation: "vertical",
 	zKey: null,
 	dimensions: 3,
@@ -470,5 +471,298 @@ describe("ChartEngine x values", () => {
 		});
 		band.engine.handleKeyDown("End");
 		expect(band.store.getSnapshot().hover?.xValue).toBe("POST");
+	});
+});
+
+describe("ChartEngine continuous x window (xDomain)", () => {
+	/**
+	 * Rows 0..99 at x = index, values `a` spike to 1000 only at x=0; every
+	 * other row is `index`. A full extent auto-y nices to ~1000; a window over
+	 * the tail nices to ~100, so the marker's projected y tells which data the
+	 * auto domain fit.
+	 */
+	const rows = Array.from({ length: 100 }, (_, index) => ({
+		x: index,
+		a: index === 0 ? 1000 : index,
+	}));
+
+	const movePointer = (engine: ChartEngine, cssX: number): void => {
+		engine.handlePointerMove(cssX, 100);
+	};
+
+	test("an explicit numeric window hides rows outside it from hover hit-testing", () => {
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [40, 60] },
+		});
+		// Plot spans 8..392 (400 wide, 8px padding). The left pixel projects to
+		// the first visible sample, never to x=0.
+		movePointer(mount.engine, 8);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(40);
+		movePointer(mount.engine, 392);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(60);
+		// A pointer left of the plot projects outside the window: no hit.
+		movePointer(mount.engine, -10);
+		expect(mount.store.getSnapshot().hover).toBeNull();
+	});
+
+	test("a left-explicit, right-auto window keeps the right end at the data extent", () => {
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [40, "auto"] },
+		});
+		movePointer(mount.engine, 392);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(99);
+		movePointer(mount.engine, 8);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(40);
+	});
+
+	test("a left-auto, right-explicit window keeps the left end at the data extent", () => {
+		const startAuto = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: ["auto", 10] },
+		});
+		movePointer(startAuto.engine, 8);
+		expect(startAuto.store.getSnapshot().hover?.xValue).toBe(0);
+		movePointer(startAuto.engine, 392);
+		expect(startAuto.store.getSnapshot().hover?.xValue).toBe(10);
+	});
+
+	test("accepts epoch-millisecond endpoints on a time scale", () => {
+		const start = Date.UTC(2026, 6, 18, 10, 0, 0);
+		const timeRows = Array.from({ length: 60 }, (_, index) => ({
+			time: new Date(start + index * 60_000),
+			a: index,
+		}));
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows: timeRows,
+			options: {
+				xKey: "time",
+				xScale: "time",
+				xDomain: [start + 10 * 60_000, start + 20 * 60_000],
+			},
+		});
+		movePointer(mount.engine, 8);
+		expect(mount.store.getSnapshot().hover?.xValue).toEqual(new Date(start + 10 * 60_000));
+		movePointer(mount.engine, 392);
+		expect(mount.store.getSnapshot().hover?.xValue).toEqual(new Date(start + 20 * 60_000));
+	});
+
+	test("the auto y domain fits the visible window only; explicit yDomain still wins", async () => {
+		const windowed = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [40, 60] },
+		});
+		const [dot] = await activateFirstDatum(windowed);
+		if (dot == null) {
+			throw new Error("expected a marker dot");
+		}
+		// x=40, a=40 against a tail-only auto domain (~0..100) projects LOW in
+		// the plot. The spike at x=0 is outside the window, so a full-extent
+		// domain (~0..1000) would pin the same point near the top instead.
+		const windowedY = dotPosition(dot).y;
+
+		// The explicit y override ignores the window entirely and keeps the
+		// spike-driven scale, so the same (x=40, a=40) point sits near the top.
+		const explicit = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [40, 60], yDomain: [0, 1000] },
+		});
+		const [explicitDot] = await activateFirstDatum(explicit);
+		if (explicitDot == null) {
+			throw new Error("expected a marker dot");
+		}
+		expect(dotPosition(explicitDot).y).toBeLessThan(windowedY);
+	});
+
+	test("keyboard stepping stays within the window and Home/End target its edges", () => {
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [40, 42] },
+		});
+		mount.engine.handleKeyDown("Home");
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(40);
+		mount.engine.handleKeyDown("ArrowRight");
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(41);
+		mount.engine.handleKeyDown("ArrowRight");
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(42);
+		// Past the right edge: clamped at the window end, never x=43.
+		mount.engine.handleKeyDown("ArrowRight");
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(42);
+		mount.engine.handleKeyDown("End");
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(42);
+		mount.engine.handleKeyDown("Home");
+		mount.engine.handleKeyDown("ArrowLeft");
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(40);
+	});
+
+	test("a runtime window change clears an active point the new window hides and notifies", () => {
+		const onActiveIndexChange = vi.fn();
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+		});
+		mount.engine.setCallbacks({ onDatumActivate: null, onActiveIndexChange });
+		movePointer(mount.engine, 8);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(0);
+		onActiveIndexChange.mockClear();
+
+		mount.engine.setOptions({ ...mount.options, xDomain: [40, 60] });
+		mount.engine.flushIngest();
+		expect(mount.store.getSnapshot().hover).toBeNull();
+		expect(onActiveIndexChange).toHaveBeenCalledWith(null);
+
+		// A later window that still contains the cursor re-hits a visible row.
+		movePointer(mount.engine, 8);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(40);
+	});
+
+	test("a window change keeps an active point that stays visible", () => {
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [0, 80] },
+		});
+		movePointer(mount.engine, 200);
+		const before = mount.store.getSnapshot().hover?.xValue;
+		expect(before).toBeGreaterThanOrEqual(40);
+		expect(before).toBeLessThanOrEqual(60);
+		mount.engine.setOptions({ ...mount.options, xDomain: [40, 60] });
+		mount.engine.flushIngest();
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(before);
+	});
+
+	test("an inverted window renders right-side-up", () => {
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [60, 40] },
+		});
+		movePointer(mount.engine, 8);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(40);
+		movePointer(mount.engine, 392);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(60);
+	});
+
+	test("a point (categorical) axis ignores xDomain entirely", () => {
+		const categories = Array.from({ length: 6 }, (_, index) => ({
+			x: `d${index}`,
+			a: index,
+		}));
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows: categories,
+			options: { xScale: "point", xDomain: [2, 4] },
+		});
+		mount.engine.handleKeyDown("Home");
+		expect(mount.store.getSnapshot().hover?.xValue).toBe("d0");
+		mount.engine.handleKeyDown("End");
+		expect(mount.store.getSnapshot().hover?.xValue).toBe("d5");
+		movePointer(mount.engine, 8);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe("d0");
+	});
+
+	test("a window covering no sample renders the empty [0,1] auto y domain", () => {
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [200, 300] },
+		});
+		movePointer(mount.engine, 200);
+		expect(mount.store.getSnapshot().hover).toBeNull();
+		mount.engine.handleKeyDown("Home");
+		expect(mount.store.getSnapshot().hover).toBeNull();
+	});
+
+	test("a boundary-crossing segment with a gap at the crossing yields no edge anchor", () => {
+		// x=19 is finite, x=20 is a null gap, x=21 is finite. A window starting
+		// at x=20 must not interpolate across the gap to anchor the edge.
+		const gappy = Array.from({ length: 40 }, (_, index) => ({
+			x: index,
+			a: index === 20 ? null : index,
+		}));
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows: gappy,
+			options: { xDomain: [20, 30] },
+		});
+		// The first visible finite sample is x=21; hit-testing the exact left
+		// boundary pixel snaps there rather than fabricating an x=20 value.
+		movePointer(mount.engine, 8);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(21);
+	});
+
+	test("a hit on an exact boundary between two equidistant samples stays in the window", () => {
+		// The window starts at x=20.5; x=20 (hidden) and x=21 (visible) are
+		// equidistant from the left plot edge. The pick must never name x=20.
+		const mount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [20.5, 60] },
+		});
+		movePointer(mount.engine, 8);
+		expect(mount.store.getSnapshot().hover?.xValue).toBe(21);
+		// The window ends at x=59.5; x=60 (hidden) is the nearer tie pick on
+		// the right edge and must clamp back to the visible x=59.
+		const endMount = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [40, 59.5] },
+		});
+		movePointer(endMount.engine, 392);
+		expect(endMount.store.getSnapshot().hover?.xValue).toBe(59);
+	});
+
+	test("an animated window change re-aims the tweens; animate=false snaps", () => {
+		// mountEngine defaults to animate: false, so the first change snaps.
+		const snapped = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [0, 99] },
+		});
+		movePointer(snapped.engine, 8);
+		expect(snapped.store.getSnapshot().hover?.xValue).toBe(0);
+		snapped.engine.setOptions({ ...snapped.options, xDomain: [40, 60] });
+		snapped.engine.flushIngest();
+		// Settled immediately, and the setOptions re-hit re-snaps the waiting
+		// pointer onto the new window's edge sample.
+		expect(snapped.store.getSnapshot().hover?.xValue).toBe(40);
+
+		const animated = mountEngine({
+			kind: "line",
+			series: [makeSeries("a", "line")],
+			rows,
+			options: { xDomain: [0, 99], animate: true },
+		});
+		animated.engine.setOptions({ ...animated.options, xDomain: [40, 60] });
+		animated.engine.flushIngest();
+		// Mid-glide, the cursor's hit uses the TWEENED domain (not yet at 40),
+		// so the left pixel does not instantly name x=40 until frames advance.
+		movePointer(animated.engine, 8);
+		const midGlide = animated.store.getSnapshot().hover?.xValue;
+		expect(midGlide).not.toBe(40);
 	});
 });
